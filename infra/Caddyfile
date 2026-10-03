@@ -1,0 +1,48 @@
+# Caddy: serves the SPA and proxies /api/* to the API container.
+#
+# Environment (set by docker-compose.yml from the repo-root .env):
+#   SITE_ADDRESS  ":80" (default; plain HTTP behind your existing HTTPS proxy)
+#                 or a domain, e.g. "dental.cognifuze.com", to let Caddy obtain
+#                 TLS certificates itself (needs ports 80/443).
+#   BASE_PATH     "" at the domain root (default), or a sub-path like "/dental".
+#                 The prefix is stripped before proxying, so the API always
+#                 serves /api/* and the SPA's files live at the root of /srv.
+
+{
+	admin off
+	servers {
+		# Accept X-Forwarded-* from a reverse proxy on the host / private network.
+		trusted_proxies static private_ranges
+	}
+}
+
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	# "/dental" -> "/dental/" (only when a sub-path is configured).
+	@bare expression `{path} == "{$BASE_PATH}" && "{$BASE_PATH}" != ""`
+	redir @bare {$BASE_PATH}/ 308
+
+	handle_path {$BASE_PATH}/* {
+		handle /api/* {
+			reverse_proxy api:3000 {
+				# Scan uploads are streamed; don't buffer them.
+				flush_interval -1
+			}
+		}
+
+		handle {
+			root * /srv
+			@assets path /assets/*
+			header @assets Cache-Control "public, max-age=31536000, immutable"
+			@html not path /assets/*
+			header @html Cache-Control "no-cache"
+			try_files {path} /index.html
+			file_server
+		}
+	}
+
+	handle {
+		respond "Not found" 404
+	}
+}

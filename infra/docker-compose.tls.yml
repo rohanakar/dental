@@ -1,0 +1,11 @@
+# TLS mode: our Caddy terminates HTTPS itself (automatic Let's Encrypt certs).
+# Use ONLY if nothing else on the VM owns ports 80/443. Set in .env:
+#   SITE_ADDRESS=dental.cognifuze.com
+#   PUBLIC_URL=https://dental.cognifuze.com
+# Then: ./infra/compose.sh -f infra/docker-compose.tls.yml up -d --build
+services:
+  proxy:
+    ports: !override
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"

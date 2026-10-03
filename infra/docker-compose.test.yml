@@ -1,0 +1,56 @@
+# Throwaway infrastructure for apps/api integration tests.
+# Non-default ports so it can run next to a local dev stack.
+#   docker compose -f infra/docker-compose.test.yml up -d --wait
+#   docker compose -f infra/docker-compose.test.yml down -v
+name: dcad-test
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: dcad
+      POSTGRES_PASSWORD: dcad
+      POSTGRES_DB: dcad_test
+    ports:
+      - "127.0.0.1:55432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dcad -d dcad_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # S3-compatible store for the BlobStore contract tests (the minio/minio
+  # image is no longer published on Docker Hub; SeaweedFS speaks the S3 API).
+  s3:
+    image: chrislusf/seaweedfs:latest
+    command: >
+      server -dir=/data -ip=127.0.0.1 -ip.bind=0.0.0.0
+      -master.volumeSizeLimitMB=64 -volume.max=8
+      -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+    configs:
+      - source: s3_identities
+        target: /etc/seaweedfs/s3.json
+    ports:
+      - "127.0.0.1:58333:8333"
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8333/healthz || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 45
+
+configs:
+  s3_identities:
+    content: |
+      {
+        "identities": [
+          {
+            "name": "dcadtest",
+            "credentials": [{ "accessKey": "dcadtest", "secretKey": "dcadtest-secret" }],
+            "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+          }
+        ]
+      }
