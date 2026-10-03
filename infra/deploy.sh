@@ -8,20 +8,22 @@
 set -euo pipefail
 
 : "${DEPLOY_HOST:?set DEPLOY_HOST, e.g. ubuntu@203.0.113.10}"
-DEPLOY_DIR="${DEPLOY_DIR:-/opt/dcad}"
+# Relative paths resolve against the remote user's home directory.
+DEPLOY_DIR="${DEPLOY_DIR:-dcad}"
 DEPLOY_COMPOSE_ARGS="${DEPLOY_COMPOSE_ARGS:-}"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "==> syncing $root to $DEPLOY_HOST:$DEPLOY_DIR"
 ssh "$DEPLOY_HOST" "mkdir -p '$DEPLOY_DIR'"
+# rsync applies the first matching rule, so the include must precede '.env.*'.
 rsync -az --delete \
+  --include '.env.example' \
   --exclude '.git/' \
   --exclude 'node_modules/' \
   --exclude 'dist/' \
   --exclude 'data/' \
   --exclude '.env' \
   --exclude '.env.*' \
-  --include '.env.example' \
   "$root/" "$DEPLOY_HOST:$DEPLOY_DIR/"
 
 echo "==> building and starting containers on $DEPLOY_HOST"

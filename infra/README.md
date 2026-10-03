@@ -57,12 +57,12 @@ Default models: `claude-sonnet-5` (Anthropic), `gpt-5` (OpenAI); override with `
 
 1. **DNS:** create an `A` record `dental.cognifuze.com` → the VM's public IP.
 2. **Docker:** Docker Engine with Compose **v2.24+** (`docker compose version`).
-3. **Code:** `git clone` the repo to `/opt/dcad`, or from your machine run
+3. **Code:** `git clone` the repo to `~/dcad` on the VM, or from your machine run
    `DEPLOY_HOST=ubuntu@<vm-ip> ./infra/deploy.sh` (it rsyncs and starts the stack, but never copies `.env`).
 4. **Config:** on the VM, `cp .env.example .env` and fill it in (see above).
 5. **Start:**
    ```bash
-   cd /opt/dcad
+   cd ~/dcad
    ./infra/compose.sh up -d --build
    ./infra/compose.sh ps                       # all three services healthy
    curl -s http://127.0.0.1:8080/api/healthz   # {"ok":true}
