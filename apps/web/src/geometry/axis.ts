@@ -1,0 +1,182 @@
+import type { V3 } from './pca';
+import type { RayCaster } from './raycast';
+
+const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const normalize = (a: V3): V3 => {
+  const l = Math.hypot(a[0], a[1], a[2]);
+  return l > 0 ? [a[0] / l, a[1] / l, a[2] / l] : [0, 0, 1];
+};
+const DEG = Math.PI / 180;
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
+export interface AxisSearchResult {
+  /** Unit insertion direction (the crown seats moving along −direction). */
+  direction: V3;
+  /** Projected undercut area Σ area·max(0, −n·d) over the prep faces, mm². */
+  undercutAreaMm2: number;
+  /** Same measure for the cone centre (occlusal direction). */
+  centerUndercutAreaMm2: number;
+  angleFromCenterDeg: number;
+}
+
+/** Orthonormal basis (u, v) perpendicular to unit n. */
+function basis(n: V3): [V3, V3] {
+  const u = normalize(cross(n, Math.abs(n[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0]));
+  return [u, cross(n, u)];
+}
+
+/** Direction at polar angle theta (rad) and azimuth phi around unit c. */
+function onCap(c: V3, u: V3, v: V3, theta: number, phi: number): V3 {
+  const s = Math.sin(theta);
+  const k = Math.cos(theta);
+  return normalize([
+    c[0] * k + s * (Math.cos(phi) * u[0] + Math.sin(phi) * v[0]),
+    c[1] * k + s * (Math.cos(phi) * u[1] + Math.sin(phi) * v[1]),
+    c[2] * k + s * (Math.cos(phi) * u[2] + Math.sin(phi) * v[2]),
+  ]);
+}
+
+/**
+ * Least-undercut insertion axis within a cone around `center` (the occlusal
+ * direction). Cost = Σ area·max(0, −n_f·d) over masked faces plus a small
+ * tie-break toward the centre, so a well-tapered prep keeps the occlusal
+ * direction. Fibonacci samples on the cap, then a 0.25° local refinement.
+ */
+export function searchInsertionAxis(input: {
+  positions: Float32Array;
+  indices: Uint32Array;
+  faceMask: Uint8Array;
+  center: V3;
+  coneDeg?: number;
+  samples?: number;
+}): AxisSearchResult {
+  const { positions: P, indices, faceMask } = input;
+  const center = normalize(input.center);
+  const cone = (input.coneDeg ?? 25) * DEG;
+  // Area-weighted face normals (|cross| / 2 = area).
+  const an: number[] = [];
+  let totalArea = 0;
+  for (let f = 0; f < faceMask.length; f++) {
+    if (!faceMask[f]) continue;
+    const a = indices[f * 3]! * 3, b = indices[f * 3 + 1]! * 3, c = indices[f * 3 + 2]! * 3;
+    const ux = P[b]! - P[a]!, uy = P[b + 1]! - P[a + 1]!, uz = P[b + 2]! - P[a + 2]!;
+    const vx = P[c]! - P[a]!, vy = P[c + 1]! - P[a + 1]!, vz = P[c + 2]! - P[a + 2]!;
+    const nx = 0.5 * (uy * vz - uz * vy), ny = 0.5 * (uz * vx - ux * vz), nz = 0.5 * (ux * vy - uy * vx);
+    an.push(nx, ny, nz);
+    totalArea += Math.hypot(nx, ny, nz);
+  }
+  const weighted = new Float64Array(an);
+  const undercut = (d: V3) => {
+    let sum = 0;
+    for (let i = 0; i < weighted.length; i += 3) {
+      const x = weighted[i]! * d[0] + weighted[i + 1]! * d[1] + weighted[i + 2]! * d[2];
+      if (x < 0) sum -= x;
+    }
+    return sum;
+  };
+  // Tie-break: 0.1% of the prep area per 10°.
+  const lambda = (1e-3 * totalArea) / (10 * DEG);
+  const angleTo = (d: V3) => Math.acos(Math.min(1, Math.max(-1, dot(d, center))));
+  const cost = (d: V3) => undercut(d) + lambda * angleTo(d);
+
+  const [u, v] = basis(center);
+  let best: V3 = center;
+  let bestCost = cost(center);
+  const samples = input.samples ?? 400;
+  const cosCone = Math.cos(cone);
+  for (let i = 1; i < samples; i++) {
+    const cosT = 1 - ((1 - cosCone) * i) / (samples - 1);
+    const d = onCap(center, u, v, Math.acos(cosT), i * GOLDEN_ANGLE);
+    const c = cost(d);
+    if (c < bestCost) {
+      bestCost = c;
+      best = d;
+    }
+  }
+  // Local refinement: ±1.5° grid at 0.25° around the best sample, kept inside the cone.
+  const [bu, bv] = basis(best);
+  const coarse = best;
+  for (let i = -6; i <= 6; i++) {
+    for (let j = -6; j <= 6; j++) {
+      if (i === 0 && j === 0) continue;
+      const t = Math.hypot(i, j) * 0.25 * DEG;
+      const d = onCap(coarse, bu, bv, t, Math.atan2(j, i));
+      if (angleTo(d) > cone) continue;
+      const c = cost(d);
+      if (c < bestCost) {
+        bestCost = c;
+        best = d;
+      }
+    }
+  }
+  return {
+    direction: best,
+    undercutAreaMm2: undercut(best),
+    centerUndercutAreaMm2: undercut(center),
+    angleFromCenterDeg: angleTo(best) / DEG,
+  };
+}
+
+/** True if face f has vertex v as a corner. */
+const hasCorner = (indices: Uint32Array, f: number, v: number) =>
+  indices[f * 3] === v || indices[f * 3 + 1] === v || indices[f * 3 + 2] === v;
+
+/**
+ * Blockout depth per vertex for an insertion axis: a ray from each masked
+ * vertex along +axis; the distance to the first prep face it hits is the
+ * depth (0 = visible from the insertion direction). NaN outside the mask.
+ */
+export function undercutDepths(input: {
+  positions: Float32Array;
+  indices: Uint32Array;
+  vertexMask: Uint8Array;
+  faceMask: Uint8Array;
+  axis: V3;
+  ray: RayCaster;
+  maxDepthMm?: number;
+}): Float32Array {
+  const { positions: P, indices, vertexMask, faceMask, ray } = input;
+  const d = normalize(input.axis);
+  const far = input.maxDepthMm ?? 15;
+  const out = new Float32Array(P.length / 3).fill(NaN);
+  const eps = 0.01;
+  for (let v = 0; v < out.length; v++) {
+    if (!vertexMask[v]) continue;
+    const o: V3 = [P[v * 3]! + eps * d[0], P[v * 3 + 1]! + eps * d[1], P[v * 3 + 2]! + eps * d[2]];
+    let depth = 0;
+    for (const hit of ray.all(o, d, far)) {
+      if (hit.distance < 0.01 || !faceMask[hit.faceIndex] || hasCorner(indices, hit.faceIndex, v)) continue;
+      depth = hit.distance + eps;
+      break;
+    }
+    out[v] = depth;
+  }
+  return out;
+}
+
+/**
+ * Margin points in an undercut: a ray from each point (packed xyz) along
+ * +axis that hits a prep face means the prep overhangs the margin there.
+ */
+export function marginUndercut(input: { points: Float32Array; axis: V3; ray: RayCaster; faceMask: Uint8Array }): {
+  flags: Uint8Array;
+  count: number;
+} {
+  const d = normalize(input.axis);
+  const n = input.points.length / 3;
+  const flags = new Uint8Array(n);
+  let count = 0;
+  const eps = 0.02;
+  for (let i = 0; i < n; i++) {
+    const p = input.points;
+    const o: V3 = [p[i * 3]! + eps * d[0], p[i * 3 + 1]! + eps * d[1], p[i * 3 + 2]! + eps * d[2]];
+    for (const hit of input.ray.all(o, d, 15)) {
+      if (hit.distance < 0.02 || !input.faceMask[hit.faceIndex]) continue;
+      flags[i] = 1;
+      count++;
+      break;
+    }
+  }
+  return { flags, count };
+}

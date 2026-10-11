@@ -1,0 +1,13 @@
+{
+  "name": "@dcad/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "offline": "node offline-design.mjs",
+    "online": "node online-case.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.64.0"
+  }
+}

@@ -60,12 +60,26 @@ export type InsertionAxis = z.infer<typeof InsertionAxis>;
  * Crown geometry is either a library template deformed onto the margin
  * (classical pipeline) or an arbitrary mesh (e.g. produced by an ML model).
  */
+/**
+ * Adaptation targets. Stored as settings (not displacements): the crown is
+ * re-derived from pose + params + these targets, so edits and undo stay cheap.
+ */
+export const CrownAdapt = z.object({
+  /** Target clearance to the antagonist (negative = intentional contact). */
+  occlusion: z.object({ clearanceMm: z.number().min(-0.2).max(1) }).optional(),
+  /** Target gap to the mesial / distal neighbour (negative = tighter contact). */
+  mesial: z.object({ targetMm: z.number().min(-0.2).max(0.5) }).optional(),
+  distal: z.object({ targetMm: z.number().min(-0.2).max(0.5) }).optional(),
+});
+export type CrownAdapt = z.infer<typeof CrownAdapt>;
+
 export const TemplateCrown = z.object({
   kind: z.literal('template'),
   templateId: z.string(),
   /** Pose of the template in the tooth frame. */
   pose: Pose,
-  /** Sculpt/adapt displacements stored in the crown's local frame. */
+  adapt: CrownAdapt.optional(),
+  /** Sculpt displacements stored in the crown's local frame (not used yet). */
   deltas: MeshRef.optional(),
 });
 export const MeshCrown = z.object({

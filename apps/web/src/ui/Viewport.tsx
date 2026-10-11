@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Viewer } from '../engine/Viewer';
 import { sceneController } from '../state/sceneController';
 import { useSceneStore } from '../state/sceneStore';
+import { exposeForDebug } from '../debug';
+import { designTools } from '../tools/controller';
+import { ColorLegend } from './ColorLegend';
 import { importFiles } from './ScanImport';
 
 function cssVar(name: string, fallback: string): string {
@@ -18,11 +21,14 @@ export function Viewport() {
     if (!el) return;
     const viewer = new Viewer(el, { background: cssVar('--viewport-bg', '#20242a') });
     sceneController.attachViewer(viewer);
+    designTools.attachViewer(viewer);
+    exposeForDebug('viewer', viewer);
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const onTheme = () => viewer.setBackground(cssVar('--viewport-bg', '#20242a'));
     media.addEventListener('change', onTheme);
     return () => {
       media.removeEventListener('change', onTheme);
+      designTools.detachViewer(viewer);
       sceneController.detachViewer(viewer);
       viewer.dispose();
     };
@@ -53,6 +59,7 @@ export function Viewport() {
           </button>
         </div>
       )}
+      <ColorLegend />
       <div className="hint">Left-drag rotate · right-drag pan · wheel zoom to cursor · 1–5 views · F fit · O ortho</div>
     </main>
   );

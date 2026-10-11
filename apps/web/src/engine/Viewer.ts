@@ -1,6 +1,7 @@
 import CameraControls from 'camera-controls';
 import {
   Box3,
+  BufferAttribute,
   Color,
   Matrix4,
   Mesh,
@@ -20,8 +21,11 @@ import {
   type Intersection,
 } from 'three';
 import { acceleratedRaycast } from 'three-mesh-bvh';
+import { COLOR_MAPS, createLutTexture, packScalars, type ColorMapName } from './colormap';
 import { createMatcap, MATCAP_PRESETS, type MatcapPreset } from './matcap';
-import { createSurfaceMaterial, type SurfaceMaterial } from './materials';
+import { createSurfaceMaterial, setScalarMap, type SurfaceMaterial } from './materials';
+import { TranslateGizmo, type GizmoOptions } from './gizmo';
+import { OverlayLayer } from './overlays';
 import { viewDirection, WORLD_VIEW_FRAME, type StandardView, type ViewFrame } from './viewFrame';
 
 CameraControls.install({
@@ -44,6 +48,26 @@ interface ViewerObject {
   mesh: Mesh<BufferGeometry, SurfaceMaterial>;
   kind: ObjectKind;
 }
+
+/**
+ * Tool input on the viewport. Hits are raycast against `targets()` (default:
+ * every visible object). A click is a left press and release that moved less
+ * than CLICK_SLOP_PX; any larger movement orbits the camera as usual.
+ */
+export interface InteractionHandler {
+  targets?: () => string[];
+  cursor?: string;
+  onClick?(hit: ViewerHit | null, event: PointerEvent): void;
+  /** Pointer moved with no button pressed (throttled to one call per frame). */
+  onHover?(hit: ViewerHit | null, event: PointerEvent): void;
+  /** Return true to take over this left-drag; the camera then stays still. */
+  onDragStart?(event: PointerEvent): boolean;
+  onDrag?(hit: ViewerHit | null, event: PointerEvent): void;
+  onDragEnd?(event: PointerEvent): void;
+}
+
+const CLICK_SLOP_PX = 5;
+const CLICK_MAX_MS = 700;
 
 export interface ViewerOptions {
   /** Device pixel ratio cap (default 2). */
@@ -68,6 +92,15 @@ export class Viewer {
   private readonly objects = new Map<string, ViewerObject>();
   private readonly matcaps = new Map<MatcapPreset, ReturnType<typeof createMatcap>>();
   private readonly raycaster = new Raycaster();
+  readonly overlays: OverlayLayer;
+  private readonly luts = new Map<ColorMapName, ReturnType<typeof createLutTexture>>();
+  private interaction: InteractionHandler | null = null;
+  private pointerDown: { x: number; y: number; t: number } | null = null;
+  private dragging = false;
+  private hoverEvent: PointerEvent | null = null;
+  private gizmo: TranslateGizmo | null = null;
+  /** A left press started on a gizmo handle: no orbit point, no tool click. */
+  private gizmoPress = false;
   private readonly resizeObserver: ResizeObserver;
   private frame: ViewFrame = WORLD_VIEW_FRAME;
   private projection: Projection = 'perspective';
@@ -105,11 +138,15 @@ export class Viewer {
     this.controls.draggingSmoothTime = 0.04;
     this.controls.mouseButtons.right = CameraControls.ACTION.TRUCK;
     this.controls.addEventListener('update', () => this.requestRender());
+    this.overlays = new OverlayLayer(this.scene, () => this.requestRender());
 
     // Cursor-centric orbit: before camera-controls sees the pointerdown
     // (capture phase on the container), orbit around the surface point under
     // the cursor.
     container.addEventListener('pointerdown', this.onPointerDown, { capture: true });
+    container.addEventListener('pointermove', this.onPointerMove);
+    container.addEventListener('pointerleave', this.onPointerLeave);
+    window.addEventListener('pointerup', this.onPointerUp);
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
@@ -185,6 +222,24 @@ export class Viewer {
     this.requestRender();
   }
 
+  /**
+   * Colour-map overlay from per-vertex scalars (NaN = no value), or null to
+   * turn it off. Writes a `scalar` attribute onto the object's geometry.
+   */
+  setObjectScalars(id: string, values: Float32Array | null, opts: { map: ColorMapName; range: [number, number] } = { map: 'sequential', range: [0, 1] }): void {
+    const obj = this.objects.get(id);
+    if (!obj) return;
+    const geometry = obj.mesh.geometry;
+    if (!values) {
+      geometry.deleteAttribute('scalar');
+      setScalarMap(obj.mesh.material, null);
+    } else {
+      geometry.setAttribute('scalar', new BufferAttribute(packScalars(values), 2));
+      setScalarMap(obj.mesh.material, this.lut(opts.map), opts.range);
+    }
+    this.requestRender();
+  }
+
   // ---- camera --------------------------------------------------------------
 
   getViewFrame(): ViewFrame {
@@ -232,6 +287,7 @@ export class Viewer {
       void this.controls.setLookAt(...target.clone().addScaledVector(dir, d).toArray(), ...target.toArray(), false);
     }
     this.projection = projection;
+    this.gizmo?.setCamera(this.controls.camera);
     this.requestRender();
   }
 
@@ -246,21 +302,101 @@ export class Viewer {
     this.frameVisible(dir, animate);
   }
 
+  /**
+   * Look at `point` from `dirToCamera` at `distanceMm` (e.g. zoom onto the
+   * prep from occlusal). Applied to the camera immediately when not animated.
+   */
+  focus(point: readonly [number, number, number], dirToCamera: readonly [number, number, number], distanceMm: number, animate = true): void {
+    const dir = new Vector3(...dirToCamera).normalize();
+    // Looking exactly along the turntable axis is a gimbal singularity (see setView).
+    if (Math.abs(dir.dot(new Vector3(...this.frame.up))) > 0.999) dir.addScaledVector(new Vector3(...this.frame.buccal), 1e-3).normalize();
+    const target = new Vector3(...point);
+    const position = target.clone().addScaledVector(dir, distanceMm);
+    if (this.projection === 'orthographic') {
+      this.orthoHeight = distanceMm * 2 * Math.tan((this.perspective.fov * Math.PI) / 360);
+      this.orthographic.zoom = 1;
+      this.updateOrthoFrustum();
+      position.copy(target).addScaledVector(dir, Math.max(400, distanceMm));
+    }
+    this.lookAt(position, target, animate);
+    if (!animate) this.controls.update(0);
+    this.requestRender();
+  }
+
   /** Fit the visible scene, keeping the current viewing direction. */
   fit(animate = true): void {
     const dir = this.controls.getPosition(new Vector3()).sub(this.controls.getTarget(new Vector3())).normalize();
     this.frameVisible(dir, animate);
   }
 
+  /**
+   * Translate gizmo in the tooth frame (see TranslateGizmo), or null to hide
+   * it. While dragging, the object `objectId` is offset as a preview; on
+   * release `onCommit` gets the world delta and the object snaps back (the
+   * caller turns the delta into commands and recomputes the object).
+   */
+  setGizmo(options: GizmoOptions | null): void {
+    if (!options && !this.gizmo) return;
+    if (!this.gizmo) {
+      this.gizmo = new TranslateGizmo(this.controls.camera, this.renderer.domElement, this.scene, {
+        requestRender: () => this.requestRender(),
+        setCameraEnabled: (enabled) => {
+          this.controls.enabled = enabled;
+        },
+        previewOffset: (id, delta) => {
+          const obj = this.objects.get(id);
+          if (!obj) return;
+          if (delta) obj.mesh.position.copy(delta);
+          else obj.mesh.position.set(0, 0, 0);
+          obj.mesh.updateMatrixWorld();
+          this.requestRender();
+        },
+      });
+    }
+    this.gizmo.set(options);
+  }
+
+  isGizmoDragging(): boolean {
+    return this.gizmo?.isDragging ?? false;
+  }
+
+  /** Unit direction the camera looks along (from the camera toward the target). */
+  viewDirection(): Vector3 {
+    return this.controls.getTarget(new Vector3()).sub(this.controls.getPosition(new Vector3())).normalize();
+  }
+
   // ---- picking & output ------------------------------------------------------
 
+  setInteraction(handler: InteractionHandler | null): void {
+    if (this.dragging) this.endDrag();
+    this.interaction = handler;
+    this.renderer.domElement.style.cursor = handler?.cursor ?? '';
+  }
+
+  /** Client (CSS pixel) position of a world point, or null if behind the camera. */
+  project(point: readonly [number, number, number]): { x: number; y: number } | null {
+    const v = new Vector3(...point).project(this.controls.camera);
+    if (v.z > 1) return null;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    return { x: rect.left + ((v.x + 1) / 2) * rect.width, y: rect.top + ((1 - v.y) / 2) * rect.height };
+  }
+
+  /** Normalized device coordinates of a client (CSS pixel) position. */
+  private ndc(clientX: number, clientY: number): Vector2 {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    return new Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+  }
+
   /** BVH-accelerated first hit under a client (CSS pixel) position. */
-  raycast(clientX: number, clientY: number): ViewerHit | null {
+  raycast(clientX: number, clientY: number, opts: { objectIds?: readonly string[] } = {}): ViewerHit | null {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const ndc = new Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.controls.camera);
     this.raycaster.firstHitOnly = true;
-    const targets = [...this.objects.values()].filter((o) => o.mesh.visible).map((o) => o.mesh);
+    const ids = opts.objectIds;
+    const targets = [...this.objects.entries()]
+      .filter(([id, o]) => o.mesh.visible && (!ids || ids.includes(id)))
+      .map(([, o]) => o.mesh);
     const hits: Intersection[] = this.raycaster.intersectObjects(targets, false);
     const hit = hits[0];
     if (!hit) return null;
@@ -293,6 +429,13 @@ export class Viewer {
     this.disposed = true;
     cancelAnimationFrame(this.rafId);
     this.container.removeEventListener('pointerdown', this.onPointerDown, { capture: true });
+    this.container.removeEventListener('pointermove', this.onPointerMove);
+    this.container.removeEventListener('pointerleave', this.onPointerLeave);
+    window.removeEventListener('pointerup', this.onPointerUp);
+    this.overlays.clear();
+    this.gizmo?.dispose();
+    this.gizmo = null;
+    for (const t of this.luts.values()) t.dispose();
     this.resizeObserver.disconnect();
     for (const id of [...this.objects.keys()]) this.removeObject(id);
     for (const t of this.matcaps.values()) t.dispose();
@@ -302,6 +445,15 @@ export class Viewer {
   }
 
   // ---- internals -------------------------------------------------------------
+
+  private lut(name: ColorMapName) {
+    let t = this.luts.get(name);
+    if (!t) {
+      t = createLutTexture(COLOR_MAPS[name]);
+      this.luts.set(name, t);
+    }
+    return t;
+  }
 
   private matcap(preset: MatcapPreset) {
     let t = this.matcaps.get(preset);
@@ -333,6 +485,7 @@ export class Viewer {
     this.perspective.aspect = width / height;
     this.perspective.updateProjectionMatrix();
     this.updateOrthoFrustum();
+    this.overlays.setResolution(width, height, this.renderer.getPixelRatio());
     this.requestRender();
   }
 
@@ -381,21 +534,96 @@ export class Viewer {
       this.orthoHeight = Math.max(2 * half[1]!, (2 * half[0]!) / aspect) * margin;
       this.updateOrthoFrustum();
       const p = target.clone().addScaledVector(dirToCamera, Math.max(400, half[2]! * 4));
-      void this.controls.setLookAt(p.x, p.y, p.z, target.x, target.y, target.z, animate);
+      this.lookAt(p, target, animate);
       void this.controls.zoomTo(1, animate);
     } else {
       // Distance so the front face of the extents box fits both axes.
       const fitDistance = Math.max(half[1]! / tanHalf, half[0]! / (tanHalf * aspect)) * margin + half[2]!;
       const p = target.clone().addScaledVector(dirToCamera, fitDistance);
-      void this.controls.setLookAt(p.x, p.y, p.z, target.x, target.y, target.z, animate);
+      this.lookAt(p, target, animate);
     }
     this.requestRender();
   }
 
+  private toolHit(event: PointerEvent): ViewerHit | null {
+    const ids = this.interaction?.targets?.();
+    return this.raycast(event.clientX, event.clientY, ids ? { objectIds: ids } : {});
+  }
+
+  private endDrag(event?: PointerEvent): void {
+    this.dragging = false;
+    this.controls.enabled = true;
+    if (event) this.interaction?.onDragEnd?.(event);
+  }
+
+  /**
+   * Move the camera. Cursor-centric orbit (setOrbitPoint) leaves a focal
+   * offset behind; clear it, or the camera ends up shifted from the
+   * requested view.
+   */
+  private lookAt(position: Vector3, target: Vector3, animate: boolean): void {
+    void this.controls.setFocalOffset(0, 0, 0, animate);
+    void this.controls.setLookAt(position.x, position.y, position.z, target.x, target.y, target.z, animate);
+  }
+
   private readonly onPointerDown = (event: PointerEvent): void => {
     if (event.button !== MOUSE.LEFT && event.button !== MOUSE.RIGHT && event.button !== MOUSE.MIDDLE) return;
+    if (event.button === MOUSE.LEFT && this.gizmo?.hitTest(this.ndc(event.clientX, event.clientY))) {
+      // TransformControls (also on the canvas) starts the drag; keep camera-controls and tools out of it.
+      this.gizmoPress = true;
+      this.pointerDown = null;
+      this.controls.enabled = false;
+      return;
+    }
+    if (event.button === MOUSE.LEFT && this.interaction?.onDragStart?.(event)) {
+      // The tool owns this drag: keep camera-controls (which listens on the canvas, after this capture listener) out of it.
+      this.dragging = true;
+      this.controls.enabled = false;
+      return;
+    }
+    this.pointerDown = event.button === MOUSE.LEFT ? { x: event.clientX, y: event.clientY, t: performance.now() } : null;
     const hit = this.raycast(event.clientX, event.clientY);
     if (hit) this.controls.setOrbitPoint(hit.point.x, hit.point.y, hit.point.z);
+  };
+
+  private readonly onPointerMove = (event: PointerEvent): void => {
+    if (this.gizmoPress) return;
+    if (this.dragging) {
+      this.interaction?.onDrag?.(this.toolHit(event), event);
+      return;
+    }
+    if (event.buttons !== 0 || !this.interaction?.onHover) return;
+    // Throttle hover picking to one raycast per animation frame.
+    const pending = this.hoverEvent;
+    this.hoverEvent = event;
+    if (pending) return;
+    requestAnimationFrame(() => {
+      const e = this.hoverEvent;
+      this.hoverEvent = null;
+      if (e && !this.dragging) this.interaction?.onHover?.(this.toolHit(e), e);
+    });
+  };
+
+  private readonly onPointerLeave = (event: PointerEvent): void => {
+    if (!this.dragging) this.interaction?.onHover?.(null, event);
+  };
+
+  private readonly onPointerUp = (event: PointerEvent): void => {
+    if (this.gizmoPress) {
+      this.gizmoPress = false;
+      if (!this.gizmo?.isDragging) this.controls.enabled = true;
+      return;
+    }
+    if (this.dragging) {
+      this.endDrag(event);
+      return;
+    }
+    const down = this.pointerDown;
+    this.pointerDown = null;
+    if (!down || event.button !== MOUSE.LEFT || !this.interaction?.onClick) return;
+    const moved = Math.hypot(event.clientX - down.x, event.clientY - down.y);
+    if (moved > CLICK_SLOP_PX || performance.now() - down.t > CLICK_MAX_MS) return;
+    this.interaction.onClick(this.toolHit(event), event);
   };
 
   private readonly loop = (): void => {

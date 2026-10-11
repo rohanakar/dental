@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { CaseSetup, DesignParams, Fdi } from './case';
-import { Crown, InsertionAxis, MarginLine, ScanRef, StepId, ToothFrame } from './design';
+import { Crown, InsertionAxis, MarginLine, ScanRef, ScanRole, StepId, ToothFrame } from './design';
 
 /**
  * Every mutation of a DesignDocument is one of these commands. The UI,
@@ -14,9 +14,14 @@ export const SetCaseSetup = z.object({
   type: z.literal('setCaseSetup'),
   setup: CaseSetup,
 });
+/** Adds a scan, replacing any existing scan with the same role (one scan per role). */
 export const AddScan = z.object({
   type: z.literal('addScan'),
   scan: ScanRef,
+});
+export const RemoveScan = z.object({
+  type: z.literal('removeScan'),
+  role: ScanRole,
 });
 export const SetFrame = z.object({
   type: z.literal('setFrame'),
@@ -112,7 +117,7 @@ export const RunStep = z
   })
   .describe('Run the automatic proposer for one design step.');
 
-export const DOCUMENT_COMMANDS = [SetCaseSetup, AddScan, SetFrame, SetMargin, SetAxis, SetParams, SetCrown] as const;
+export const DOCUMENT_COMMANDS = [SetCaseSetup, AddScan, RemoveScan, SetFrame, SetMargin, SetAxis, SetParams, SetCrown] as const;
 export const CLINICAL_COMMANDS = [MoveCrown, RotateCrown, ScaleCrown, SetContact, AdaptOcclusion, SetParam, RunStep] as const;
 
 export const Command = z.discriminatedUnion('type', [...DOCUMENT_COMMANDS, ...CLINICAL_COMMANDS]);

@@ -13,3 +13,4 @@ test-results/
 # local data: scans and golden cases never go into git
 data/
 infra/volumes/
+out/

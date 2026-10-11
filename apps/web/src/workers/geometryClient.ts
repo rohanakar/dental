@@ -1,6 +1,7 @@
 import * as Comlink from 'comlink';
 import type { BufferGeometry } from 'three';
 import type { GeometryWorkerApi } from './geometry.worker';
+import type { AxisAnalysis, AxisRequest, CrownRequest, CrownResult, FrameEstimate, FrameRequest, MarginTrace, SurfaceInfo, V3 } from './analysisTypes';
 import { LatestWins } from './latestWins';
 import { geometryFromPayload, type ScanPayload } from './scanPayload';
 
@@ -37,9 +38,34 @@ export async function importScanFile(file: File, key: string): Promise<LoadedSca
   return toLoaded(payload);
 }
 
-export async function importDemoScan(jaw: 'lower' | 'upper', key: string): Promise<LoadedScan> {
-  const payload = await latest.run(key, () => geometryWorker().demoScan(jaw));
+/** Import already-fetched bytes (e.g. a scan downloaded from the backend). */
+export async function importScanBytes(bytes: ArrayBuffer, name: string, key: string): Promise<LoadedScan> {
+  const payload = await latest.run(key, () => geometryWorker().importScan(Comlink.transfer(bytes, [bytes]), name));
   return toLoaded(payload);
 }
 
+/** Synthetic demo arch. `source` holds the generated PLY bytes (for upload). */
+export async function importDemoScan(jaw: 'lower' | 'upper', key: string): Promise<LoadedScan & { source: Uint8Array }> {
+  const { payload, source } = await latest.run(key, () => geometryWorker().demoScan(jaw));
+  return { ...toLoaded(payload), source };
+}
+
 export const cancelImport = (key: string): void => latest.cancel(key);
+
+/**
+ * Analysis on scans retained by the worker (see scanRegistry.ts). Calls that
+ * run per pointer action use "latest wins" keys, so only the newest result
+ * is applied.
+ */
+export const analysis = {
+  analyzeSurface: (sha: string): Promise<SurfaceInfo> => geometryWorker().analyzeSurface(sha),
+  estimateFrame: (request: FrameRequest): Promise<FrameEstimate> => latest.run('frame', () => geometryWorker().estimateFrame(request)),
+  /** Live-wire shortest-path tree from one vertex: predecessor per vertex (-1 = none). */
+  liveWireTree: (sha: string, source: number): Promise<Int32Array> => latest.run('livewire', () => geometryWorker().liveWireTree(sha, source)),
+  traceMargin: (sha: string, anchors: V3[]): Promise<MarginTrace> => latest.run('margin', () => geometryWorker().traceMargin(sha, anchors)),
+  smoothMargin: (sha: string, points: Float32Array, iterations: number): Promise<Float32Array> =>
+    latest.run('margin', () => geometryWorker().smoothMargin(sha, points, iterations)),
+  axis: (request: AxisRequest): Promise<AxisAnalysis> => latest.run('axis', () => geometryWorker().axisAnalysis(request)),
+  releaseScan: (sha: string): Promise<void> => geometryWorker().releaseScan(sha),
+  designCrown: (request: CrownRequest): Promise<CrownResult> => latest.run('crown', () => geometryWorker().designCrown(request)),
+};

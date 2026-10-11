@@ -3,11 +3,11 @@ import { create } from 'zustand';
 import type { ScanStats } from '../geometry/processScan';
 import type { Projection } from '../engine/Viewer';
 
-export type ImportPhase = 'reading' | 'processing' | 'ready' | 'error';
+export type ImportPhase = 'reading' | 'processing' | 'uploading' | 'ready' | 'error';
 
 export interface SceneObjectState {
-  /** One object per scan role for now; the role doubles as the id. */
-  id: string;
+  /** One object per scan role; the role doubles as the id. */
+  id: ScanRole;
   name: string;
   role: ScanRole;
   phase: ImportPhase;
@@ -27,8 +27,8 @@ interface SceneState {
   objects: SceneObjectState[];
   projection: Projection;
   upsertObject(obj: Pick<SceneObjectState, 'id' | 'name' | 'role'>): void;
-  patchObject(id: string, patch: Partial<SceneObjectState>): void;
-  removeObject(id: string): void;
+  patchObject(id: ScanRole, patch: Partial<SceneObjectState>): void;
+  removeObject(id: ScanRole): void;
   setProjection(p: Projection): void;
 }
 

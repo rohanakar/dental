@@ -1,6 +1,9 @@
+import { useDesignStore } from '../design/store';
 import type { StandardView } from '../engine/viewFrame';
 import { sceneController } from '../state/sceneController';
 import { useSceneStore } from '../state/sceneStore';
+import { ProjectControls } from './session/ProjectControls';
+import { SessionControls } from './session/SessionControls';
 
 export const VIEWS: Array<{ view: StandardView; label: string; key: string }> = [
   { view: 'occlusal', label: 'Occlusal', key: '1' },
@@ -13,10 +16,22 @@ export const VIEWS: Array<{ view: StandardView; label: string; key: string }> = 
 export function Toolbar() {
   const hasReady = useSceneStore((s) => s.objects.some((o) => o.phase === 'ready'));
   const projection = useSceneStore((s) => s.projection);
+  const canUndo = useDesignStore((s) => s.past.length > 0);
+  const canRedo = useDesignStore((s) => s.future.length > 0);
+  const { undo, redo } = useDesignStore.getState();
 
   return (
     <header className="toolbar">
       <span className="brand">Dental CAD</span>
+      <div className="group" role="group" aria-label="History">
+        <button className="btn" disabled={!canUndo} title="Undo (Ctrl/⌘+Z)" aria-label="Undo" onClick={undo}>
+          ↶
+        </button>
+        <button className="btn" disabled={!canRedo} title="Redo (Shift+Ctrl/⌘+Z)" aria-label="Redo" onClick={redo}>
+          ↷
+        </button>
+      </div>
+      <span className="sep" />
       <div className="group" role="group" aria-label="Standard views">
         {VIEWS.map(({ view, label, key }) => (
           <button key={view} className="btn" disabled={!hasReady} title={`${label} view (${key})`} onClick={() => sceneController.setView(view)}>
@@ -49,6 +64,9 @@ export function Toolbar() {
       <button className="btn" disabled={!hasReady} onClick={() => void sceneController.screenshot()}>
         Screenshot
       </button>
+      <span className="sep" />
+      <ProjectControls />
+      <SessionControls />
     </header>
   );
 }

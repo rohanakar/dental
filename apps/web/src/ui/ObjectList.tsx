@@ -7,10 +7,16 @@ const ROLE_LABEL: Record<SceneObjectState['role'], string> = {
   preop: 'Pre-op',
 };
 
+const BUSY_LABEL: Partial<Record<SceneObjectState['phase'], string>> = {
+  reading: 'Reading file…',
+  processing: 'Processing (weld, cleanup, BVH)…',
+  uploading: 'Uploading to the case…',
+};
+
 const fmt = (n: number) => n.toLocaleString();
 
 function ObjectRow({ obj }: { obj: SceneObjectState }) {
-  const busy = obj.phase === 'reading' || obj.phase === 'processing';
+  const busy = obj.phase === 'reading' || obj.phase === 'processing' || obj.phase === 'uploading';
   const ready = obj.phase === 'ready';
   return (
     <div className="object">
@@ -34,7 +40,7 @@ function ObjectRow({ obj }: { obj: SceneObjectState }) {
 
       {busy && (
         <div className="row muted">
-          <span className="spinner" /> {obj.phase === 'reading' ? 'Reading file…' : 'Processing (weld, cleanup, BVH)…'}
+          <span className="spinner" /> {BUSY_LABEL[obj.phase]}
         </div>
       )}
       {obj.phase === 'error' && <div className="error">{obj.error}</div>}

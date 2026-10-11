@@ -113,8 +113,8 @@ Uploads stream **through the API** (not presigned URLs) so storage backends stay
 **Deployment target (confirmed):**
 - VM is **aarch64** → all images run natively on `linux/arm64`.
 - Public location is configurable via `PUBLIC_URL`, currently **`https://dental.cognifuze.com`** (root of its own subdomain). DNS: an A record pointing to the VM.
-- Sub-path mounting stays supported: `BASE_PATH` is derived from `PUBLIC_URL`, the web build takes `VITE_BASE_PATH`, and our Caddy strips the prefix. Internally the API is always at `/api/*`.
-- Default mode: the user's existing HTTPS reverse proxy has a `server_name dental.cognifuze.com` block forwarding to our Caddy on `127.0.0.1:8080` (plain HTTP). Alternative: our Caddy terminates TLS itself (`SITE_ADDRESS=dental.cognifuze.com`), only if nothing else owns ports 80/443.
+- Sub-path mounting is still possible (set `BASE_PATH` / `VITE_BASE_PATH` by hand; Caddy strips the prefix) but no longer derived or documented. Internally the API is always at `/api/*`.
+- Nginx Proxy Manager on the VM owns the domain and TLS. Our Caddy joins the external Docker network `shared_net` as `dcad-proxy` (plain HTTP :80, no host ports); NPM forwards to `http://dcad-proxy:80`. See `specs/2026-10-11-simplify-deploy-npm.md`.
 - better-auth: `baseURL = PUBLIC_URL`, `basePath = /api/auth`.
 
 **Config:** one gitignored `.env` at the repo root (documented in `.env.example`). It is used by local dev and by Compose (`env_file`). The LLM provider is picked automatically per purpose:
@@ -125,7 +125,7 @@ Uploads stream **through the API** (not presigned URLs) so storage backends stay
 
 Models are set by `LLM_AGENT_MODEL` / `LLM_RX_MODEL` (defaults: `claude-sonnet-5` / `gpt-5`).
 
-Deploy: `infra/deploy.sh` (rsync + ssh + `docker compose up -d --build`). Registry + CI later.
+Deploy: on the VM, `git pull && ./infra/compose.sh up -d --build` (private repo `git@github.com:rohanakar/dental.git`, read-only deploy key). Registry + CI later.
 
 ## Repo layout (pnpm workspace)
 ```
@@ -199,3 +199,13 @@ Claude writes most code; the developer supplies data, annotates templates, does 
   - The LLM proxy is non-streaming (SSE later).
   - OpenAPI generation and the backup container are deferred (backup is Day 5).
   - Web ↔ API integration (login, upload to a case) is not wired yet; it moves to Day 2.
+
+**2026-10-11: deploy simplified for Nginx Proxy Manager.** `compose.sh` is a plain `exec docker compose` wrapper, `deploy.sh` and the TLS override are gone, `proxy` joins external `shared_net` as `dcad-proxy`, `.env.example` trimmed to the keys you set. Code pushed to private GitHub repo `rohanakar/dental`. See [2026-10-11-simplify-deploy-npm.md](2026-10-11-simplify-deploy-npm.md).
+
+**Day 2: done (2026-10-11).** Case setup, tooth frame, live-wire margin, insertion axis + undercut map, document store with undo, colour maps, web↔API (auth, cases, uploads, versions), pipeline runner, browser E2E scripts. See [day-02-setup-frame-margin-axis.md](day-02-setup-frame-margin-axis.md).
+
+**Day 3: done (2026-10-11).** Intaglio (gap ramp, blockout envelope, radial profiles), procedural crown templates, placement with quadrant mirroring, cervical blend + margin band → closed crown, validation, STL + construction-info export, derived crown in the UI, pipeline crown checks. See [day-03-walking-skeleton.md](day-03-walking-skeleton.md).
+
+**Day 4: done (2026-10-11).** RBF fit, thickness enforcement, crown colour maps (thickness, occlusion, proximal, unmillable), clinical move/rotate/scale commands, translate gizmo + nudge pad + keyboard. See [day-04-fit-and-feedback.md](day-04-fit-and-feedback.md).
+
+**Day 5: done (2026-10-11).** Occlusion/contact adaptation with conflict reports (stored as targets, crown re-derived), self-intersection check (printable), `.dcad.zip` project files, nightly backup service with a verified restore drill. See [day-05-adapt-and-persist.md](day-05-adapt-and-persist.md).
