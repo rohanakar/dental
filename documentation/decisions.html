@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en" data-root=".">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Decision log · DentalCAD docs</title>
+  <meta name="description" content="Architecture decision records for DentalCAD: context, choice, alternatives and consequences.">
+  <link rel="stylesheet" href="./assets/docs.css">
+  <style>
+    .adr-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: -2px 0 10px; font-size: 13px; color: var(--muted); }
+    .adr dl.kv { font-size: 15px; }
+  </style>
+</head>
+<body data-page="decisions.html">
+  <header class="topbar">
+    <button class="icon-btn menu-btn" id="menu-toggle" aria-expanded="false" aria-controls="sidebar">☰</button>
+    <a class="brand" href="./index.html">DentalCAD <small>design docs</small></a>
+    <span class="spacer"></span>
+    <button class="icon-btn" id="theme-toggle" type="button">☾ Dark</button>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation"></nav>
+
+    <main>
+      <div class="eyebrow"><span class="badge depth">Reference</span> <span>For: anyone asking "why is it like this?"</span></div>
+      <h1>Decision log</h1>
+      <p class="lede">Each decision records the context, the choice, the alternatives considered, and the consequences.
+        Superseded decisions stay listed, so the history is visible.</p>
+
+      <div class="tldr">
+        <strong>How to use this page</strong>
+        <ul>
+          <li>Before changing something structural, find its decision here. If you change the decision, add a new entry
+            that supersedes the old one instead of editing it.</li>
+          <li>Status: <span class="badge done">Accepted</span> <span class="badge deviation">Superseded</span>
+            <span class="badge planned">Accepted, not yet built</span>.</li>
+        </ul>
+      </div>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>#</th><th>Decision</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>001</td><td><a href="#adr-001">MVP = single posterior crown on a natural prep</a></td><td><span class="badge done">Accepted</span></td></tr>
+          <tr><td>002</td><td><a href="#adr-002">LLMs orchestrate; deterministic geometry and specialised models do geometry</a></td><td><span class="badge done">Accepted</span></td></tr>
+          <tr><td>003</td><td><a href="#adr-003">React + TypeScript + plain three.js</a></td><td><span class="badge done">Accepted</span></td></tr>
+          <tr><td>004</td><td><a href="#adr-004">Geometry in Web Workers; BVH built in the worker and serialized</a></td><td><span class="badge done">Accepted</span></td></tr>
+          <tr><td>005</td><td><a href="#adr-005">Typed commands on a typed document; undo via immutable snapshots</a></td><td><span class="badge planned">Accepted, Day 4</span></td></tr>
+          <tr><td>006</td><td><a href="#adr-006">Crown is a union: template or mesh</a></td><td><span class="badge done">Accepted</span></td></tr>
+          <tr><td>007</td><td><a href="#adr-007">Proposers are async, versioned jobs; orchestrator gated on QA checks</a></td><td><span class="badge done">Accepted</span></td></tr>
+          <tr><td>008</td><td><a href="#adr-008">LLM tool loop runs in the browser; API is a keyed proxy</a></td><td><span class="badge done">Accepted</span></td></tr>
+          <tr><td>009</td><td><a href="#adr-009">Self-hosted portable backend on OCI; Supabase dropped</a></td><td><span class="badge done">Accepted</span></td></tr>
+          <tr><td>010</td><td><a href="#adr-010">Better Auth in our own Postgres, behind AuthPort</a></td><td><span class="badge done">Accepted</span></td></tr>
+          <tr><td>011</td><td><a href="#adr-011">Blob storage: fs by default, S3 adapter ready; uploads stream through the API</a></td><td><span class="badge done">Accepted</span></td></tr>
+          <tr><td>012</td><td><a href="#adr-012">Postgres + Drizzle with committed SQL migrations; no Redis</a></td><td><span class="badge done">Accepted</span></td></tr>
+          <tr><td>013</td><td><a href="#adr-013">Intaglio via normal offset + ray-cast envelope + radial meshing</a></td><td><span class="badge planned">Accepted, Day 3</span></td></tr>
+          <tr><td>014</td><td><a href="#adr-014">Tool-radius compensation left to CAM</a></td><td><span class="badge planned">Accepted, Day 3</span></td></tr>
+          <tr><td>015</td><td><a href="#adr-015">Eight hand-annotated template teeth</a></td><td><span class="badge planned">Accepted, Day 2–3</span></td></tr>
+          <tr><td>016</td><td><a href="#adr-016">Public URL is configurable; dental.cognifuze.com at root</a></td><td><span class="badge done">Accepted</span></td></tr>
+          <tr><td>017</td><td><a href="#adr-017">arm64 container images</a></td><td><span class="badge done">Accepted</span></td></tr>
+          <tr><td>018</td><td><a href="#adr-018">SeaweedFS for S3 contract tests</a></td><td><span class="badge done">Accepted</span></td></tr>
+          <tr><td>019</td><td><a href="#adr-019">Shared package consumed as TypeScript source</a></td><td><span class="badge done">Accepted</span></td></tr>
+          <tr><td>020</td><td><a href="#adr-020">Step status map is exhaustive</a></td><td><span class="badge done">Accepted</span></td></tr>
+          <tr><td>S1</td><td><a href="#adr-s1">Heightfield intaglio with spherical dilation</a></td><td><span class="badge deviation">Superseded by 013</span></td></tr>
+          <tr><td>S2</td><td><a href="#adr-s2">Supabase for auth, database and storage</a></td><td><span class="badge deviation">Superseded by 009</span></td></tr>
+          <tr><td>S3</td><td><a href="#adr-s3">Server-side LLM tool loop</a></td><td><span class="badge deviation">Superseded by 008</span></td></tr>
+          <tr><td>S4</td><td><a href="#adr-s4">Hand-written invert() per command</a></td><td><span class="badge deviation">Superseded by 005</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="product-and-ai">Product and AI</h2>
+
+      <section class="adr">
+        <h3 id="adr-001">001 · MVP = single posterior crown on a natural prep</h3>
+        <div class="adr-meta"><span class="badge done">Accepted</span> 2026-10-03</div>
+        <dl class="kv">
+          <dt>Context</dt><dd>One week with Claude plus one developer. Single crowns and short bridges are most of a lab's volume, and every other restoration reuses the crown's building blocks.</dd>
+          <dt>Decision</dt><dd>Build the full single-crown path for premolars and molars only, from scans to a watertight STL.</dd>
+          <dt>Alternatives</dt><dd>Broader feature coverage at lower depth (would demo poorly); anterior teeth (aesthetics-heavy, harder to judge); implants (needs library licensing).</dd>
+          <dt>Consequences</dt><dd>Preps can be assumed star-shaped from above (this simplifies intaglio meshing). Bridges and implants are the first post-MVP items.</dd>
+        </dl>
+      </section>
+
+      <section class="adr">
+        <h3 id="adr-002">002 · LLMs orchestrate; deterministic geometry and specialised models do geometry</h3>
+        <div class="adr-meta"><span class="badge done">Accepted</span> 2026-10-03</div>
+        <dl class="kv">
+          <dt>Context</dt><dd>The user planned to use Claude/OpenAI for AI features. General LLMs cannot produce clinical-precision geometry (about 0.05 mm) from meshes with around a million triangles. Dentbird-style systems use specialised 3D networks.</dd>
+          <dt>Decision</dt><dd>LLMs handle orchestration, Rx extraction, explaining metrics, and translating plain-language edits into commands. Geometry comes from classical algorithms now, and from specialised models trained on the 100 in-house cases plus logged corrections later.</dd>
+          <dt>Alternatives</dt><dd>Vision LLM on screenshots to place margins (too imprecise); train models first (no week-1 budget, and the data is too thin).</dd>
+          <dt>Consequences</dt><dd>The Proposer contract (007) and correction logging are built from day one so models can replace algorithms step by step.</dd>
+        </dl>
+      </section>
+
+      <section class="adr">
+        <h3 id="adr-007">007 · Proposers are async, versioned jobs; orchestrator gated on QA checks</h3>
+        <div class="adr-meta"><span class="badge done">Accepted</span> contract built Day 1 · runtime Day 6</div>
+        <dl class="kv">
+          <dt>Context</dt><dd>The same step may be served by a browser algorithm today and a GPU model tomorrow. Classical algorithms have no calibrated confidence score.</dd>
+          <dt>Decision</dt><dd>Every proposer is a job (<code>jobId</code>, progress, cancel) whose result carries <code>proposerId@version</code>, an optional model hash and deterministic <code>QaCheck</code>s. Inputs are content-addressed meshes with explicit frame and units. The one-click orchestrator continues only when the QA checks pass.</dd>
+          <dt>Alternatives</dt><dd>A synchronous function interface (blocks remote models); gating on confidence (meaningless for classical algorithms).</dd>
+          <dt>Consequences</dt><dd>A Python ML service can implement the same contract over HTTP, and every result is traceable to the exact algorithm or model version.</dd>
+        </dl>
+      </section>
+
+      <section class="adr">
+        <h3 id="adr-008">008 · LLM tool loop runs in the browser; API is a keyed proxy</h3>
+        <div class="adr-meta"><span class="badge done">Accepted</span> supersedes S3</div>
+        <dl class="kv">
+          <dt>Context</dt><dd>The tools need geometry, metrics, view capture and preview, and those live in the browser. A server-side loop would need two-way tool messaging back to the client.</dd>
+          <dt>Decision</dt><dd>The browser runs the loop and calls <code>POST /api/llm/messages</code>. The server holds keys, picks provider and model, enforces an allowlist and rate limit, and logs usage. Tools are clinical and tooth-local (<code>move_crown {direction, mm}</code>), and every agent batch is one transaction with Accept/Revert.</dd>
+          <dt>Consequences</dt><dd>About a day of plumbing saved; the agent can never bypass command validation; the proxy is provider-agnostic.</dd>
+        </dl>
+      </section>
+
+      <section class="adr">
+        <h3 id="adr-006">006 · Crown is a union: template or mesh</h3>
+        <div class="adr-meta"><span class="badge done">Accepted</span></div>
+        <dl class="kv">
+          <dt>Decision</dt><dd><code>{kind:'template', templateId, pose, deltas?} | {kind:'mesh', mesh}</code>.</dd>
+          <dt>Why</dt><dd>A crown produced by an ML model is an arbitrary mesh and can't be expressed as a deformed template. Without the union, the document couldn't hold future AI output.</dd>
+        </dl>
+      </section>
+
+      <h2 id="frontend">Frontend</h2>
+
+      <section class="adr">
+        <h3 id="adr-003">003 · React + TypeScript + plain three.js</h3>
+        <div class="adr-meta"><span class="badge done">Accepted</span></div>
+        <dl class="kv">
+          <dt>Decision</dt><dd>React for panels; an imperative three.js <code>Viewer</code> class (not react-three-fiber); three-mesh-bvh for picking and distance queries; camera-controls for navigation.</dd>
+          <dt>Alternatives</dt><dd>react-three-fiber (less control over render-on-demand and buffer updates); Babylon.js (good tooling, but no equivalent of three-mesh-bvh).</dd>
+          <dt>Consequences</dt><dd>React talks to the engine through a small API; the engine stays testable and framework-free.</dd>
+        </dl>
+      </section>
+
+      <section class="adr">
+        <h3 id="adr-004">004 · Geometry in Web Workers; BVH built in the worker and serialized</h3>
+        <div class="adr-meta"><span class="badge done">Accepted</span> built Day 1</div>
+        <dl class="kv">
+          <dt>Context</dt><dd>Scans have 200k–1M+ triangles. three-mesh-bvh <strong>reorders the index buffer</strong> when it builds (unless <code>indirect: true</code>), so face ids taken earlier become wrong.</dd>
+          <dt>Decision</dt><dd>Build the BVH once in the worker, ship it with <code>MeshBVH.serialize</code>, and deserialize it on the main thread so the reordered index is canonical. Always transfer buffers. Use "latest wins" generation counters because Comlink can't cancel calls. Store margins as 3D points, not face ids.</dd>
+          <dt>Consequences</dt><dd>Measured: a 1M-triangle STL takes about 0.5 s total in Node and is usable in about 1 s in the browser.</dd>
+        </dl>
+      </section>
+
+      <section class="adr">
+        <h3 id="adr-005">005 · Typed commands on a typed document; undo via immutable snapshots</h3>
+        <div class="adr-meta"><span class="badge planned">Accepted, Day 4</span> supersedes S4</div>
+        <dl class="kv">
+          <dt>Decision</dt><dd>All state changes are zod-validated <code>Command</code>s. Undo is a stack of immutable document snapshots with structural sharing, plus a derived-geometry cache keyed by input hashes. Changing a step marks the later ones stale.</dd>
+          <dt>Alternatives</dt><dd>A hand-written <code>invert()</code> per command (about 20 inverses to write and keep correct).</dd>
+          <dt>Consequences</dt><dd>An agent batch is one version; replay and provenance come free; sculpt deltas live in the crown's local frame so they survive re-fits.</dd>
+        </dl>
+      </section>
+
+      <section class="adr">
+        <h3 id="adr-020">020 · Step status map is exhaustive</h3>
+        <div class="adr-meta"><span class="badge done">Accepted</span></div>
+        <dl class="kv">
+          <dt>Context</dt><dd>In zod v4, <code>z.record(StepId, StepStatus)</code> requires every enum key.</dd>
+          <dt>Decision</dt><dd>Keep it exhaustive (every tooth tracks all nine steps) and create maps with <code>initialSteps()</code>.</dd>
+        </dl>
+      </section>
+
+      <h2 id="geometry">Geometry</h2>
+
+      <section class="adr">
+        <h3 id="adr-013">013 · Intaglio via normal offset + ray-cast envelope + radial meshing</h3>
+        <div class="adr-meta"><span class="badge planned">Accepted, Day 3</span> supersedes S1</div>
+        <dl class="kv">
+          <dt>Decision</dt><dd>Offset prep vertices along smoothed normals by a gap profile <code>gap(d)</code> (0 at the margin, ramping to the cement gap, plus the extra spacer beyond "distance to margin"). Take the upper envelope by ray-casting along the insertion axis, which also blocks out undercuts. Mesh it with radial profiles from each margin point toward the prep centre, resampled by arc length.</dd>
+          <dt>Consequences</dt><dd>The gap is correct on steep axial walls; the boundary is exactly the margin points (simple stitching); no triangulation library is needed. It requires a star-shaped projected margin, which is checked and warned about.</dd>
+        </dl>
+      </section>
+
+      <section class="adr">
+        <h3 id="adr-014">014 · Tool-radius compensation left to CAM</h3>
+        <div class="adr-meta"><span class="badge planned">Accepted, Day 3</span></div>
+        <dl class="kv">
+          <dt>Context</dt><dd>Dilating the whole intaglio by the tool radius (0.3–0.5 mm) would make every crown loose. Relief is only needed at sharp convex prep edges.</dd>
+          <dt>Decision</dt><dd>No compensation by default. Show an "unmillable" map (a morphological opening with the tool radius). Local relief domes are a stretch goal.</dd>
+        </dl>
+      </section>
+
+      <section class="adr">
+        <h3 id="adr-015">015 · Eight hand-annotated template teeth</h3>
+        <div class="adr-meta"><span class="badge planned">Accepted, Day 2–3</span></div>
+        <dl class="kv">
+          <dt>Context</dt><dd>Mining a library from 100 cases hides days of work: splitting outer from inner surfaces, and canonical frames.</dd>
+          <dt>Decision</dt><dd>Four posterior types × two jaws, mirrored for the other side (with flipped winding). Each cervical loop is resampled to a fixed N offline and matched to the margin by normalised arc length from a mesial start with enforced winding. RBF deformation with anchors on the occlusal third.</dd>
+          <dt>Consequences</dt><dd>Angle-based loop matching (which can twist the strip silently) is avoided; anatomy variety is limited until a learned generator exists.</dd>
+        </dl>
+      </section>
+
+      <h2 id="backend-and-infra">Backend and infrastructure</h2>
+
+      <section class="adr">
+        <h3 id="adr-009">009 · Self-hosted portable backend on OCI; Supabase dropped</h3>
+        <div class="adr-meta"><span class="badge done">Accepted</span> supersedes S2</div>
+        <dl class="kv">
+          <dt>Context</dt><dd>The user wants to move between providers easily and already has an OCI VM (12 vCPU, 6 GB RAM, Docker, HTTPS).</dd>
+          <dt>Decision</dt><dd>Node + Hono API with ports and adapters; Postgres, Caddy and the API in Docker Compose with memory limits; only open protocols.</dd>
+          <dt>Consequences</dt><dd>Moving to managed Postgres, S3, OIDC or Kubernetes is a config or adapter change (see the migration table in <a href="./deployment.html">Deployment</a>). We operate backups ourselves.</dd>
+        </dl>
+      </section>
+
+      <section class="adr">
+        <h3 id="adr-010">010 · Better Auth in our own Postgres, behind AuthPort</h3>
+        <div class="adr-meta"><span class="badge done">Accepted</span></div>
+        <dl class="kv">
+          <dt>Decision</dt><dd>Better Auth (a TypeScript library) with the organisation plugin; its tables are generated into our Drizzle migration; each new user gets a personal organisation.</dd>
+          <dt>Alternatives</dt><dd>Keycloak (heavy on 6 GB of RAM); a hosted IdP (lock-in); hand-rolled JWTs (security risk).</dd>
+          <dt>Consequences</dt><dd>Swapping to an external OIDC provider means replacing one adapter. Gotcha: Better Auth ignores its base-path option when the URL has a path, so the adapter sets the full URL and re-adds the sub-path.</dd>
+        </dl>
+      </section>
+
+      <section class="adr">
+        <h3 id="adr-011">011 · Blob storage: fs by default, S3 adapter ready; uploads stream through the API</h3>
+        <div class="adr-meta"><span class="badge done">Accepted</span></div>
+        <dl class="kv">
+          <dt>Decision</dt><dd>A <code>BlobStore</code> port with <code>fs</code> (Docker volume) and <code>s3</code> (any S3-compatible service) adapters. Uploads stream through the API with the size cap and sha256 enforced while streaming; gzip is decompressed only for hashing.</dd>
+          <dt>Alternatives</dt><dd>Presigned direct uploads (faster at scale, but tied to each provider's presign behaviour).</dd>
+          <dt>Consequences</dt><dd>Same contract test suite for both adapters. Measured: a 150 MB upload kept the API at about 112 MiB.</dd>
+        </dl>
+      </section>
+
+      <section class="adr">
+        <h3 id="adr-012">012 · Postgres + Drizzle with committed SQL migrations; no Redis</h3>
+        <div class="adr-meta"><span class="badge done">Accepted</span></div>
+        <dl class="kv">
+          <dt>Decision</dt><dd>Drizzle schema → generated plain-SQL migrations under <code>apps/api/drizzle/</code>, run on start. Background jobs, when needed, use pg-boss on the same Postgres.</dd>
+          <dt>Consequences</dt><dd>One stateful service to back up; any managed Postgres works.</dd>
+        </dl>
+      </section>
+
+      <section class="adr">
+        <h3 id="adr-016">016 · Public URL is configurable; dental.cognifuze.com at root</h3>
+        <div class="adr-meta"><span class="badge done">Accepted</span> replaces the earlier choice of cognifuze.com/dental</div>
+        <dl class="kv">
+          <dt>Decision</dt><dd><code>PUBLIC_URL</code> drives everything. Sub-path mounting still works if <code>BASE_PATH</code> / <code>VITE_BASE_PATH</code> are set by hand (Caddy strips the prefix). Since 2026-10-11 the deployment sits behind Nginx Proxy Manager, which reaches our Caddy as <code>dcad-proxy:80</code> on the external Docker network <code>shared_net</code>.</dd>
+        </dl>
+      </section>
+
+      <section class="adr">
+        <h3 id="adr-017">017 · arm64 container images</h3>
+        <div class="adr-meta"><span class="badge done">Accepted</span></div>
+        <dl class="kv"><dt>Decision</dt><dd>The VM is aarch64, so images are built natively for <code>linux/arm64</code> (node:22-slim, postgres:17, caddy:2).</dd></dl>
+      </section>
+
+      <section class="adr">
+        <h3 id="adr-018">018 · SeaweedFS for S3 contract tests</h3>
+        <div class="adr-meta"><span class="badge done">Accepted</span> <span class="badge deviation">Deviation from plan</span></div>
+        <dl class="kv"><dt>Context</dt><dd>The plan named MinIO, but the <code>minio/minio</code> image is no longer on Docker Hub.</dd>
+          <dt>Decision</dt><dd>Run the S3 adapter's contract tests against SeaweedFS. The production S3 adapter is unchanged.</dd></dl>
+      </section>
+
+      <section class="adr">
+        <h3 id="adr-019">019 · Shared package consumed as TypeScript source</h3>
+        <div class="adr-meta"><span class="badge done">Accepted</span></div>
+        <dl class="kv"><dt>Decision</dt><dd><code>@dcad/shared</code> exports <code>src/index.ts</code> directly; Vite compiles it for the web and tsup bundles it into the API build.</dd>
+          <dt>Consequences</dt><dd>No build step or project references to maintain; imports are extensionless (bundler resolution).</dd></dl>
+      </section>
+
+      <h2 id="superseded">Superseded</h2>
+
+      <section class="adr">
+        <h3 id="adr-s1">S1 · Heightfield intaglio with spherical dilation</h3>
+        <div class="adr-meta"><span class="badge deviation">Superseded by 013</span></div>
+        <p>The first draft rasterised the prep along the insertion axis at 0.05 mm and applied cement gap and tool radius
+          by spherical dilation. Review found that a 0.02–0.04 mm gap sphere is smaller than one grid cell, so the
+          dilation degenerates to a vertical shift. On a 5° axial wall that yields an effective gap of only about
+          0.04 × sin 5° ≈ 0.003 mm, and the crown would not seat. Dilating by the tool radius would also over-cut the
+          entire intaglio.</p>
+      </section>
+
+      <section class="adr">
+        <h3 id="adr-s2">S2 · Supabase for auth, database and storage</h3>
+        <div class="adr-meta"><span class="badge deviation">Superseded by 009</span></div>
+        <p>Chosen first for speed. Dropped at the user's request for easy migration, and because their own VM was
+          available. Supabase's free-tier 50 MB file cap would also have clashed with 50 MB+ scans.</p>
+      </section>
+
+      <section class="adr">
+        <h3 id="adr-s3">S3 · Server-side LLM tool loop</h3>
+        <div class="adr-meta"><span class="badge deviation">Superseded by 008</span></div>
+        <p>Would have required streaming tool calls back to the browser, where geometry and preview live.</p>
+      </section>
+
+      <section class="adr">
+        <h3 id="adr-s4">S4 · Hand-written invert() per command</h3>
+        <div class="adr-meta"><span class="badge deviation">Superseded by 005</span></div>
+        <p>Error-prone and about 20 inverses to write. Snapshots make undo, agent batches and replay uniform.</p>
+      </section>
+
+      <nav class="page-nav" id="page-nav" aria-label="Previous and next page"></nav>
+      <footer class="page-footer">Add new decisions at the end of their section and supersede rather than edit.
+        Last updated 2026-10-03.</footer>
+    </main>
+
+    <aside class="toc" id="toc" aria-label="On this page"></aside>
+  </div>
+  <script src="./assets/docs.js"></script>
+</body>
+</html>

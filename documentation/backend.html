@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en" data-root=".">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Backend API · DentalCAD docs</title>
+  <meta name="description" content="How the DentalCAD API is built: ports and adapters, request lifecycle, endpoints, auth and organizations, streamed uploads, versions, the LLM proxy, the data model and configuration.">
+  <link rel="stylesheet" href="./assets/docs.css">
+</head>
+<body data-page="backend.html">
+  <header class="topbar">
+    <button class="icon-btn menu-btn" id="menu-toggle" aria-expanded="false" aria-controls="sidebar">☰</button>
+    <a class="brand" href="./index.html">DentalCAD <small>design docs</small></a>
+    <span class="spacer"></span>
+    <button class="icon-btn" id="theme-toggle" type="button">☾ Dark</button>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation"></nav>
+
+    <main>
+      <div class="eyebrow"><span class="badge depth">L3 · Deep dive</span> <span>For: backend engineers, reviewers, ops</span></div>
+      <h1>Backend API</h1>
+      <p class="lede">The API in <code>apps/api</code> is a small Node 22 + Hono service. It handles sign-in and labs (organizations), stores scans and design versions, and proxies LLM calls. Every external system sits behind a port, so the backend can leave this VM by changing configuration rather than code.</p>
+
+      <div class="tldr">
+        <strong>In short</strong>
+        <ul>
+          <li><strong>Ports and adapters.</strong> Domain code (<code>src/domain</code>) never imports infrastructure. Postgres, file storage, auth, LLM providers, jobs and rate limiting are adapters chosen by env vars at startup in <code>src/main.ts</code>. <span class="badge done">Built · Day 1</span></li>
+          <li><strong>Every query is scoped to the caller's organization (lab).</strong> A user from another lab gets <code>404</code>, never someone else's data. Each new user gets a personal lab automatically.</li>
+          <li><strong>Scan uploads are streamed, not buffered.</strong> The size limit and the sha256 integrity check (of the decompressed bytes for gzip) are both enforced while streaming. On any failure the stored blob is deleted.</li>
+          <li><strong>Design saves use optimistic concurrency.</strong> If someone else saved first, the API answers <code>409</code>.</li>
+          <li><strong>The LLM proxy holds the keys and picks provider and model.</strong> The browser runs the agent loop and cannot choose a model. Responses are non-streaming for now. <span class="badge planned">SSE streaming planned</span></li>
+        </ul>
+      </div>
+
+      <h2>Ports and adapters</h2>
+      <p>The API has three layers. HTTP routes validate input and call domain services. Domain services enforce the rules (org scoping, integrity, concurrency) and talk only to <em>ports</em>, which are TypeScript interfaces in <code>src/ports</code>. Adapters in <code>src/adapters</code> implement the ports and are wired together once in <code>src/main.ts</code>, and again in the tests with test doubles or containers via <code>createApp(deps)</code>.</p>
+
+      <figure class="diagram">
+        <div class="stack">
+          <div class="layer"><div class="layer-name">HTTP<small>src/http</small></div>
+            <div class="parts">
+              <div class="node">createApp(deps)<small>Hono app factory</small></div>
+              <div class="node">routes/*<small>cases · files · llm · jobs · events</small></div>
+              <div class="node">errors.ts<small>DomainError → ApiError</small></div>
+              <div class="node">validate.ts<small>zod body / query</small></div>
+            </div></div>
+          <div class="layer"><div class="layer-name">Domain<small>src/domain — no infra imports</small></div>
+            <div class="parts">
+              <div class="node accent">CaseService</div>
+              <div class="node accent">FileService<small>stream + verify</small></div>
+              <div class="node accent">VersionService<small>optimistic save</small></div>
+              <div class="node accent">LlmService<small>route + limit + usage</small></div>
+              <div class="node accent">ProposalEventService</div>
+            </div></div>
+          <div class="layer"><div class="layer-name">Ports<small>src/ports — interfaces</small></div>
+            <div class="parts">
+              <div class="node">Repositories</div>
+              <div class="node">BlobStore</div>
+              <div class="node">AuthPort</div>
+              <div class="node">LlmProvider</div>
+              <div class="node">RateLimiter</div>
+              <div class="node">JobQueue</div>
+            </div></div>
+          <div class="layer"><div class="layer-name">Adapters<small>src/adapters</small></div>
+            <div class="parts">
+              <div class="node ok">db/ (Drizzle + pg)</div>
+              <div class="node ok">blob/fs · blob/s3</div>
+              <div class="node ok">auth/better-auth</div>
+              <div class="node ok">llm/anthropic · openai · mock</div>
+              <div class="node ok">rate-limit/memory</div>
+              <div class="node ok">jobs/inline<small>answers 501</small></div>
+            </div></div>
+        </div>
+        <figcaption>Figure — each layer depends only on the layer below it. Swapping an adapter (e.g. fs → S3, Better Auth → external OIDC) does not touch domain or HTTP code.</figcaption>
+      </figure>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Port</th><th>Adapters today</th><th>Selected by</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><code>Repositories</code><br><small>cases, files, versions, proposalEvents, llmUsage, health</small></td><td>Drizzle ORM on <code>pg</code> (<code>adapters/db/repos.ts</code>)</td><td><code>DATABASE_URL</code></td><td><span class="badge done">Built</span></td></tr>
+          <tr><td><code>BlobStore</code><br><small>put / get / head / delete, streamed</small></td><td><code>FsBlobStore</code> (atomic temp file + rename, key-safety checks)<br><code>S3BlobStore</code> (<code>@aws-sdk/lib-storage</code> multipart, 8 MB parts)</td><td><code>BLOB_DRIVER=fs|s3</code> + <code>BLOB_FS_ROOT</code> or <code>S3_*</code></td><td><span class="badge done">Built</span></td></tr>
+          <tr><td><code>AuthPort</code><br><small>handler(), resolve(headers)</small></td><td>Better Auth + organization plugin (<code>adapters/auth/better-auth.ts</code>)</td><td>Code-level swap (one adapter file); <code>AUTH_SECRET</code>, <code>PUBLIC_URL</code>, <code>TRUSTED_ORIGINS</code></td><td><span class="badge done">Built</span></td></tr>
+          <tr><td><code>LlmProvider</code></td><td><code>AnthropicProvider</code>, <code>OpenAiProvider</code>, <code>MockLlmProvider</code></td><td><code>LLM_*_PROVIDER</code>, else whichever API key is present, else mock</td><td><span class="badge done">Built</span></td></tr>
+          <tr><td><code>RateLimiter</code></td><td><code>MemoryRateLimiter</code> (fixed 60 s window per user)</td><td><code>LLM_RATE_LIMIT_PER_MIN</code></td><td><span class="badge done">Built</span> single instance only</td></tr>
+          <tr><td><code>JobQueue</code></td><td><code>InlineJobQueue</code> (always <code>501 not_implemented</code>)</td><td>—</td><td><span class="badge future">pg-boss / SQS post-MVP</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <div class="callout decision"><strong>Decision</strong>Backend portability was a hard requirement (Supabase was dropped). The only protocols the app depends on are SQL (Postgres), the S3 API, HTTP/JSON and cookie sessions. See the <a href="./decisions.html">decision log</a> and the migration table in <a href="./deployment.html">Deployment &amp; operations</a>.</div>
+
+      <h2>Request lifecycle</h2>
+      <p>Every request passes through the same middleware chain in <code>src/http/app.ts</code>:</p>
+      <figure class="diagram">
+        <div class="flow">
+          <div class="node">Request id<small>X-Request-Id in/out</small></div><div class="arrow"></div>
+          <div class="node">Child logger<small>pino, JSON</small></div><div class="arrow"></div>
+          <div class="node">Auth guard<small>/api/* except auth, health</small></div><div class="arrow"></div>
+          <div class="node accent">Org context<small>{userId, orgId, role}</small></div><div class="arrow"></div>
+          <div class="node">Body limit + zod<small>JSON routes</small></div><div class="arrow"></div>
+          <div class="node">Domain service<small>org-scoped</small></div><div class="arrow"></div>
+          <div class="node ok">JSON / stream<small>or ApiError</small></div>
+        </div>
+        <figcaption>Figure — the access-log line (method, path, status, ms) is written after the handler finishes. <code>/healthz</code> is not logged.</figcaption>
+      </figure>
+      <ol>
+        <li><strong>Request id.</strong> An incoming <code>X-Request-Id</code> header (first 64 characters) is reused, otherwise a UUID is generated. It is echoed in the response header and attached to every log line for that request.</li>
+        <li><strong>Unauthenticated routes.</strong> <code>GET /healthz</code> and <code>GET /api/healthz</code> ping the database. <code>/api/auth/*</code> (GET and POST) is handed to Better Auth unchanged.</li>
+        <li><strong>Auth guard.</strong> Everything else under <code>/api/*</code> calls <code>AuthPort.resolve(headers)</code>. No session gives <code>401 unauthorized</code>. A signed-in user with no organization gives <code>403 no_organization</code>. Otherwise the context <code>{userId, orgId, role}</code> is stored on the request and added to the logger.</li>
+        <li><strong>Validation.</strong> JSON bodies go through <code>bodyLimit(MAX_JSON_BYTES)</code> (default 10 MB) and the zod schemas from <code>@dcad/shared</code> (<code>readJson</code>, <code>readQuery</code>). A failure gives <code>400 validation_error</code> with a per-field issue list.</li>
+        <li><strong>Org scoping.</strong> Every repository method takes <code>orgId</code> and filters on it. A case or file from another org is indistinguishable from a missing one (<code>404</code>).</li>
+        <li><strong>Errors.</strong> Domain code throws <code>DomainError(code, message, details?)</code>. <code>handleError</code> maps it to an HTTP status and the shared <code>ApiError</code> shape <code>{ error: { code, message, details? } }</code>. Unknown routes return <code>404 not_found</code> in the same shape, and unexpected exceptions return <code>500 internal_error</code> (logged with the request id).</li>
+      </ol>
+
+      <details class="deep">
+        <summary>Deeper detail: error code → HTTP status</summary>
+        <div class="body">
+          <div class="table-wrap"><table>
+            <thead><tr><th>Code</th><th>Status</th><th>Typical cause</th></tr></thead>
+            <tbody>
+              <tr><td><code>validation_error</code></td><td>400</td><td>zod failure, non-JSON body, <code>doc.caseId</code> ≠ URL case</td></tr>
+              <tr><td><code>invalid_encoding</code></td><td>400</td><td>Upload declared <code>encoding=gzip</code> but the bytes are not valid gzip</td></tr>
+              <tr><td><code>unauthorized</code></td><td>401</td><td>No valid session cookie</td></tr>
+              <tr><td><code>no_organization</code></td><td>403</td><td>Signed in, but not a member of any organization</td></tr>
+              <tr><td><code>not_found</code></td><td>404</td><td>Missing, or belongs to another org</td></tr>
+              <tr><td><code>conflict</code></td><td>409</td><td>Version save with a stale <code>parentVersion</code> (details carry <code>currentVersion</code>)</td></tr>
+              <tr><td><code>payload_too_large</code></td><td>413</td><td>Upload over <code>MAX_UPLOAD_BYTES</code>, decompressed size over 20× that, or JSON over <code>MAX_JSON_BYTES</code></td></tr>
+              <tr><td><code>integrity_error</code></td><td>422</td><td>sha256 of the uploaded (decompressed) content ≠ the declared one (details carry <code>expected</code> and <code>actual</code>)</td></tr>
+              <tr><td><code>rate_limited</code></td><td>429</td><td>LLM calls over the per-minute limit; sets <code>Retry-After</code></td></tr>
+              <tr><td><code>not_implemented</code></td><td>501</td><td>Server-side proposer jobs (not available yet)</td></tr>
+              <tr><td><code>upstream_error</code></td><td>502</td><td>The LLM provider call failed</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </details>
+
+      <h2>Endpoints</h2>
+      <p>All paths are as the API sees them. A reverse proxy strips any public sub-path first, so the API always serves <code>/api/*</code>. Request and response types are the zod schemas in <code>packages/shared/src/api.ts</code> (see <a href="./reference/schemas.html">Data contracts</a>). "Session" means a Better Auth session cookie for a user who belongs to an org.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Method &amp; path</th><th>Auth</th><th>Request</th><th>Response</th><th>Errors</th></tr></thead>
+        <tbody>
+          <tr><td><code>GET /healthz</code><br><code>GET /api/healthz</code></td><td>none</td><td>—</td><td><code>{"ok":true}</code> 200, or <code>{"ok":false}</code> 503 when the DB ping fails</td><td>—</td></tr>
+          <tr><td><code>GET|POST /api/auth/*</code></td><td>none</td><td>Better Auth routes, e.g. <code>POST /api/auth/sign-up/email</code>, <code>POST /api/auth/sign-in/email</code>, <code>GET /api/auth/get-session</code>, organization plugin routes</td><td>Better Auth responses + <code>Set-Cookie</code></td><td>Better Auth's own</td></tr>
+          <tr><td><code>GET /api/me</code></td><td>session</td><td>—</td><td><code>Me</code> <code>{userId, orgId, role}</code></td><td>401, 403</td></tr>
+          <tr><td><code>GET /api/cases</code></td><td>session</td><td>—</td><td><code>CaseSummary[]</code> (most recently updated first, max 200)</td><td>401</td></tr>
+          <tr><td><code>POST /api/cases</code></td><td>session</td><td><code>CreateCaseRequest</code> <code>{setup}</code></td><td>201 case record (<code>CaseSummary</code> + <code>setup</code>)</td><td>400, 413</td></tr>
+          <tr><td><code>GET /api/cases/:id</code></td><td>session</td><td>—</td><td><code>CaseDetail</code> (summary + <code>setup</code> + <code>files</code>)</td><td>404</td></tr>
+          <tr><td><code>PATCH /api/cases/:id</code></td><td>session</td><td><code>UpdateCaseRequest</code> <code>{status?, setup?}</code></td><td>case record</td><td>400, 404</td></tr>
+          <tr><td><code>POST /api/cases/:id/files</code></td><td>session</td><td>Raw bytes as the body; query <code>UploadFileQuery</code>: <code>kind</code>, <code>name</code>, <code>sha256</code> (of uncompressed bytes), <code>encoding=identity|gzip</code></td><td>201 <code>CaseFile</code></td><td>400, 404, 413, 422</td></tr>
+          <tr><td><code>GET /api/cases/:id/files</code></td><td>session</td><td>—</td><td><code>CaseFile[]</code></td><td>404</td></tr>
+          <tr><td><code>GET /api/files/:id</code></td><td>session</td><td>—</td><td>Streamed bytes; <code>Content-Encoding: gzip</code> when stored gzipped</td><td>404</td></tr>
+          <tr><td><code>POST /api/cases/:id/versions</code></td><td>session</td><td><code>SaveVersionRequest</code> <code>{parentVersion, author, doc}</code></td><td>201 <code>DesignVersion</code></td><td>400, 404, 409</td></tr>
+          <tr><td><code>GET /api/cases/:id/versions/latest</code></td><td>session</td><td>—</td><td><code>DesignVersion</code></td><td>404 if none saved yet</td></tr>
+          <tr><td><code>POST /api/llm/messages</code></td><td>session</td><td><code>LlmRequest</code> <code>{purpose, system?, messages, tools?, maxTokens}</code></td><td><code>LlmResponse</code> <code>{provider, model, content, stopReason, usage}</code></td><td>400, 429, 501, 502</td></tr>
+          <tr><td><code>POST /api/proposal-events</code></td><td>session</td><td><code>ProposalEvent</code></td><td>201 <code>{id}</code></td><td>400, 404 (case not in org)</td></tr>
+          <tr><td><code>POST /api/jobs</code></td><td>session</td><td><code>ProposalJobRequest</code> (validated first)</td><td>would be 202 <code>ProposalJobStatus</code></td><td>400, then <strong>501</strong> today</td></tr>
+          <tr><td><code>GET /api/jobs/:id</code><br><code>DELETE /api/jobs/:id</code></td><td>session</td><td>—</td><td>—</td><td><strong>501</strong> today</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout note"><strong>Note</strong><code>GET /api/cases/:id/files</code> exists in the code but is not listed in <code>specs/plan.md</code>; it returns the same list as the <code>files</code> field of <code>CaseDetail</code>. OpenAPI generation from the zod schemas is planned but not built. <span class="badge planned">Planned</span></div>
+
+      <h2>Auth and organizations</h2>
+      <p>Authentication is <strong>Better Auth</strong>, a TypeScript library rather than a hosted service. It runs inside the API with email/password sign-in (minimum password length 10) and its <strong>organization</strong> plugin. Its tables (<code>user</code>, <code>session</code>, <code>account</code>, <code>verification</code>, <code>organization</code>, <code>member</code>, <code>invitation</code>) live in our own Postgres and are generated into the same Drizzle migration as the app tables (<code>pnpm --filter @dcad/api auth:schema</code>).</p>
+      <ul>
+        <li><strong>A personal lab on sign-up.</strong> A <code>user.create.after</code> hook creates an organization named <code>&lt;name&gt;'s lab</code> (slug <code>lab-&lt;userId&gt;</code>) with the user as owner, so every row is org-scoped from the first case.</li>
+        <li><strong>Active organization.</strong> A <code>session.create.before</code> hook sets the session's <code>activeOrganizationId</code> to the user's first membership. <code>resolve()</code> re-checks that the user is still a member of the active org, which covers a stale session after removal from an org. If not, it falls back to the first membership, or returns "no organization" (403).</li>
+        <li><strong>Cookies.</strong> Session cookies are scoped to <code>Path=BASE_PATH</code> (or <code>/</code> at the root). They are marked <code>Secure</code> when <code>NODE_ENV=production</code> and <code>PUBLIC_URL</code> is https. Trusted origins are the <code>PUBLIC_URL</code> origin plus <code>TRUSTED_ORIGINS</code> (e.g. the Vite dev server).</li>
+        <li><strong>Rate limiting of auth routes</strong> uses Better Auth's built-in limiter. Its default turns it on only in production mode, which Compose sets (<code>NODE_ENV=production</code>).</li>
+      </ul>
+      <details class="deep">
+        <summary>Deeper detail: sub-paths and the Better Auth <code>baseURL</code> gotcha</summary>
+        <div class="body">
+          <p>The app can be mounted at a domain root (primary: <code>https://dental.cognifuze.com</code>) or under a sub-path (e.g. <code>https://example.com/dental</code>). Caddy strips the sub-path, so requests reach the API as <code>/api/auth/...</code>.</p>
+          <p>Better Auth ignores its <code>basePath</code> option when <code>baseURL</code> already contains a path, and routes on <code>baseURL</code>'s pathname instead. The adapter therefore:</p>
+          <ol>
+            <li>passes <code>baseURL = PUBLIC_URL + "/api/auth"</code>, so every link Better Auth generates is a correct public URL, and</li>
+            <li>in <code>handler()</code>, re-adds the stripped <code>BASE_PATH</code> to the request URL before handing it to Better Auth (body streamed with <code>duplex: 'half'</code>).</li>
+          </ol>
+          <p>The integration test <em>"accepts proxy-stripped auth requests and scopes cookies to the sub-path"</em> covers this.</p>
+        </div>
+      </details>
+      <div class="callout decision"><strong>Swapping auth later</strong>Moving to an external OIDC provider (Keycloak, Auth0, Cognito, OCI Identity Domains) means writing one new <code>AuthPort</code> adapter that resolves <code>{userId, orgId, role}</code> from a token. Routes and domain code do not change.</div>
+
+      <h2>Scan upload and download</h2>
+      <p>Intraoral scans are large: tens of MB as STL, and the limit is 200 MB by default. The browser gzips the scan, computes the sha256 of the <em>uncompressed</em> bytes, and posts the raw body. The API never holds the whole file in memory.</p>
+      <figure class="diagram">
+        <ol class="sequence">
+          <li><span class="actors">Browser → API</span><span><code>POST /api/cases/:id/files?kind=lower&amp;name=lower.stl&amp;sha256=&lt;hex&gt;&amp;encoding=gzip</code>, gzipped body</span></li>
+          <li><span class="actors">API → Repositories</span><span>Check the case belongs to the caller's org. If not, drain the body and return 404.</span></li>
+          <li><span class="actors">API (stream)</span><span><code>ByteLimit</code> counts stored bytes and aborts with 413 above <code>MAX_UPLOAD_BYTES</code></span></li>
+          <li><span class="actors">API (stream)</span><span><code>GunzipSha256Tap</code> passes the gzip bytes through unchanged while feeding a side gunzip into sha256. Decompressed output above 20× the upload limit aborts with 413 (gzip-bomb guard). Bad gzip gives 400 <code>invalid_encoding</code>. For <code>identity</code>, <code>Sha256Tap</code> hashes the bytes directly.</span></li>
+          <li><span class="actors">API → BlobStore</span><span><code>put("orgs/&lt;org&gt;/cases/&lt;case&gt;/&lt;fileId&gt;")</code>, streamed (fs: temp file + rename; S3: multipart upload)</span></li>
+          <li><span class="actors">API</span><span>Compare the digest with the declared sha256. On mismatch, <strong>delete the blob</strong> and return 422 <code>integrity_error</code>.</span></li>
+          <li><span class="actors">API → Repositories</span><span>Insert the <code>case_files</code> row (stored size, encoding, content type). If the insert fails, delete the blob.</span></li>
+          <li><span class="actors">API → Browser</span><span>201 <code>CaseFile</code></span></li>
+        </ol>
+        <figcaption>Figure — any failure at any stage deletes the partially stored blob, so storage never holds unverified files.</figcaption>
+      </figure>
+      <ul>
+        <li><strong>Download</strong> (<code>GET /api/files/:id</code>) streams the stored bytes with <code>Content-Type</code>, <code>Content-Length</code>, an RFC 6266 <code>Content-Disposition</code> with a UTF-8 file name, <code>ETag</code> and <code>X-Content-Sha256</code> (both the sha256), and <code>Cache-Control: private, max-age=31536000, immutable</code> (files are content-addressed). When stored gzipped, it adds <code>Content-Encoding: gzip</code>, so browsers decompress transparently.</li>
+        <li><strong>Content type</strong> is taken from the request only if it matches a safe <code>type/subtype</code> pattern, else <code>application/octet-stream</code>.</li>
+        <li><strong>Why through the API and not presigned URLs?</strong> It keeps every storage backend interchangeable (fs has no presigned URLs) and lets the API verify integrity. Presigned multipart uploads are a later scale optimization. <span class="badge future">Post-MVP</span></li>
+      </ul>
+      <div class="callout note"><strong>Measured</strong>In the backend builder's local Compose run (Apple Silicon Docker, not the VM), a 150 MB upload took about 1.1 s while the API process stayed at about 112 MiB, and a 210 MB upload got 413. In the Day 1 smoke test, the 50 MB synthetic 1M-triangle STL gzipped to about 23 MB, and the download's sha256 matched the original.</div>
+
+      <h2>Design versions and optimistic concurrency</h2>
+      <p>A case's design is saved as an immutable <code>DesignDocument</code> snapshot in <code>design_versions</code>. <code>cases.current_version</code> counts saved versions (0 = none yet).</p>
+      <ul>
+        <li>The client sends <code>parentVersion</code> = the version it started from. In one transaction, the repository runs a compare-and-swap: <code>UPDATE cases SET current_version = current_version + 1 WHERE org_id = ? AND id = ? AND current_version = parentVersion</code>, then inserts the new version row with the bumped number.</li>
+        <li>If no row was updated and the case exists, the save fails with <code>409 conflict</code> and <code>details.currentVersion</code>, so the client can reload and retry. If the case does not exist in the org, it gets <code>404</code>.</li>
+        <li><code>doc.caseId</code> must match the URL case (<code>400</code> otherwise). <code>author</code> is <code>user</code>, <code>agent</code> or <code>proposer</code>, so AI-made versions are distinguishable.</li>
+      </ul>
+
+      <h2>LLM proxy</h2>
+      <p>The agent tool loop runs in the browser, where the geometry and metrics live. The API is a thin, authenticated proxy so that keys never reach the browser and the server controls which model is used. See <a href="./ai-assist.html">AI assist</a> for the loop itself.</p>
+      <figure class="diagram">
+        <div class="flow">
+          <div class="node">Browser<small>LlmRequest (purpose)</small></div><div class="arrow"></div>
+          <div class="node">Rate limit<small>per user / minute</small></div><div class="arrow"></div>
+          <div class="node accent">Route by purpose<small>agent · rx-intake</small></div><div class="arrow"></div>
+          <div class="node">Adapter<small>anthropic · openai · mock</small></div><div class="arrow"></div>
+          <div class="node">Usage row<small>llm_usage</small></div><div class="arrow"></div>
+          <div class="node ok">LlmResponse</div>
+        </div>
+        <figcaption>Figure — the client names a <em>purpose</em>, never a provider or model.</figcaption>
+      </figure>
+      <ul>
+        <li><strong>Provider selection</strong> happens once at startup (<code>src/config.ts</code>), separately for <code>agent</code> and <code>rx-intake</code>:
+          <ol>
+            <li>An explicit <code>LLM_AGENT_PROVIDER</code> / <code>LLM_RX_PROVIDER</code> wins.</li>
+            <li>Otherwise Anthropic if <code>ANTHROPIC_API_KEY</code> is set, else OpenAI if <code>OPENAI_API_KEY</code> is set, else the mock.</li>
+            <li>A provider without its key falls back to the mock with a warning.</li>
+          </ol>
+        </li>
+        <li><strong>Models:</strong> defaults are <code>claude-sonnet-5</code> (Anthropic), <code>gpt-5</code> (OpenAI) and <code>mock-1</code>. <code>LLM_RX_MODEL</code> falls back to <code>LLM_AGENT_MODEL</code>. A configured model that doesn't match the chosen provider (a <code>claude-*</code> name on OpenAI or vice versa) is ignored with a warning. If <code>LLM_MODEL_ALLOWLIST</code> is set, startup fails when a configured model is not on it. The chosen provider and model are logged at startup; keys never are.</li>
+        <li><strong>Wire format:</strong> the shared, provider-agnostic <code>LlmRequest</code>/<code>LlmResponse</code> with text, image, <code>tool_call</code> and <code>tool_result</code> parts. The Anthropic adapter maps these to Messages API blocks (<code>tool_use</code>, <code>tool_result</code>, base64 images) and drops thinking or server-tool blocks from responses. The OpenAI adapter maps them to Chat Completions: tool results become <code>tool</code> messages and images become data URLs.</li>
+        <li><strong>OpenAI strict mode:</strong> tool schemas from <code>agentToolDefs()</code> are normalized by <code>toOpenAiStrictSchema</code>: every object gets <code>additionalProperties: false</code>, every property becomes required with originally-optional ones made nullable, and unsupported keywords are dropped. Nulls in responses are stripped again so the browser's zod validation sees "absent".</li>
+        <li><strong>Rate limit:</strong> <code>MemoryRateLimiter</code>, a fixed 60-second window per user, default 30 requests (<code>LLM_RATE_LIMIT_PER_MIN</code>). Over the limit returns <code>429</code> with <code>Retry-After</code>. It is in memory, so it is valid for one API instance only.</li>
+        <li><strong>Usage logging:</strong> every successful call inserts an <code>llm_usage</code> row (org, user, purpose, provider, model, input and output tokens). Provider failures become <code>502 upstream_error</code>.</li>
+        <li><strong>Mock provider:</strong> deterministic and offline. It echoes <code>mock: &lt;text&gt;</code>. If the last user text is <code>/tool &lt;name&gt; {json}</code> and that tool was offered, it returns a tool call, which lets the agent loop be tested without keys.</li>
+        <li><strong>Limits:</strong> up to 200 messages and 64 tools per request, <code>maxTokens</code> 1–16,000 (default 2048), system prompt up to 20,000 characters.</li>
+      </ul>
+      <div class="callout warn"><strong>Not built yet</strong>Responses come back in one piece. Server-sent-event streaming is planned <span class="badge planned">Planned</span>. Payloads must carry no patient identifiers: <code>CaseSetup.patientRef</code> is pseudonymous by design, but the proxy does not scrub content.</div>
+
+      <h2>Data model</h2>
+      <p>One Postgres database holds both the app tables (<code>src/adapters/db/schema.ts</code>) and the Better Auth tables (<code>auth-schema.ts</code>). Every app table carries <code>org_id</code> (FK to <code>organization</code>, cascade delete), and repositories always filter on it. The single migration is <code>apps/api/drizzle/0000_init.sql</code>.</p>
+      <figure class="diagram">
+        <div class="d-grid-2">
+          <div class="cluster"><span class="cluster-title">Auth (Better Auth)</span>
+            <div class="d-col">
+              <div class="node">user<small>id · name · email (unique) · email_verified</small></div>
+              <div class="node">session<small>token (unique) · user_id → user · active_organization_id · expires_at</small></div>
+              <div class="node">account<small>user_id → user · provider_id · password (hash)</small></div>
+              <div class="node accent">organization<small>id · name · slug (unique)</small></div>
+              <div class="node">member<small>organization_id → organization · user_id → user · role</small></div>
+              <div class="node">invitation · verification</div>
+            </div>
+          </div>
+          <div class="cluster accent"><span class="cluster-title">App (org-scoped)</span>
+            <div class="d-col">
+              <div class="node accent">cases<small>id · org_id · patient_ref · teeth (jsonb) · setup (jsonb) · status · current_version</small></div>
+              <div class="d-link down">1 : n</div>
+              <div class="node">case_files<small>id · org_id · case_id · kind · name · sha256 · bytes · content_type · encoding · blob_key</small></div>
+              <div class="node">design_versions<small>PK (case_id, version) · org_id · parent_version · author · doc (jsonb)</small></div>
+              <div class="node">proposal_events<small>id · org_id · case_id · fdi · step · proposer_id · action · event (jsonb)</small></div>
+              <div class="node">llm_usage<small>id · org_id · user_id · purpose · provider · model · input/output tokens</small></div>
+            </div>
+          </div>
+        </div>
+        <figcaption>Figure — every app table references <code>organization</code> through <code>org_id</code>; <code>created_by</code> / <code>user_id</code> reference <code>user</code>. Deleting an organization cascades to all its app rows. Deleting a case cascades to its files, versions and events (blob objects are not deleted automatically).</figcaption>
+      </figure>
+      <details class="deep">
+        <summary>Deeper detail: indexes and column notes</summary>
+        <div class="body">
+          <ul>
+            <li><code>cases_org_updated_idx (org_id, updated_at)</code> serves the case list.</li>
+            <li><code>case_files_org_case_idx (org_id, case_id)</code> and <code>case_files_sha_idx (sha256)</code>, the latter ready for de-duplication and training-bundle lookups.</li>
+            <li><code>proposal_events_org_case_idx (org_id, case_id)</code> and <code>proposal_events_step_idx (step, proposer_id)</code>, for flywheel analysis per proposer.</li>
+            <li><code>llm_usage_org_created_idx (org_id, created_at)</code>, for usage reports.</li>
+            <li><code>cases.teeth</code> is denormalized from <code>setup.teeth[].fdi</code> for listing. <code>design_versions.doc</code> and <code>proposal_events.event</code> store the full shared-schema JSON.</li>
+            <li><code>case_files.blob_key</code> is <code>orgs/&lt;org&gt;/cases/&lt;case&gt;/&lt;fileId&gt;</code> and is never returned to clients.</li>
+            <li>Schema changes: edit <code>schema.ts</code>, then <code>pnpm --filter @dcad/api db:generate</code>, and commit the new SQL. Migrations run on start when <code>MIGRATE_ON_START=true</code>.</li>
+          </ul>
+        </div>
+      </details>
+
+      <h2>Configuration reference</h2>
+      <p>The API reads environment variables, validated by zod in <code>src/config.ts</code>. Startup fails with a list of every invalid key. <strong>Empty values count as unset</strong>, so <code>OPENAI_API_KEY=</code> in <code>.env</code> is fine. In development the API reads the repo-root <code>.env</code> (<code>--env-file-if-exists=../../.env</code>). In Compose the <code>api</code> container loads the same file via <code>env_file</code>. Compose-only keys (<code>POSTGRES_*</code>, <code>VITE_BASE_PATH</code>) are covered in <a href="./deployment.html">Deployment &amp; operations</a>.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Variable</th><th>Default</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>NODE_ENV</code></td><td><code>development</code></td><td><code>production</code> in Compose: secure cookies (with https) and Better Auth rate limiting</td></tr>
+          <tr><td><code>HOST</code> / <code>PORT</code></td><td><code>0.0.0.0</code> / <code>3000</code></td><td>Listen address</td></tr>
+          <tr><td><code>LOG_LEVEL</code></td><td><code>info</code></td><td>pino level (<code>fatal</code> … <code>trace</code>, <code>silent</code>)</td></tr>
+          <tr><td><code>DATABASE_URL</code></td><td><em>required</em></td><td>Postgres URL. Compose builds it from <code>POSTGRES_*</code> (the password is embedded, so keep it hex/URL-safe)</td></tr>
+          <tr><td><code>MIGRATE_ON_START</code></td><td><code>true</code></td><td>Apply Drizzle migrations before serving</td></tr>
+          <tr><td><code>MIGRATIONS_DIR</code></td><td><code>&lt;cwd&gt;/drizzle</code></td><td><code>/app/drizzle</code> in the image</td></tr>
+          <tr><td><code>AUTH_SECRET</code></td><td><em>required</em>, ≥ 32 chars</td><td>Better Auth signing secret (<code>openssl rand -base64 48</code>)</td></tr>
+          <tr><td><code>PUBLIC_URL</code></td><td><code>http://localhost:8080</code></td><td>Public origin + optional sub-path, e.g. <code>https://dental.cognifuze.com</code>. Derives <code>BASE_PATH</code> and the trusted origin</td></tr>
+          <tr><td><code>TRUSTED_ORIGINS</code></td><td>empty</td><td>Extra allowed origins, comma separated (dev: <code>http://localhost:5173</code>)</td></tr>
+          <tr><td><code>BLOB_DRIVER</code></td><td><code>fs</code></td><td><code>fs</code> or <code>s3</code></td></tr>
+          <tr><td><code>BLOB_FS_ROOT</code></td><td><code>./data/blobs</code></td><td>fs root (<code>/data/blobs</code> volume in Compose)</td></tr>
+          <tr><td><code>S3_ENDPOINT</code></td><td>unset (AWS)</td><td>S3-compatible endpoint, e.g. OCI <code>https://&lt;ns&gt;.compat.objectstorage.&lt;region&gt;.oraclecloud.com</code></td></tr>
+          <tr><td><code>S3_REGION</code></td><td><code>us-east-1</code></td><td>Region</td></tr>
+          <tr><td><code>S3_BUCKET</code>, <code>S3_ACCESS_KEY_ID</code>, <code>S3_SECRET_ACCESS_KEY</code></td><td>required when <code>BLOB_DRIVER=s3</code></td><td>Bucket and credentials</td></tr>
+          <tr><td><code>S3_FORCE_PATH_STYLE</code></td><td><code>true</code></td><td>Path-style addressing (needed by most non-AWS stores)</td></tr>
+          <tr><td><code>MAX_UPLOAD_BYTES</code></td><td><code>209715200</code> (200 MB)</td><td>Stored-size cap per upload. Decompressed cap = 20× this</td></tr>
+          <tr><td><code>MAX_JSON_BYTES</code></td><td><code>10485760</code> (10 MB)</td><td>JSON body cap (design documents, LLM requests)</td></tr>
+          <tr><td><code>ANTHROPIC_API_KEY</code> / <code>OPENAI_API_KEY</code></td><td>unset</td><td>Provider keys (server-side only)</td></tr>
+          <tr><td><code>OPENAI_BASE_URL</code></td><td>unset</td><td>Optional OpenAI-compatible endpoint</td></tr>
+          <tr><td><code>LLM_AGENT_PROVIDER</code> / <code>LLM_RX_PROVIDER</code></td><td>auto</td><td><code>anthropic</code> | <code>openai</code> | <code>mock</code></td></tr>
+          <tr><td><code>LLM_AGENT_MODEL</code> / <code>LLM_RX_MODEL</code></td><td>provider default</td><td><code>claude-sonnet-5</code> / <code>gpt-5</code>. The rx model falls back to the agent model</td></tr>
+          <tr><td><code>LLM_MODEL_ALLOWLIST</code></td><td>unset</td><td>Comma-separated list. Startup fails if a configured model is not on it</td></tr>
+          <tr><td><code>LLM_RATE_LIMIT_PER_MIN</code></td><td><code>30</code></td><td>LLM requests per user per minute</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>Built vs planned</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Capability</th><th>Status</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Cases, files, versions, proposal events, <code>/api/me</code></td><td><span class="badge done">Built · Day 1</span></td><td>Covered by integration tests against real Postgres</td></tr>
+          <tr><td>Streamed upload with sha256 verification, gzip, size caps</td><td><span class="badge done">Built · Day 1</span></td><td>fs and s3 adapters share one contract test suite</td></tr>
+          <tr><td>LLM proxy (Anthropic, OpenAI, mock), usage, rate limit</td><td><span class="badge done">Built · Day 1</span></td><td>Non-streaming</td></tr>
+          <tr><td>Web app calling the API (login, upload to a case, save versions)</td><td><span class="badge planned">Planned · Day 2–5</span></td><td>The API is ready; the web app does not call it yet</td></tr>
+          <tr><td>Backup container (nightly <code>pg_dump</code> + blob archive off-box)</td><td><span class="badge planned">Planned · Day 5</span></td><td>Manual commands documented in <a href="./deployment.html">Deployment</a></td></tr>
+          <tr><td>SSE streaming for <code>/api/llm/messages</code></td><td><span class="badge planned">Planned</span></td><td>For responsive agent UX</td></tr>
+          <tr><td>OpenAPI document generated from zod</td><td><span class="badge planned">Planned</span></td><td>Mentioned in the plan, not built</td></tr>
+          <tr><td>Server-side proposer jobs (<code>JobQueue</code> on pg-boss, later SQS)</td><td><span class="badge future">Post-MVP</span></td><td>For <code>ml.*</code> proposers on a separate GPU host. Today <code>/api/jobs</code> answers 501</td></tr>
+          <tr><td>Presigned multipart uploads</td><td><span class="badge future">Post-MVP</span></td><td>Scale optimization; uploads go through the API today</td></tr>
+          <tr><td>Shared rate limiter for multiple API replicas</td><td><span class="badge future">Post-MVP</span></td><td>The memory limiter is per process</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout note"><strong>Tests</strong>36 tests in <code>apps/api/test</code>. 18 run without containers (<code>pnpm --filter @dcad/api test</code>). All 36 run with Postgres + SeaweedFS (S3) containers (<code>test:infra</code>). See <a href="./testing.html">Testing &amp; verification</a>.</div>
+
+      <nav class="page-nav" id="page-nav" aria-label="Previous and next page"></nav>
+      <footer class="page-footer">Source of truth: <code>apps/api/src</code>, <code>apps/api/drizzle/0000_init.sql</code>, <code>packages/shared/src/api.ts</code> and <code>specs/plan.md</code>. Last updated 2026-10-03.</footer>
+    </main>
+
+    <aside class="toc" id="toc" aria-label="On this page"></aside>
+  </div>
+  <script src="./assets/docs.js"></script>
+</body>
+</html>

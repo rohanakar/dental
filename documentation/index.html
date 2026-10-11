@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en" data-root=".">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Overview · DentalCAD docs</title>
+  <meta name="description" content="One-page overview of DentalCAD: a browser-based dental CAD for single posterior crowns, built to take AI assist.">
+  <link rel="stylesheet" href="./assets/docs.css">
+</head>
+<body data-page="index.html">
+  <header class="topbar">
+    <button class="icon-btn menu-btn" id="menu-toggle" aria-expanded="false" aria-controls="sidebar">☰</button>
+    <a class="brand" href="./index.html">DentalCAD <small>design docs</small></a>
+    <span class="spacer"></span>
+    <button class="icon-btn" id="theme-toggle" type="button">☾ Dark</button>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation"></nav>
+
+    <main>
+      <div class="eyebrow"><span class="badge depth">L0 · Overview</span> <span>For: everyone · 5-minute read</span></div>
+      <h1>DentalCAD</h1>
+      <p class="lede">A browser-based dental CAD, modelled on exocad, that designs <strong>a single posterior crown on a
+        prepared tooth from an intraoral scan</strong>. It is designed so AI assist (Dentbird-style one-click crowns,
+        plain-language edits, prescription intake) can plug in without a rewrite.</p>
+
+      <div class="tldr">
+        <strong>In short</strong>
+        <ul>
+          <li><strong>What:</strong> import scans → trace the margin → get a proposed crown → adjust it → export a
+            watertight STL for milling. All of it runs in the browser.</li>
+          <li><strong>Why this slice:</strong> single crowns and short bridges are most of a lab's daily work. Doing the
+            crown path well covers the most real use (the 80:20).</li>
+          <li><strong>AI's role:</strong> LLMs (Claude / OpenAI) orchestrate and interpret. Deterministic geometry now,
+            and specialised 3D models later, do the geometry. Both sit behind one contract.</li>
+          <li><strong>Hosting:</strong> self-hosted on an OCI VM (arm64) at <code>dental.cognifuze.com</code>, with no
+            vendor lock-in. Every external system sits behind a swappable adapter.</li>
+          <li><strong>Status:</strong> Day 1 of a one-week MVP is done: shared contracts, scan import and viewer,
+            backend, and deployment stack. The design steps (margin → crown → STL) arrive on Days 2–5 and AI on Day 6.</li>
+        </ul>
+      </div>
+
+      <div class="callout warn"><strong>This is a prototype</strong>A one-week build produces a working demo, not a
+        clinical product. Use de-identified data only. Dental CAD used on real patients is a regulated medical device
+        (FDA 510(k), EU MDR).</div>
+
+      <h2>How to read these docs</h2>
+      <p>The pages are layered by depth. Read down to the level you need. Each page opens with an "In short" box, and
+        the deepest material sits in collapsible "Deeper detail" blocks.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Depth</th><th>Page</th><th>Answers</th><th>For</th></tr></thead>
+        <tbody>
+          <tr><td><span class="badge depth">L0</span></td><td><a href="./index.html">Overview</a> (this page)</td><td>What is it, where is it, what's next?</td><td>Everyone</td></tr>
+          <tr><td><span class="badge depth">L1</span></td><td><a href="./primer.html">3D &amp; infra primer</a></td><td>New to 3D, GPUs or Caddy? The foundations in plain language, with analogies.</td><td>Developers new to 3D</td></tr>
+          <tr><td><span class="badge depth">Guide</span></td><td><a href="./demo-data.html">Demo mode &amp; sample data</a></td><td>How "Load demo scans" works; how to try your own scans safely</td><td>Anyone running the app</td></tr>
+          <tr><td><span class="badge depth">L1</span></td><td><a href="./product.html">Product &amp; workflow</a></td><td>What does a technician do with it? Which exocad features, which file types?</td><td>Product, domain experts</td></tr>
+          <tr><td><span class="badge depth">L2</span></td><td><a href="./architecture.html">System architecture</a></td><td>How do the parts fit, and which principles hold them together?</td><td>Engineers, tech leads</td></tr>
+          <tr><td><span class="badge depth">L3</span></td><td><a href="./frontend.html">Web app</a> · <a href="./geometry.html">Geometry</a> · <a href="./ai-assist.html">AI assist</a> · <a href="./backend.html">Backend</a> · <a href="./deployment.html">Deployment</a> · <a href="./testing.html">Testing</a></td><td>How does each part work, down to algorithms, endpoints and env vars?</td><td>Engineers working on that part</td></tr>
+          <tr><td><span class="badge depth">Ref</span></td><td><a href="./reference/schemas.html">Data contracts</a> · <a href="./decisions.html">Decision log</a> · <a href="./glossary.html">Glossary</a></td><td>Exact schemas, why we chose what we chose, what the terms mean</td><td>Look-up</td></tr>
+        </tbody>
+      </table></div>
+      <p>Status badges appear throughout: <span class="badge done">Built</span> means implemented and tested,
+        <span class="badge planned">Planned</span> is in the one-week MVP but not built yet,
+        <span class="badge future">Post-MVP</span> is roadmap only, and <span class="badge deviation">Deviation</span>
+        marks where the build differs from <code>specs/plan.md</code>.</p>
+
+      <h2>The product in one picture</h2>
+      <figure class="diagram">
+        <div class="flow">
+          <div class="node ok">Case setup<small>tooth, material</small></div><div class="arrow"></div>
+          <div class="node ok">Import scans<small>STL / PLY</small></div><div class="arrow"></div>
+          <div class="node plan">Tooth frame<small>axes, neighbours</small></div><div class="arrow"></div>
+          <div class="node plan">Margin line<small>live-wire</small></div><div class="arrow"></div>
+          <div class="node plan">Insertion axis<small>+ undercuts</small></div><div class="arrow"></div>
+          <div class="node plan">Crown proposal<small>template fit</small></div><div class="arrow"></div>
+          <div class="node plan">Adapt<small>occlusion, contacts</small></div><div class="arrow"></div>
+          <div class="node plan">Export<small>watertight STL</small></div>
+        </div>
+        <figcaption>Figure 1. The design wizard for one crown. Solid green = built; dashed = planned this week.
+          Case setup exists today as a data contract and API; its UI arrives with the web↔API work on Day 2.</figcaption>
+      </figure>
+
+      <h2>The system in one picture</h2>
+      <figure class="diagram">
+        <div class="d-grid-2">
+          <div class="cluster accent"><span class="cluster-title">Browser</span>
+            <div class="d-col">
+              <div class="node">React UI<small>wizard, panels, AI chat</small></div>
+              <div class="node accent">three.js viewer<small>render-on-demand</small></div>
+              <div class="node accent">Geometry workers<small>import, BVH, algorithms</small></div>
+              <div class="node plan">AI agent loop<small>tool calls → commands</small></div>
+            </div>
+          </div>
+          <div class="cluster"><span class="cluster-title">OCI VM · dental.cognifuze.com</span>
+            <div class="d-col">
+              <div class="node">nginx (existing)<small>TLS</small></div>
+              <div class="node">Caddy<small>static app + /api</small></div>
+              <div class="node accent">API<small>Node + Hono, ports &amp; adapters</small></div>
+              <div class="d-row">
+                <div class="node">Postgres 17<small>cases, versions, auth</small></div>
+                <div class="node">Blob store<small>scans (fs / S3)</small></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="d-link">HTTPS: scans, design versions, LLM proxy</div>
+        <div class="d-row">
+          <div class="node ext">Anthropic / OpenAI<small>keys stay on the server</small></div>
+          <div class="node future">ML service on a GPU host<small>post-MVP, same Proposer contract</small></div>
+          <div class="node ext">CAM / mill<small>consumes exported STL</small></div>
+        </div>
+        <figcaption>Figure 2. Heavy geometry runs in the browser, which keeps the server small. The server stores data,
+          handles login, and proxies LLM calls.</figcaption>
+      </figure>
+
+      <h2>Status at a glance</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Area</th><th>Status</th><th>What exists / what's next</th></tr></thead>
+        <tbody>
+          <tr><td>Shared contracts</td><td><span class="badge done">Built · Day 1</span></td><td>zod schemas for the design document, commands (also the LLM tools), Proposer jobs, events, the LLM wire format and REST DTOs. <a href="./reference/schemas.html">Reference</a></td></tr>
+          <tr><td>Scan import + viewer</td><td><span class="badge done">Built · Day 1</span></td><td>STL/PLY parsing, cleanup, weld and BVH in a worker; viewer with cursor-centric orbit, views, matcaps and opacity. 1M triangles are ready in about 1 s in the browser (measured). <a href="./frontend.html">Web app</a></td></tr>
+          <tr><td>Backend API</td><td><span class="badge done">Built · Day 1</span></td><td>Auth with organisations, cases, streamed uploads with sha256 checks, versions, LLM proxy (Anthropic/OpenAI/mock). <a href="./backend.html">Backend</a></td></tr>
+          <tr><td>Deployment</td><td><span class="badge done">Built · Day 1</span></td><td>arm64 Compose stack, deploy script, nginx and TLS modes. Verified locally with a 10-check smoke test. <a href="./deployment.html">Deployment</a></td></tr>
+          <tr><td>Web ↔ API (login, upload to case)</td><td><span class="badge planned">Planned · Day 2</span></td><td>The UI doesn't call the API yet.</td></tr>
+          <tr><td>Design steps</td><td><span class="badge planned">Planned · Days 2–5</span></td><td>Tooth frame, margin, axis, intaglio, crown fit, adapt, export. <a href="./geometry.html">Geometry</a></td></tr>
+          <tr><td>AI layer</td><td><span class="badge planned">Planned · Day 6</span></td><td>Proposers, one-click orchestrator, LLM agent, Rx intake, correction logging. <a href="./ai-assist.html">AI assist</a></td></tr>
+          <tr><td>Specialised ML models</td><td><span class="badge future">Post-MVP</span></td><td>Segmentation, margin detection and crown generation, trained on the in-house cases.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>The week</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Day</th><th>Focus</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>0</td><td>Golden cases, VM details, template annotation starts</td><td><span class="badge deviation">Waiting on data</span></td></tr>
+          <tr><td>1</td><td>Monorepo, contracts, backend deployed, import + viewer</td><td><span class="badge done">Done</span></td></tr>
+          <tr><td>2</td><td>Case setup, tooth frame, live-wire margin, insertion axis, web↔API, headless runner</td><td><span class="badge planned">Next</span></td></tr>
+          <tr><td>3</td><td>Walking skeleton: intaglio, rigid template, stitch, STL export, colour maps</td><td><span class="badge planned">Planned</span></td></tr>
+          <tr><td>4</td><td>RBF fit, thickness constraint, colour maps, gizmo, snapshot undo</td><td><span class="badge planned">Planned</span></td></tr>
+          <tr><td>5</td><td>Adapt, full export validation, save/load, backups</td><td><span class="badge planned">Planned</span></td></tr>
+          <tr><td>6</td><td>AI layer (sculpt if time)</td><td><span class="badge planned">Planned</span></td></tr>
+          <tr><td>7</td><td>Golden-case regression, perf, deploy, demo</td><td><span class="badge planned">Planned</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>Five decisions that shape everything</h2>
+      <ol>
+        <li><strong>Every change is a typed command on a typed document.</strong> The UI, the auto-design orchestrator
+          and the LLM agent share one path, so undo, replay, audit and AI safety come built in.</li>
+        <li><strong>LLMs never touch geometry directly.</strong> They call the same clinical commands a user can
+          ("move crown 0.2 mm mesial"), and every agent change is previewed and revertible.</li>
+        <li><strong>AI plugs in through one contract.</strong> A <em>Proposer</em> is an async, versioned job, whether
+          it's a browser algorithm today or a GPU model tomorrow.</li>
+        <li><strong>Geometry runs in the browser.</strong> Web Workers handle the heavy work, so the VM stays small and
+          interaction stays fast.</li>
+        <li><strong>The backend is portable by construction.</strong> It only uses open protocols (SQL, S3 API, HTTP).
+          Moving to managed services changes config, not code.</li>
+      </ol>
+      <p>Full reasoning, alternatives and consequences are in the <a href="./decisions.html">decision log</a>.</p>
+
+      <h2>Explore</h2>
+      <div class="cards">
+        <a class="card" href="./product.html"><span class="badge depth">L1</span><h3>Product &amp; workflow</h3><p>exocad's 80:20 features, the crown wizard step by step, file formats.</p></a>
+        <a class="card" href="./architecture.html"><span class="badge depth">L2</span><h3>System architecture</h3><p>Containers, packages, data flows and the principles that bind them.</p></a>
+        <a class="card" href="./geometry.html"><span class="badge depth">L3</span><h3>Geometry pipeline</h3><p>Margin, intaglio, crown fit, adapt, validation, with the maths.</p></a>
+        <a class="card" href="./ai-assist.html"><span class="badge depth">L3</span><h3>AI assist</h3><p>Proposers, one-click orchestrator, LLM agent, data flywheel.</p></a>
+        <a class="card" href="./backend.html"><span class="badge depth">L3</span><h3>Backend API</h3><p>Ports &amp; adapters, endpoints, auth, uploads, LLM proxy, data model.</p></a>
+        <a class="card" href="./deployment.html"><span class="badge depth">L3</span><h3>Deployment</h3><p>OCI VM topology, Compose, nginx/TLS, deploy and verification checklists.</p></a>
+      </div>
+
+      <h2>What's needed next</h2>
+      <ul>
+        <li><strong>3–5 de-identified golden cases</strong> in <code>data/golden/</code> (upper, lower and prep scans,
+          plus the finished exocad crown STL if available). The frame and margin tools need real preps to tune against.</li>
+        <li><strong>8 annotated template teeth</strong> (4 posterior types × 2 jaws) for the crown library.</li>
+        <li><strong>VM go-live:</strong> DNS A record, <code>.env</code> on the VM, nginx server block (see
+          <a href="./deployment.html">Deployment</a>).</li>
+      </ul>
+
+      <nav class="page-nav" id="page-nav" aria-label="Previous and next page"></nav>
+      <footer class="page-footer">Source of truth: <code>specs/plan.md</code> and the code. Last updated 2026-10-03 (end of Day 1).</footer>
+    </main>
+
+    <aside class="toc" id="toc" aria-label="On this page"></aside>
+  </div>
+  <script src="./assets/docs.js"></script>
+</body>
+</html>

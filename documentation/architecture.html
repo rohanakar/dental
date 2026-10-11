@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en" data-root=".">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>System architecture · DentalCAD docs</title>
+  <meta name="description" content="How DentalCAD's browser app, API, storage and AI fit together, and the principles that keep it extensible and portable.">
+  <link rel="stylesheet" href="./assets/docs.css">
+</head>
+<body data-page="architecture.html">
+  <header class="topbar">
+    <button class="icon-btn menu-btn" id="menu-toggle" aria-expanded="false" aria-controls="sidebar">☰</button>
+    <a class="brand" href="./index.html">DentalCAD <small>design docs</small></a>
+    <span class="spacer"></span>
+    <button class="icon-btn" id="theme-toggle" type="button">☾ Dark</button>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation"></nav>
+
+    <main>
+      <div class="eyebrow"><span class="badge depth">L2 · Architecture</span> <span>For: engineers, tech leads</span></div>
+      <h1>System architecture</h1>
+      <p class="lede">The parts of DentalCAD, how data moves between them, and the six principles that let AI plug in and
+        let the backend move between clouds without rewrites.</p>
+
+      <div class="tldr">
+        <strong>In short</strong>
+        <ul>
+          <li><strong>Thick client, thin server.</strong> Geometry runs in the browser (three.js and Web Workers). The
+            server stores cases and scans, handles login, and proxies LLM calls.</li>
+          <li><strong>One shared contract package</strong> (<code>packages/shared</code>, zod). It defines the design
+            document, commands, AI tools, Proposer jobs and REST shapes for both sides.</li>
+          <li><strong>Typed commands on a typed document</strong> are the only way state changes, for humans and AI
+            alike.</li>
+          <li><strong>Ports and adapters</strong> on the server: Postgres, blob storage, auth, LLMs and jobs are each
+            swappable through env vars.</li>
+          <li><strong>AI is a plug-in</strong> through the Proposer contract and command-generated tools, not a separate
+            system.</li>
+        </ul>
+      </div>
+
+      <h2>Context: who and what talks to DentalCAD</h2>
+      <figure class="diagram">
+        <div class="d-grid-3">
+          <div class="d-col">
+            <div class="node">Lab technician<small>designs crowns in the browser</small></div>
+            <div class="node future">Dentist<small>reviews, sends Rx (later)</small></div>
+          </div>
+          <div class="d-col">
+            <div class="node accent" style="flex:1;display:flex;flex-direction:column;justify-content:center">DentalCAD<small>web app + API on the OCI VM</small></div>
+          </div>
+          <div class="d-col">
+            <div class="node ext">Anthropic / OpenAI<small>LLM tool use, Rx extraction</small></div>
+            <div class="node ext">CAM / milling software<small>reads the exported STL + sidecar</small></div>
+            <div class="node future">GPU ML service<small>specialised 3D models (post-MVP)</small></div>
+          </div>
+        </div>
+        <figcaption>Figure 1. System context. Dashed boxes are external systems; grey dashed boxes are future ones.</figcaption>
+      </figure>
+
+      <h2>Containers</h2>
+      <figure class="diagram">
+        <div class="cluster accent"><span class="cluster-title">Browser · apps/web</span>
+          <div class="stack">
+            <div class="layer"><div class="layer-name">UI<small>React 19</small></div>
+              <div class="parts"><div class="node">Scan import</div><div class="node">Object list</div><div class="node">Toolbar</div><div class="node plan">Wizard + params</div><div class="node plan">AI panel</div></div></div>
+            <div class="layer"><div class="layer-name">State<small>zustand</small></div>
+              <div class="parts"><div class="node">Scene store</div><div class="node plan">Design document<br>+ snapshots</div><div class="node plan">Command bus</div></div></div>
+            <div class="layer"><div class="layer-name">Engine<small>three.js</small></div>
+              <div class="parts"><div class="node">Viewer</div><div class="node">Matcaps</div><div class="node">View frame</div><div class="node plan">Overlays, colour maps, gizmo</div></div></div>
+            <div class="layer"><div class="layer-name">Workers<small>Comlink</small></div>
+              <div class="parts"><div class="node">Geometry worker</div><div class="node plan">Proposers (classical.*)</div></div></div>
+            <div class="layer"><div class="layer-name">Geometry<small>pure TS</small></div>
+              <div class="parts"><div class="node">STL/PLY, weld, cleanup</div><div class="node">Normals, PCA</div><div class="node plan">Margin, intaglio, fit, adapt, stitch</div></div></div>
+          </div>
+        </div>
+        <div class="d-link">HTTPS · same origin · cookies</div>
+        <div class="cluster"><span class="cluster-title">OCI VM (arm64) · Docker Compose</span>
+          <div class="d-row">
+            <div class="node">proxy<small>Caddy 2: SPA + /api</small></div>
+            <div class="node accent">api<small>Node 22 + Hono</small></div>
+            <div class="node">db<small>Postgres 17</small></div>
+            <div class="node">blobs<small>fs volume (S3-ready)</small></div>
+          </div>
+        </div>
+        <figcaption>Figure 2. Containers and layers. Solid = built on Day 1; dashed = planned this week. Each layer
+          depends only on the layers below it.</figcaption>
+      </figure>
+
+      <h2>The six principles</h2>
+      <h3>1 · Every mutation is a typed command on a typed document</h3>
+      <p>The <code>DesignDocument</code> (case setup, scan references, and per-tooth frame, margin, axis, parameters,
+        crown and step status) changes only through <code>Command</code>s validated by zod. The UI, keyboard shortcuts,
+        the auto-design orchestrator and the LLM agent all use that path. Undo is a stack of immutable document
+        snapshots with structural sharing. An agent's batch of changes is one snapshot, so a single Revert undoes it.
+        <span class="badge done">Contracts built</span> <span class="badge planned">Command bus + snapshots · Day 4</span></p>
+
+      <h3>2 · Heavy geometry runs in Web Workers</h3>
+      <p>Parsing, welding, BVH building and (soon) every design algorithm run off the main thread through Comlink, with
+        buffers transferred rather than copied. The main thread renders and handles direct manipulation (picking,
+        gizmo, sculpt brushes on the ~30–60k-vertex crown). <span class="badge done">Built · import pipeline</span></p>
+
+      <h3>3 · Meshes are content-addressed; frames and units are explicit</h3>
+      <p>A <code>MeshRef</code> carries the sha256 of the bytes, the unit (always mm) and the coordinate frame. The same
+        reference means the same thing in the browser, on the API, and in a future Python ML service. The upload path
+        verifies the hash on the server. <span class="badge done">Built</span></p>
+
+      <h3>4 · AI plugs in through contracts, not special cases</h3>
+      <p>Each design step has <em>Proposers</em>: async, versioned jobs (<code>classical.*</code> in the browser,
+        <code>ml.*</code> over HTTP later, <code>llm.*</code> where text or vision is enough). LLM agent tools are
+        generated from the clinical command schemas, so the agent can only do what a user can do.
+        <span class="badge done">Contracts built</span> <span class="badge planned">Runtime · Day 6</span></p>
+
+      <h3>5 · Ports and adapters on the server</h3>
+      <p>Domain code depends on interfaces (<code>BlobStore</code>, <code>AuthPort</code>, <code>LlmProvider</code>,
+        <code>JobQueue</code>, repositories). Adapters are chosen by env var. Only open protocols are used: SQL, the S3
+        API, and HTTP/JSON. <span class="badge done">Built</span></p>
+
+      <h3>6 · Configuration, not code, decides where it runs</h3>
+      <p>One <code>.env</code> sets the public URL (root or sub-path), storage driver, LLM provider and model, and
+        secrets. The same images run locally, on the OCI VM, or on managed infrastructure later.
+        <span class="badge done">Built</span></p>
+
+      <h2>Monorepo map</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Package</th><th>Responsibility</th><th>Key paths</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><code>packages/shared</code></td><td>zod contracts: geometry, case, design, commands, proposer, events, LLM wire format, tools, REST DTOs. Consumed as TS source.</td><td><code>src/design.ts</code>, <code>src/commands.ts</code>, <code>src/tools.ts</code></td><td><span class="badge done">Built</span></td></tr>
+          <tr><td><code>apps/web</code></td><td>Vite + React app: UI, state, three.js engine, workers, pure geometry</td><td><code>src/engine/Viewer.ts</code>, <code>src/geometry/processScan.ts</code>, <code>src/workers/geometry.worker.ts</code></td><td><span class="badge done">Built · Day 1 scope</span></td></tr>
+          <tr><td><code>apps/api</code></td><td>Hono API: ports, adapters, domain services, HTTP routes, Drizzle migrations</td><td><code>src/http/app.ts</code>, <code>src/ports/*</code>, <code>src/adapters/*</code>, <code>drizzle/</code></td><td><span class="badge done">Built</span></td></tr>
+          <tr><td><code>infra</code></td><td>Dockerfiles, Compose (prod, dev, test), Caddyfile, <code>compose.sh</code>, runbook</td><td><code>docker-compose.yml</code>, <code>README.md</code></td><td><span class="badge done">Built</span></td></tr>
+          <tr><td><code>tools/fixtures</code></td><td>Synthetic scan generator (STL/PLY up to 1M triangles) into the gitignored <code>data/synthetic/</code></td><td><code>generate.mts</code></td><td><span class="badge done">Built</span></td></tr>
+          <tr><td><code>tools/docs</code></td><td>Generates the <a href="./reference/schemas.html">data contracts reference</a> from the zod schemas</td><td><code>tools/docs/</code></td><td><span class="badge done">Built</span></td></tr>
+          <tr><td><code>tools/pipeline-runner</code></td><td>Headless Node runner: golden case → metrics + STL. Regression backbone, batch mode, ML backfill.</td><td>—</td><td><span class="badge planned">Day 2</span></td></tr>
+          <tr><td><code>tools/library-builder</code></td><td>Template annotation → open shells, fixed-N cervical loops, metadata</td><td>—</td><td><span class="badge planned">Day 2–3</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>Key data flows</h2>
+      <h3>Scan import, local and uploaded</h3>
+      <figure class="diagram">
+        <ol class="sequence">
+          <li><span class="actors">User → UI</span><span>Drops <code>lower.stl</code>; role guessed from the file name</span></li>
+          <li><span class="actors">UI → Worker</span><span>Transfers the file's <code>ArrayBuffer</code> (no copy)</span></li>
+          <li><span class="actors">Worker</span><span>sha256 → parse → cleanup → weld → normals → PCA → build BVH → serialize</span></li>
+          <li><span class="actors">Worker → Engine</span><span>Transfers positions, index, normals and serialized BVH; the engine deserializes, so the BVH's reordered index is canonical</span></li>
+          <li><span class="actors">Engine</span><span>Adds the mesh, re-estimates the view frame, renders once</span></li>
+          <li><span class="actors">UI → API</span><span><span class="badge planned">Day 2</span> Gzips the original bytes and streams them to <code>POST /api/cases/:id/files</code> with the sha256</span></li>
+          <li><span class="actors">API → Blob store</span><span>Streams to storage while hashing the decompressed stream; rejects and deletes on mismatch</span></li>
+        </ol>
+        <figcaption>Figure 3. Import is local-first: the scan is usable before (and without) the upload.</figcaption>
+      </figure>
+
+      <h3>A design session <span class="badge planned">Days 2–5</span></h3>
+      <figure class="diagram">
+        <div class="flow">
+          <div class="node">Command<small>UI, keyboard, agent</small></div><div class="arrow"></div>
+          <div class="node accent">Validate<small>zod</small></div><div class="arrow"></div>
+          <div class="node accent">New snapshot<small>structural sharing</small></div><div class="arrow"></div>
+          <div class="node">Invalidate<small>downstream steps → stale</small></div><div class="arrow"></div>
+          <div class="node">Recompute<small>worker, cached by input hash</small></div><div class="arrow"></div>
+          <div class="node">Render<small>meshes, colour maps</small></div>
+        </div>
+        <figcaption>Figure 4. Derived geometry (intaglio, fitted crown, colour maps) is a cache keyed by input hashes,
+          not part of the document. Saving sends the document to <code>POST /api/cases/:id/versions</code> with
+          optimistic concurrency (409 if someone saved first).</figcaption>
+      </figure>
+
+      <h3>An AI agent turn <span class="badge planned">Day 6</span></h3>
+      <figure class="diagram">
+        <ol class="sequence">
+          <li><span class="actors">User → Agent loop</span><span>"Reduce occlusion on 36 to 0.1 mm"</span></li>
+          <li><span class="actors">Agent loop → API</span><span><code>POST /api/llm/messages</code> with tool definitions generated from the command schemas</span></li>
+          <li><span class="actors">API → LLM provider</span><span>Server-held key, model chosen by the server; usage logged</span></li>
+          <li><span class="actors">LLM → Agent loop</span><span>Tool call <code>adapt_occlusion {fdi: 36, clearanceMm: 0.1}</code></span></li>
+          <li><span class="actors">Agent loop</span><span>Validates it into a command and applies it inside one transaction; returns measured metrics to the model</span></li>
+          <li><span class="actors">UI → User</span><span>Preview with Accept / Revert. Accept keeps the snapshot; Revert drops it.</span></li>
+        </ol>
+        <figcaption>Figure 5. The loop runs in the browser because the geometry, metrics and preview live there. The
+          API is only a keyed proxy. Details: <a href="./ai-assist.html">AI assist</a>.</figcaption>
+      </figure>
+
+      <h2>Shared contracts as the backbone</h2>
+      <p>One zod definition produces several artefacts. Changing a schema updates every consumer, and anything that
+        drifts fails typecheck.</p>
+      <figure class="diagram">
+        <div class="d-row">
+          <div class="node accent">zod schema<small>packages/shared</small></div>
+        </div>
+        <div class="d-link down">generates / validates</div>
+        <div class="d-row">
+          <div class="node ok">TS types<small>web + api</small></div>
+          <div class="node ok">Runtime validation<small>API requests, LLM tool calls</small></div>
+          <div class="node ok">LLM tool JSON Schema<small>agentToolDefs()</small></div>
+          <div class="node ok">Docs reference<small>tools/docs</small></div>
+          <div class="node plan">OpenAPI<small>planned</small></div>
+          <div class="node future">pydantic models<small>Python ML service</small></div>
+        </div>
+      </figure>
+
+      <h2>Cross-cutting concerns</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Concern</th><th>Approach</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Tenancy and access</td><td>Better Auth sessions; each user gets a personal organisation (lab); every repository query takes <code>orgId</code>; another org's data returns 404</td><td><span class="badge done">Built + tested</span></td></tr>
+          <tr><td>Secrets</td><td>LLM keys and auth secret only on the server (<code>.env</code>), never sent to the browser; startup logs show provider and model, never keys</td><td><span class="badge done">Built</span></td></tr>
+          <tr><td>Patient privacy</td><td>Pseudonymous <code>patientRef</code> only; no patient identifiers in LLM payloads; de-identified data during the MVP</td><td><span class="badge done">Contract</span> <span class="badge planned">Enforced in agent · Day 6</span></td></tr>
+          <tr><td>Integrity</td><td>sha256 of uncompressed bytes verified on upload; content-addressed mesh references</td><td><span class="badge done">Built</span></td></tr>
+          <tr><td>Performance</td><td>Workers + transfers; render on demand; streamed uploads (a 150 MB upload kept the API at about 112 MiB, measured). Targets: 1M-triangle load &lt; 3 s, 60 fps orbit, colour-map update &lt; 100 ms.</td><td><span class="badge done">Import measured</span></td></tr>
+          <tr><td>Observability</td><td>pino JSON access logs with request ids; health check at <code>/healthz</code></td><td><span class="badge done">Built</span></td></tr>
+          <tr><td>Portability</td><td>Env-selected adapters; migration table in <a href="./deployment.html">Deployment</a></td><td><span class="badge done">Built</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>Technology stack</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Layer</th><th>Choice (installed version)</th></tr></thead>
+        <tbody>
+          <tr><td>Language and build</td><td>TypeScript 7, pnpm 9 workspaces, Vite 8, tsup, Vitest 5</td></tr>
+          <tr><td>Web UI</td><td>React 19, zustand 5</td></tr>
+          <tr><td>3D</td><td>three.js 0.186, three-mesh-bvh 0.9, camera-controls 3.1</td></tr>
+          <tr><td>Workers</td><td>Comlink 4</td></tr>
+          <tr><td>Contracts</td><td>zod 4.6 (built-in JSON Schema)</td></tr>
+          <tr><td>API</td><td>Node 22, Hono 4 + @hono/node-server 2, pino 10</td></tr>
+          <tr><td>Data</td><td>PostgreSQL 17, Drizzle ORM 0.45 + drizzle-kit, pg</td></tr>
+          <tr><td>Auth</td><td>Better Auth 1.7 (organisation plugin)</td></tr>
+          <tr><td>Storage</td><td>Local filesystem, or any S3-compatible service via @aws-sdk/client-s3</td></tr>
+          <tr><td>LLM</td><td>@anthropic-ai/sdk, openai (adapters); default models <code>claude-sonnet-5</code> / <code>gpt-5</code></td></tr>
+          <tr><td>Runtime</td><td>Docker Compose on an arm64 OCI VM; Caddy 2; nginx (existing) for TLS</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>Trade-offs we accepted</h2>
+      <ul>
+        <li><strong>Browser does the heavy lifting.</strong> Fast interaction and a tiny server, but performance
+          depends on the user's machine. A mid-range laptop is the target.</li>
+        <li><strong>Uploads go through the API</strong> rather than presigned URLs. Storage backends stay
+          interchangeable, at the cost of API bandwidth. Presigned multipart comes later for scale.</li>
+        <li><strong>LLM responses are non-streaming for now.</strong> Simpler adapters; SSE comes later.</li>
+        <li><strong>One VM, no GPU.</strong> Specialised models will run on a separate GPU host behind the same Proposer
+          contract.</li>
+      </ul>
+      <p>Each trade-off is recorded with alternatives in the <a href="./decisions.html">decision log</a>.</p>
+
+      <nav class="page-nav" id="page-nav" aria-label="Previous and next page"></nav>
+      <footer class="page-footer">Source of truth: <code>specs/plan.md</code> and the code. Last updated 2026-10-03.</footer>
+    </main>
+
+    <aside class="toc" id="toc" aria-label="On this page"></aside>
+  </div>
+  <script src="./assets/docs.js"></script>
+</body>
+</html>

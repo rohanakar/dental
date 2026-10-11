@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en" data-root=".">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Web app · DentalCAD docs</title>
+  <meta name="description" content="How the browser app is built: layers, scan import worker, the three.js viewer, state, URLs, performance, and what is still planned.">
+  <link rel="stylesheet" href="./assets/docs.css">
+</head>
+<body data-page="frontend.html">
+  <header class="topbar">
+    <button class="icon-btn menu-btn" id="menu-toggle" aria-expanded="false" aria-controls="sidebar">☰</button>
+    <a class="brand" href="./index.html">DentalCAD <small>design docs</small></a>
+    <span class="spacer"></span>
+    <button class="icon-btn" id="theme-toggle" type="button">☾ Dark</button>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation"></nav>
+
+    <main>
+      <div class="eyebrow"><span class="badge depth">L3 · Deep dive</span> <span>For: frontend and graphics engineers</span></div>
+      <h1>Web app</h1>
+      <p class="lede">The browser app in <code>apps/web</code>. It loads intraoral scans, cleans them up off the main thread and shows them in a fast 3D viewer. Later it will host the crown design steps. This page covers how it is built, file by file.</p>
+
+      <div class="tldr">
+        <strong>In short</strong>
+        <ul>
+          <li>React for panels, a plain three.js <code>Viewer</code> class for 3D, and a Web Worker for all heavy geometry. React never touches three.js objects directly.</li>
+          <li>Import pipeline in the worker: parse, weld, clean up, normals and sha256, then a BVH (a spatial index for fast ray picking). The BVH is built once and shipped to the main thread without copying.</li>
+          <li>The viewer draws only when something changes. It orbits around the point under the cursor, and its standard dental views come from a PCA-estimated <code>ViewFrame</code>.</li>
+          <li>A 1M-triangle STL is processed and indexed in about 0.5 s in Node (measured on an Apple M3 Max).</li>
+          <li>Built on Day 1: import plus viewer. Planned: login and case upload (Day 2), design steps, undo and save (Days 2–5), AI panels (Day 6).</li>
+        </ul>
+      </div>
+
+      <h2>What the web app does today</h2>
+      <p>Day 1 delivered a standalone scan viewer. It does not talk to the backend yet; files are read locally from drag-and-drop or a file picker.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Capability</th><th>Status</th><th>Where</th></tr></thead>
+        <tbody>
+          <tr><td>Import STL (binary + ASCII) and PLY (ASCII + binary, colors, polygons)</td><td><span class="badge done">Built · Day 1</span></td><td><code>src/geometry/stl.ts</code>, <code>ply.ts</code></td></tr>
+          <tr><td>Clean up, weld, normals, unit check, sha256 in a worker</td><td><span class="badge done">Built · Day 1</span></td><td><code>src/geometry/processScan.ts</code>, <code>src/workers/</code></td></tr>
+          <tr><td>BVH built in the worker, deserialized on the main thread</td><td><span class="badge done">Built · Day 1</span></td><td><code>src/workers/scanPayload.ts</code></td></tr>
+          <tr><td>3D viewer: cursor-centric orbit, standard views, fit, ortho toggle, matcaps, back faces, opacity, screenshot</td><td><span class="badge done">Built · Day 1</span></td><td><code>src/engine/</code></td></tr>
+          <tr><td>Object panel (visibility, opacity, scan colors, stats, warnings), keyboard shortcuts</td><td><span class="badge done">Built · Day 1</span></td><td><code>src/ui/</code></td></tr>
+          <tr><td>Synthetic demo scans (no patient data)</td><td><span class="badge done">Built · Day 1</span></td><td><code>src/geometry/synthetic.ts</code>, <code>tools/fixtures/generate.mts</code></td></tr>
+          <tr><td>Login, case list, scan upload to a case</td><td><span class="badge planned">Planned · Day 2</span></td><td><code>src/io/urls.ts</code> has <code>apiUrl()</code>; nothing calls the API yet</td></tr>
+          <tr><td>Case setup (tooth chart, material), tooth frame, margin and axis tools</td><td><span class="badge planned">Planned · Day 2</span></td><td>see <a href="./geometry.html">Geometry pipeline</a></td></tr>
+          <tr><td>Colour-map material and legend, STL export</td><td><span class="badge planned">Planned · Day 3</span></td><td></td></tr>
+          <tr><td>Document snapshots (undo/redo) and step invalidation, gizmo with clinical axes</td><td><span class="badge planned">Planned · Day 4</span></td><td></td></tr>
+          <tr><td>Save/load design versions (backend + local zip)</td><td><span class="badge planned">Planned · Day 5</span></td><td></td></tr>
+          <tr><td>AI panels: proposal overlays, Accept/Revert, agent chat, Rx intake</td><td><span class="badge planned">Planned · Day 6</span></td><td>see <a href="./ai-assist.html">AI assist</a></td></tr>
+          <tr><td>Sculpt brushes (add / remove / smooth)</td><td><span class="badge planned">Planned · Day 6, if time</span></td><td></td></tr>
+          <tr><td>Clipping plane and section outlines, lasso cut</td><td><span class="badge planned">Planned · on the cut list</span></td><td>first to drop if the week slips</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>Layers</h2>
+      <p>Each layer only calls the one below it. The rule that matters most: <strong>the engine never imports React, and the geometry code never touches the DOM</strong>. That keeps geometry testable in Node and lets the same code run in a worker or, later, in a headless pipeline runner.</p>
+      <figure class="diagram">
+        <div class="stack">
+          <div class="layer"><div class="layer-name">UI<small>React 19 · src/ui</small></div>
+            <div class="parts"><div class="node">App<small>shortcuts</small></div><div class="node">Toolbar<small>views, projection</small></div><div class="node">ScanImport<small>drop / pick / demo</small></div><div class="node">ObjectList</div><div class="node">Viewport<small>owns the canvas</small></div></div></div>
+          <div class="layer"><div class="layer-name">State<small>zustand · src/state</small></div>
+            <div class="parts"><div class="node accent">useSceneStore<small>serializable UI state</small></div><div class="node accent">sceneController<small>glue + geometry cache</small></div><div class="node plan">Design document store<small>Day 4</small></div></div></div>
+          <div class="layer"><div class="layer-name">Engine<small>three.js · src/engine</small></div>
+            <div class="parts"><div class="node">Viewer<small>render, camera, picking</small></div><div class="node">matcap + materials</div><div class="node">viewFrame<small>standard views</small></div><div class="node plan">overlays, colour maps<small>Days 2–4</small></div></div></div>
+          <div class="layer"><div class="layer-name">Workers<small>Comlink · src/workers</small></div>
+            <div class="parts"><div class="node">geometry.worker</div><div class="node">geometryClient<small>main-thread side</small></div><div class="node">scanPayload<small>BVH + transfer</small></div><div class="node">LatestWins</div></div></div>
+          <div class="layer"><div class="layer-name">Geometry<small>pure TS · src/geometry</small></div>
+            <div class="parts"><div class="node ok">parsers</div><div class="node ok">weld, cleanup, normals</div><div class="node ok">PCA</div><div class="node plan">frame, margin, intaglio, fit…<small>Days 2–5</small></div></div></div>
+        </div>
+        <figcaption>Figure 1. Web app layers. Green = built pure geometry, dashed purple = planned. The shared zod schemas in <code>packages/shared</code> sit beside all layers (types only today).</figcaption>
+      </figure>
+
+      <h2>Module walkthrough</h2>
+      <p>Every file in <code>apps/web/src</code>, grouped by layer. Tests sit next to the code as <code>*.test.ts</code>.</p>
+
+      <h3>Geometry (<code>src/geometry/</code>)</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>File</th><th>Responsibility</th></tr></thead>
+        <tbody>
+          <tr><td><code>mesh.ts</code></td><td><code>IndexedMesh</code> (positions, indices, optional colors and normals as plain typed arrays, so they can be transferred between threads) and <code>TriangleSoup</code>; bounds; <code>compactVertices</code>.</td></tr>
+          <tr><td><code>stl.ts</code></td><td>Binary and ASCII STL parser, plus a binary STL writer (used by tests and fixtures today, export later).</td></tr>
+          <tr><td><code>ply.ts</code></td><td>PLY parser (ASCII, binary little/big endian, all scalar types, colors, polygon faces fan-triangulated) and a binary PLY writer.</td></tr>
+          <tr><td><code>weld.ts</code></td><td>Exact float-bit vertex welding with an open-addressing hash table.</td></tr>
+          <tr><td><code>cleanup.ts</code></td><td>Removes degenerate faces, duplicate faces and small disconnected fragments; drops unused vertices.</td></tr>
+          <tr><td><code>normals.ts</code></td><td>Area-weighted vertex normals.</td></tr>
+          <tr><td><code>pca.ts</code></td><td>Principal axes of a point set (Jacobi eigen-solver for 3×3).</td></tr>
+          <tr><td><code>processScan.ts</code></td><td>The import pipeline: hash, detect format, parse, weld, clean up, normals, stats, warnings.</td></tr>
+          <tr><td><code>synthetic.ts</code>, <code>testMeshes.ts</code></td><td>Synthetic dental arch (with an optional crown prep at tooth 36) and small test meshes. No patient data.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Workers (<code>src/workers/</code>)</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>File</th><th>Responsibility</th></tr></thead>
+        <tbody>
+          <tr><td><code>geometry.worker.ts</code></td><td>Comlink-exposed API: <code>importScan(bytes, fileName)</code> and <code>demoScan(jaw)</code>. The demo generates a synthetic arch, writes it as PLY and runs it through the same <code>processScan</code> as real files.</td></tr>
+          <tr><td><code>scanPayload.ts</code></td><td>Worker side: builds the <code>MeshBVH</code>, serializes it, and collects every buffer into a transfer list. Main-thread side: <code>geometryFromPayload</code> rebuilds a <code>BufferGeometry</code>, converts scan colors from sRGB to linear, and attaches the deserialized BVH as <code>geometry.boundsTree</code>.</td></tr>
+          <tr><td><code>geometryClient.ts</code></td><td>Lazily creates the module worker (<code>new Worker(new URL('./geometry.worker.ts', import.meta.url), { type: 'module' })</code>) and wraps calls in <code>LatestWins</code>.</td></tr>
+          <tr><td><code>latestWins.ts</code></td><td>Comlink calls cannot be cancelled. Each call for a key gets a generation number, and superseded results reject with <code>StaleResultError</code>.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Engine (<code>src/engine/</code>)</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>File</th><th>Responsibility</th></tr></thead>
+        <tbody>
+          <tr><td><code>Viewer.ts</code></td><td>Imperative three.js viewer: renderer, both cameras, <code>camera-controls</code>, object registry, picking, framing, screenshot. Public API: <code>addObject</code>, <code>removeObject</code>, <code>setObjectVisible</code>, <code>setObjectOpacity</code>, <code>setObjectVertexColors</code>, <code>setViewFrame</code>, <code>setView</code>, <code>fit</code>, <code>setProjection</code>, <code>raycast</code>, <code>screenshot</code>, <code>setBackground</code>, <code>dispose</code>.</td></tr>
+          <tr><td><code>matcap.ts</code></td><td>Procedural matcap textures (stone, tooth, neutral), rendered into a 256×256 <code>DataTexture</code>. No image assets.</td></tr>
+          <tr><td><code>materials.ts</code></td><td><code>MeshMatcapMaterial</code> patched with a back-face colour via <code>gl_FrontFacing</code>.</td></tr>
+          <tr><td><code>viewFrame.ts</code></td><td><code>ViewFrame</code> (up, occlusal, buccal, mesial), <code>estimateViewFrame</code> from loaded jaws, <code>viewDirection</code> per standard view.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>State, UI and I/O</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>File</th><th>Responsibility</th></tr></thead>
+        <tbody>
+          <tr><td><code>state/sceneStore.ts</code></td><td>zustand store: one entry per loaded scan (id, name, role, import phase, visible, opacity, colors on/off, stats, warnings, sha256, BVH time) and the projection mode.</td></tr>
+          <tr><td><code>state/sceneController.ts</code></td><td>Singleton glue between the store and the <code>Viewer</code>. Owns the <code>BufferGeometry</code> cache, runs imports, re-estimates the view frame after each load or remove, downloads screenshots.</td></tr>
+          <tr><td><code>ui/App.tsx</code></td><td>Layout and keyboard shortcuts: <kbd>1</kbd>–<kbd>5</kbd> standard views, <kbd>F</kbd> fit, <kbd>O</kbd> toggle orthographic (ignored while typing in inputs).</td></tr>
+          <tr><td><code>ui/Toolbar.tsx</code></td><td>View buttons, Fit, Perspective/Orthographic, Screenshot.</td></tr>
+          <tr><td><code>ui/Viewport.tsx</code></td><td>Creates the <code>Viewer</code> in an effect and attaches it to the controller; follows the light/dark theme via the <code>--viewport-bg</code> CSS variable; drop target; empty state with "Load demo scans".</td></tr>
+          <tr><td><code>ui/ScanImport.tsx</code>, <code>ui/files.ts</code></td><td>Drop zone, file picker and role selector. Roles are guessed from file names (<code>upper</code>, <code>maxill</code>, <code>oberkiefer</code>, <code>lower</code>, <code>mandib</code>, <code>unterkiefer</code>, <code>pre-op</code>…). Unnamed files take the selected role, then the other jaw.</td></tr>
+          <tr><td><code>ui/ObjectList.tsx</code></td><td>Per-scan row: visibility, opacity slider, "Show scan colors", triangle/vertex counts, size in mm, processing time, warnings, remove.</td></tr>
+          <tr><td><code>io/urls.ts</code></td><td><code>apiUrl()</code> and <code>assetUrl()</code> built from <code>import.meta.env.BASE_URL</code>.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>Scan import pipeline</h2>
+      <p>Importing a scan is the heaviest thing the app does today. All of it runs in the geometry worker, so the UI stays responsive while a 50 MB file is processed.</p>
+      <figure class="diagram">
+        <div class="flow">
+          <div class="node">Read file<small>main thread</small></div><div class="arrow"></div>
+          <div class="node">sha256<small>original bytes</small></div><div class="arrow"></div>
+          <div class="node">Parse<small>STL / PLY</small></div><div class="arrow"></div>
+          <div class="node accent">Weld<small>exact bits</small></div><div class="arrow"></div>
+          <div class="node accent">Clean up<small>degenerate, dupes, debris</small></div><div class="arrow"></div>
+          <div class="node">Normals<small>area-weighted</small></div><div class="arrow"></div>
+          <div class="node ok">BVH<small>build + serialize</small></div><div class="arrow"></div>
+          <div class="node ok">Transfer<small>zero-copy</small></div><div class="arrow"></div>
+          <div class="node">Deserialize<small>main thread</small></div>
+        </div>
+        <figcaption>Figure 2. Import pipeline. Everything between "sha256" and "Transfer" runs in <code>geometry.worker.ts</code>.</figcaption>
+      </figure>
+
+      <figure class="diagram">
+        <ol class="sequence">
+          <li><span class="actors">UI → controller</span><span><code>importFiles()</code> assigns a role and calls <code>sceneController.importFile(file, role)</code>; the store shows "Processing…".</span></li>
+          <li><span class="actors">controller → client</span><span><code>importScanFile(file, role)</code> reads the bytes and calls the worker inside <code>LatestWins.run(role, …)</code>.</span></li>
+          <li><span class="actors">client → worker</span><span><code>importScan(Comlink.transfer(bytes, [bytes]), name)</code>: the file buffer moves to the worker, no copy.</span></li>
+          <li><span class="actors">worker</span><span><code>processScan()</code> then <code>buildScanPayload()</code>: BVH built, serialized, all buffers listed for transfer.</span></li>
+          <li><span class="actors">worker → client</span><span>Payload returns with <code>Comlink.transfer</code> (positions, normals, colors, BVH index and roots).</span></li>
+          <li><span class="actors">client</span><span><code>geometryFromPayload()</code>: <code>BufferGeometry</code> + <code>MeshBVH.deserialize</code>. If a newer import for the same role started meanwhile, the result is dropped.</span></li>
+          <li><span class="actors">controller → Viewer</span><span><code>viewer.addObject()</code>, the store patch (stats, warnings), view frame re-estimated; the first scan opens in the buccal view.</span></li>
+        </ol>
+        <figcaption>Figure 3. Who calls whom during an import.</figcaption>
+      </figure>
+
+      <details class="deep">
+        <summary>Deeper detail: ordering, the BVH index, transfers and colors <span class="badge done">Built · Day 1</span></summary>
+        <div class="body">
+          <ul>
+            <li><strong>Hash first.</strong> <code>processScan</code> hashes the original bytes with <code>crypto.subtle</code> before parsing, because later steps may reuse the buffer. The hash identifies the scan in <code>MeshRef.sha256</code> and is checked by the backend on upload.</li>
+            <li><strong>Weld before cleanup.</strong> <code>specs/plan.md</code> lists cleanup before weld, but the code welds first. Duplicate-face and connected-component detection both need shared vertex indices, which only exist after welding. The code's order is the correct one. <span class="badge deviation">Deviation</span></li>
+            <li><strong>The BVH reorders the index.</strong> <code>new MeshBVH(geometry, { indirect: false })</code> rearranges the triangle index buffer in place. The serialized BVH carries that reordered index, and the main thread uses it as <em>the</em> index (<code>setIndex: false</code> on deserialize). Face numbers therefore refer to the BVH order. They are never persisted: margins are stored as 3D points (see <a href="./reference/schemas.html">Data contracts</a>).</li>
+            <li><strong>Transfers.</strong> <code>buildScanPayload</code> collects positions, normals, colors, the BVH index, indirect buffer and every root buffer into a de-duplicated transfer list. A test asserts there are no duplicates (transferring the same buffer twice throws).</li>
+            <li><strong>Colors.</strong> Scanner colors are sRGB bytes. three.js expects linear vertex colors, so the main thread converts them through a 256-entry lookup table into a <code>Float32Array</code>.</li>
+            <li><strong>Latest wins.</strong> The key is the scan role. Dropping a second lower-jaw file while the first is still processing discards the first result (<code>StaleResultError</code> is swallowed by the controller). Removing an object calls <code>cancelImport</code> for the same reason.</li>
+          </ul>
+        </div>
+      </details>
+
+      <h2>The viewer</h2>
+      <p><code>src/engine/Viewer.ts</code> is a plain class around a <code>WebGLRenderer</code>. React creates one per viewport and talks to it only through its public methods.</p>
+
+      <h3>Rendering on demand</h3>
+      <p>A <code>requestAnimationFrame</code> loop runs continuously but only draws a frame when <code>camera-controls</code> reports movement or something called <code>requestRender()</code>: an object added or removed, an opacity change, a resize. A static scene costs almost nothing, which matters for laptop batteries during long design sessions. The device pixel ratio is capped at 2.</p>
+
+      <h3>Camera and navigation</h3>
+      <dl class="kv">
+        <dt>Cameras</dt><dd>Perspective (35° vertical field of view) and orthographic, swapped inside the same <code>camera-controls</code> instance.</dd>
+        <dt>Mouse</dt><dd>Left-drag rotate, right-drag pan, wheel zooms toward the cursor (<code>dollyToCursor</code>).</dd>
+        <dt>Cursor-centric orbit</dt><dd>A capture-phase <code>pointerdown</code> listener ray-casts under the cursor and calls <code>setOrbitPoint</code> before <code>camera-controls</code> sees the event. Rotation then pivots around the tooth you clicked on, not the scene centre.</dd>
+        <dt>Limits</dt><dd>Distance 2–1500 mm; smoothing 0.12 s (0.04 s while dragging).</dd>
+      </dl>
+
+      <h3>Standard views and the ViewFrame</h3>
+      <p>Dental views (occlusal, buccal, lingual, mesial, distal) are directions in a <code>ViewFrame</code>, not fixed world axes, because every scanner exports in its own coordinate system. Until the tooth frame exists (Day 2), <code>estimateViewFrame</code> guesses a whole-arch frame from the loaded jaws:</p>
+      <ul>
+        <li><strong>Up</strong> = the least-variance PCA axis (≈ the normal of the occlusal plane), oriented from the lower jaw's centroid toward the upper jaw's. With a single jaw, the average surface normal decides the sign.</li>
+        <li><strong>Buccal</strong> = the second PCA axis, pointing toward the arch front. The front is the end with the smaller sideways spread (the incisors, not the two molar arms).</li>
+        <li><strong>Mesial</strong> = up × buccal. For a whole arch this is just a side direction.</li>
+        <li><strong>Occlusal view</strong> looks down from above for a lower jaw and from below when only an upper jaw is loaded.</li>
+      </ul>
+      <p>Each view animates the camera to the new direction and frames the visible scans. Framing projects up to ~50k sampled vertices onto the camera axes and fits their extents with a 15% margin. That is much tighter than a bounding sphere for a flat, wide arch. The occlusal view gets a tiny buccal offset to avoid the gimbal singularity of looking straight down the up axis.</p>
+
+      <h3>Perspective / orthographic toggle</h3>
+      <p>Switching keeps what is on screen the same size. Going orthographic sets the frustum height to the visible height at the current target distance, then moves the camera back so the near plane never clips the model. Going back to perspective converts the zoomed orthographic height into a camera distance. In orthographic mode the wheel zooms instead of dollying.</p>
+
+      <h3>Shading: matcaps and back faces</h3>
+      <p>Surfaces use <code>MeshMatcapMaterial</code> with procedurally generated matcaps: a lit sphere baked into a texture, with key light, fill light, a specular highlight and a subtle rim. Shading is cheap and looks the same from every angle, which keeps margins and cusps readable. Presets:</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Preset</th><th>Base colour (sRGB)</th><th>Used for</th></tr></thead>
+        <tbody>
+          <tr><td><code>stone</code></td><td>0.86, 0.82, 0.74</td><td>Jaw scans (dental-stone look)</td></tr>
+          <tr><td><code>tooth</code></td><td>0.96, 0.94, 0.88</td><td>Restorations (<code>kind: 'restoration'</code>, not used until the crown exists)</td></tr>
+          <tr><td><code>neutral</code></td><td>0.95, 0.95, 0.95</td><td>When "Show scan colors" is on, so the scanner colors dominate</td></tr>
+        </tbody>
+      </table></div>
+      <p>Materials are double-sided. A shader patch (<code>onBeforeCompile</code>) tints back faces magenta (<code>#b0496b</code>) when <code>gl_FrontFacing</code> is false, so holes and the inside of open scans are obvious.</p>
+
+      <h3>Transparency</h3>
+      <p>Opacity below 1 switches a material to transparent with depth writes off. three.js then draws transparent objects after opaque ones, and draws double-sided transparent materials in two passes (back faces, then front faces). While an object is transparent its back-face tint is turned off, so the far side reads as surface rather than as a hole.</p>
+
+      <h3>Picking and screenshots</h3>
+      <p><code>raycast(clientX, clientY)</code> uses three-mesh-bvh's accelerated raycast with <code>firstHitOnly</code> over the visible objects. It returns the object id, point, normal, distance and the BVH-order face index. <code>screenshot()</code> renders a frame and reads it back immediately with <code>toDataURL</code>, so the renderer does not need <code>preserveDrawingBuffer</code> (which would slow every frame).</p>
+
+      <h2>State and the React↔engine boundary</h2>
+      <p>There are two kinds of state and they live in different places:</p>
+      <div class="d-grid-2">
+        <div class="callout note"><strong>Serializable UI state → <code>useSceneStore</code></strong>Names, roles, import phase, visibility, opacity, stats, warnings, projection. React components subscribe with selectors.</div>
+        <div class="callout note"><strong>Heavy, non-serializable state → <code>sceneController</code></strong><code>BufferGeometry</code> objects with their BVHs, and the <code>Viewer</code> reference. Keeping them out of the store avoids accidental copies and re-renders.</div>
+      </div>
+      <p>UI events call controller methods (<code>setOpacity</code>, <code>setView</code>, <code>importFile</code>…). The controller updates the store <em>and</em> the viewer, so the two never drift. <code>attachViewer</code> re-adds already-loaded geometry, which keeps hot module reload and remounts working.</p>
+      <div class="callout decision"><strong>Decision</strong>An imperative engine instead of react-three-fiber: render-on-demand, cursor-centric orbit and, later, sculpting need tight control over the render loop and input order. See the <a href="./decisions.html">Decision log</a>.</div>
+
+      <h2>Base path and URLs</h2>
+      <p>The app runs at the root of <code>https://dental.cognifuze.com</code>, but it can also be mounted under a sub-path such as <code>/dental/</code>. Nothing hardcodes absolute URLs:</p>
+      <ul>
+        <li><code>vite.config.ts</code> reads <code>VITE_BASE_PATH</code> (Docker build arg or <code>.env</code>) and normalizes it to a leading and trailing slash (<code>dental</code> → <code>/dental/</code>, empty → <code>/</code>).</li>
+        <li><code>apiUrl('cases')</code> → <code>${BASE_URL}api/cases</code>; <code>assetUrl()</code> does the same for static files.</li>
+        <li>The worker URL is resolved with <code>new URL(…, import.meta.url)</code>, so it follows the base too.</li>
+        <li>The dev server (port 5173) and preview server (4173) proxy <code>${base}api</code> to <code>http://localhost:3000</code> and rewrite it to <code>/api</code>, the API's internal prefix.</li>
+      </ul>
+      <p>See <a href="./deployment.html">Deployment &amp; operations</a> for how the proxy strips the prefix in production.</p>
+
+      <h2>Performance</h2>
+      <p>The automated perf test (<code>src/workers/scanPayload.test.ts</code>, "1M-triangle import performance") imports a synthetic 1,000,000-triangle binary STL (50 MB) in Node and builds the BVH. One run during this documentation pass, on an Apple M3 Max:</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Stage</th><th>Time</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Parse</td><td>16 ms</td><td>Binary STL into a triangle soup</td></tr>
+          <tr><td>Weld</td><td>59 ms</td><td>3M soup vertices → ~500k vertices</td></tr>
+          <tr><td>Clean up</td><td>65 ms</td><td>Degenerate, duplicate, components</td></tr>
+          <tr><td>Normals</td><td>27 ms</td><td></td></tr>
+          <tr><td><code>processScan</code> total</td><td>195 ms</td><td>Includes sha256 and format detection</td></tr>
+          <tr><td>BVH build + serialize</td><td>278 ms</td><td></td></tr>
+          <tr><td><strong>Total</strong></td><td><strong>473 ms</strong></td><td>Soft assertion: &lt; 5 s</td></tr>
+        </tbody>
+      </table></div>
+      <p>Timings vary by a few tens of milliseconds between runs (the Day 1 builder recorded 467 ms total). In the browser, the 1M-triangle demo lower arch plus the 300k-triangle upper arch were ready about 0.8–1 s after clicking, observed manually in headless Chrome during the Day 1 check (not an automated test). The plan's targets are a 1M-triangle arch loading in under 3 s and orbiting at 60 fps on a mid-range laptop; the fps target has not been measured yet.</p>
+      <p>Production bundle: main chunk 892 kB (241 kB gzipped), mostly three.js; worker chunk 186 kB. The chunk-size warning limit is raised to 1200 kB on purpose.</p>
+
+      <h2>Extension points</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>To add…</th><th>Hook into</th></tr></thead>
+        <tbody>
+          <tr><td>A crown or other restoration mesh</td><td><code>viewer.addObject(id, geometry, { kind: 'restoration' })</code> picks the tooth matcap.</td></tr>
+          <tr><td>The tooth frame (Day 2)</td><td><code>viewer.setViewFrame(frame)</code>: standard views then orbit the prepared tooth instead of the whole arch.</td></tr>
+          <tr><td>New geometry steps (margin, intaglio, fit…)</td><td>Pure functions in <code>src/geometry/</code>, exposed as methods on the Comlink API in <code>geometry.worker.ts</code>, called through <code>LatestWins</code> keys.</td></tr>
+          <tr><td>Colour maps (Day 3–4)</td><td>A per-vertex scalar attribute plus a material that maps it through a lookup table; the worker computes the scalars.</td></tr>
+          <tr><td>Backend calls (Day 2)</td><td><code>apiUrl()</code>; DTOs come from <code>@dcad/shared</code>.</td></tr>
+          <tr><td>Commands, undo, AI proposals (Days 4–6)</td><td>Planned <code>src/design/</code> (document store, commands, snapshots) and <code>src/ai/</code> (proposer registry, orchestrator). The schemas already exist in <code>packages/shared</code>.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>Known limits</h2>
+      <ul>
+        <li><strong>One scan per role.</strong> The role doubles as the object id, so a second lower-jaw file replaces the first. Roles are <code>upper</code>, <code>lower</code> and <code>preop</code>.</li>
+        <li><strong>The view frame is a guess.</strong> The PCA heuristics assume a full arch; quadrant scans or unusual exports may get a wrong "up" or "front". The Day 2 tooth frame replaces it for design work.</li>
+        <li><strong>Units are only checked, not fixed.</strong> Scans larger than 200 mm or smaller than 5 mm across get a warning; nothing is rescaled.</li>
+        <li><strong>No undo, no persistence, no login yet.</strong> Closing the tab loses the session. <code>better-auth</code> and <code>fflate</code> are installed but unused until Days 2 and 5.</li>
+        <li><strong>Face indices are not stable.</strong> They refer to the BVH-reordered index and must never be stored.</li>
+        <li><strong>No WebGL context-loss handling</strong> in <code>Viewer.ts</code> yet.</li>
+        <li><strong>Color conversion on the main thread.</strong> Turning sRGB colors into a <code>Float32Array</code> costs one allocation per import on the main thread. That is fine at current sizes.</li>
+      </ul>
+
+      <nav class="page-nav" id="page-nav" aria-label="Previous and next page"></nav>
+      <footer class="page-footer">Source of truth: <code>specs/plan.md</code> and <code>apps/web/src</code>. Last updated 2026-10-03.</footer>
+    </main>
+
+    <aside class="toc" id="toc" aria-label="On this page"></aside>
+  </div>
+  <script src="./assets/docs.js"></script>
+</body>
+</html>

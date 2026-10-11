@@ -1,7 +1,12 @@
-# Local development: run only Postgres from the stack, published on the host,
-# while `pnpm dev:api` / `pnpm dev:web` run natively.
+# Local development overrides.
+# Postgres on the host, for `pnpm dev:api` / `pnpm dev:web` running natively:
 #   ./infra/compose.sh -f infra/docker-compose.dev.yml up -d db
+# Production-like stack on http://localhost:8080 (needs `docker network create shared_net` once):
+#   ./infra/compose.sh -f infra/docker-compose.dev.yml up -d --build
 services:
   db:
     ports:
       - "127.0.0.1:${DEV_DB_PORT:-5432}:5432"
+  proxy:
+    ports:
+      - "127.0.0.1:8080:80"

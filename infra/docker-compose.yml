@@ -1,9 +1,7 @@
 # Production stack for a single VM (OCI aarch64, 12 vCPU / 6 GB).
-# Always run through the wrapper so the repo-root .env is used for both
-# interpolation and container env, and BASE_PATH is derived from PUBLIC_URL:
 #   ./infra/compose.sh up -d --build
-# Default mode: our Caddy listens on plain HTTP at HTTP_BIND (127.0.0.1:8080)
-# behind your existing HTTPS reverse proxy. TLS mode: see docker-compose.tls.yml.
+# Nginx Proxy Manager owns the domain and TLS. Our Caddy (proxy) joins NPM's
+# Docker network (shared_net) as "dcad-proxy" and serves plain HTTP on :80; no host ports.
 name: dcad
 
 services:
@@ -14,10 +12,11 @@ services:
       args:
         VITE_BASE_PATH: ${VITE_BASE_PATH:-/}
     environment:
-      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
       BASE_PATH: ${BASE_PATH:-}
-    ports:
-      - "${HTTP_BIND:-127.0.0.1:8080}:80"
+    networks:
+      default:
+      shared_net:
+        aliases: [dcad-proxy]
     volumes:
       - caddy_data:/data
       - caddy_config:/config
@@ -32,8 +31,7 @@ services:
       context: ..
       dockerfile: infra/api.Dockerfile
     env_file:
-      - path: ../.env
-        required: false
+      - ../.env
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
@@ -72,6 +70,32 @@ services:
       retries: 20
     mem_limit: 1536m
     restart: unless-stopped
+
+  # Nightly pg_dump + blob tarball into BACKUP_DIR on the host (see infra/backup/backup.sh).
+  backup:
+    image: postgres:17
+    entrypoint: ["/bin/sh", "/backup/backup.sh"]
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-dcad}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-}
+      PGDATABASE: ${POSTGRES_DB:-dcad}
+      BACKUP_HOUR: ${BACKUP_HOUR:-3}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_RUN_ON_START: ${BACKUP_RUN_ON_START:-0}
+    volumes:
+      - ./backup:/backup:ro
+      - blobs:/blobs:ro
+      - ${BACKUP_DIR:-/var/backups/dcad}:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 128m
+    restart: unless-stopped
+
+networks:
+  shared_net:
+    external: true
 
 volumes:
   pgdata:

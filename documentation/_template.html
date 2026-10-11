@@ -1,0 +1,129 @@
+<!doctype html>
+<!--
+  PAGE TEMPLATE + STYLE GUIDE for the DentalCAD design docs. Copy this file for a new page.
+
+  Rules
+  - Self-contained: only ./assets/docs.css and ./assets/docs.js. No CDNs, fonts, or images; must work from file://.
+  - <html data-root="."> for pages in documentation/, data-root=".." for documentation/reference/*.
+  - <body data-page="..."> = path from documentation/ (must match the NAV list in assets/docs.js).
+  - Title: "<Page title> · DentalCAD docs".
+  - Every page starts with: eyebrow (depth badge + audience), h1, .lede, a .tldr box (the shallow read).
+    Then h2 sections (medium depth). Put the deepest detail in <details class="deep"> blocks so skimmers can skip it.
+  - Mark status honestly on every feature/component:
+      <span class="badge done">Built · Day 1</span>   implemented and tested now
+      <span class="badge planned">Planned · Day 3</span>   in the 1-week MVP plan, not built yet
+      <span class="badge future">Post-MVP</span>   roadmap only
+      <span class="badge deviation">Deviation</span>   differs from specs/plan.md (say how)
+  - Cite real code paths in <code>, e.g. <code>apps/web/src/engine/Viewer.ts</code>. Never invent APIs or numbers:
+    if a figure comes from a measured test, say so; if it is a target, say "target".
+  - Diagrams: use the HTML/CSS diagram components below (.flow, .stack, .cluster, .sequence, .node). They follow light/dark
+    themes automatically. Inline SVG only when a layout truly needs it, and then only with the svg .s-* classes (no hard-coded colours).
+  - Tables go inside <div class="table-wrap">. Plain language; define dental terms on first use or link to glossary.html.
+  - No headings are hard-coded in the TOC; docs.js builds it from h2/h3.
+-->
+<html lang="en" data-root=".">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Page title · DentalCAD docs</title>
+  <meta name="description" content="One sentence describing this page.">
+  <link rel="stylesheet" href="./assets/docs.css">
+</head>
+<body data-page="_template.html">
+  <header class="topbar">
+    <button class="icon-btn menu-btn" id="menu-toggle" aria-expanded="false" aria-controls="sidebar">☰</button>
+    <a class="brand" href="./index.html">DentalCAD <small>design docs</small></a>
+    <span class="spacer"></span>
+    <button class="icon-btn" id="theme-toggle" type="button">☾ Dark</button>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation"></nav>
+
+    <main>
+      <div class="eyebrow"><span class="badge depth">L3 · Deep dive</span> <span>For: engineers</span></div>
+      <h1>Page title</h1>
+      <p class="lede">One or two sentences: what this page explains and why it matters.</p>
+
+      <div class="tldr">
+        <strong>In short</strong>
+        <ul>
+          <li>The three to five things a reader must take away.</li>
+        </ul>
+      </div>
+
+      <h2>Section</h2>
+      <p>Medium-depth explanation with status badges <span class="badge done">Built · Day 1</span>
+        <span class="badge planned">Planned · Day 3</span> <span class="badge future">Post-MVP</span>
+        <span class="badge deviation">Deviation</span>.</p>
+
+      <div class="callout note"><strong>Note</strong>Neutral context.</div>
+      <div class="callout warn"><strong>Limitation</strong>Known limit or risk.</div>
+      <div class="callout decision"><strong>Decision</strong>What we chose and why (link to decisions.html).</div>
+
+      <h3>Pipeline diagram (.flow)</h3>
+      <figure class="diagram">
+        <div class="flow">
+          <div class="node">Parse<small>STL / PLY</small></div><div class="arrow"></div>
+          <div class="node accent">Weld<small>exact bits</small></div><div class="arrow"></div>
+          <div class="node ok">BVH<small>in worker</small></div><div class="arrow"></div>
+          <div class="node plan">Planned step<small>dashed = not built</small></div>
+        </div>
+        <figcaption>Figure — caption explaining what to notice.</figcaption>
+      </figure>
+
+      <h3>Layer diagram (.stack)</h3>
+      <figure class="diagram">
+        <div class="stack">
+          <div class="layer"><div class="layer-name">UI<small>React</small></div>
+            <div class="parts"><div class="node">Panels</div><div class="node">Toolbar</div></div></div>
+          <div class="layer"><div class="layer-name">Engine<small>three.js</small></div>
+            <div class="parts"><div class="node">Viewer</div><div class="node">Materials</div></div></div>
+        </div>
+        <figcaption>Figure — top layer depends on the ones below.</figcaption>
+      </figure>
+
+      <h3>Boundaries (.cluster) with rows</h3>
+      <figure class="diagram">
+        <div class="cluster accent"><span class="cluster-title">OCI VM</span>
+          <div class="d-row">
+            <div class="node">proxy<small>Caddy</small></div>
+            <div class="node">api<small>Node + Hono</small></div>
+            <div class="node">db<small>Postgres 17</small></div>
+          </div>
+        </div>
+        <div class="d-link down">HTTPS</div>
+        <div class="node ext">Browser</div>
+        <figcaption>Figure — dashed outline = deployment boundary.</figcaption>
+      </figure>
+
+      <h3>Sequence (.sequence)</h3>
+      <figure class="diagram">
+        <ol class="sequence">
+          <li><span class="actors">Browser → API</span><span>POST /api/cases/:id/files (gzip stream)</span></li>
+          <li><span class="actors">API → BlobStore</span><span>stream bytes; hash decompressed copy</span></li>
+        </ol>
+      </figure>
+
+      <h3>Table</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
+        <tbody><tr><td><code>value</code></td><td>Explanation</td></tr></tbody>
+      </table></div>
+
+      <dl class="kv"><dt>Key</dt><dd>Value</dd></dl>
+
+      <details class="deep">
+        <summary>Deeper detail: algorithm specifics <span class="badge planned">Planned · Day 3</span></summary>
+        <div class="body"><p>The detail most readers can skip.</p><pre><code>code sample</code></pre></div>
+      </details>
+
+      <nav class="page-nav" id="page-nav" aria-label="Previous and next page"></nav>
+      <footer class="page-footer">Source of truth: <code>specs/plan.md</code> and the code. Last updated 2026-10-03.</footer>
+    </main>
+
+    <aside class="toc" id="toc" aria-label="On this page"></aside>
+  </div>
+  <script src="./assets/docs.js"></script>
+</body>
+</html>

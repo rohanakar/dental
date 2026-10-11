@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en" data-root=".">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deployment &amp; operations · DentalCAD docs</title>
+  <meta name="description" content="How DentalCAD runs on the OCI aarch64 VM at dental.cognifuze.com behind Nginx Proxy Manager: topology, Compose services, the shared_net network, the .env, compose.sh, git-based deploys, migrations, backups, troubleshooting, the migration path and deploy checklists.">
+  <link rel="stylesheet" href="./assets/docs.css">
+</head>
+<body data-page="deployment.html">
+  <header class="topbar">
+    <button class="icon-btn menu-btn" id="menu-toggle" aria-expanded="false" aria-controls="sidebar">☰</button>
+    <a class="brand" href="./index.html">DentalCAD <small>design docs</small></a>
+    <span class="spacer"></span>
+    <button class="icon-btn" id="theme-toggle" type="button">☾ Dark</button>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation"></nav>
+
+    <main>
+      <div class="eyebrow"><span class="badge depth">L3 · Deep dive</span> <span>For: whoever deploys and operates the VM</span></div>
+      <h1>Deployment &amp; operations</h1>
+      <p class="lede">DentalCAD runs as three Docker Compose services on a single OCI VM (aarch64, 12 vCPU, 6 GB RAM) and is served at <strong>https://dental.cognifuze.com</strong>. This page covers how the pieces fit, how to deploy and verify, and how to move the stack elsewhere later.</p>
+
+      <div class="tldr">
+        <strong>In short</strong>
+        <ul>
+          <li><strong>Three containers:</strong> <code>proxy</code> (Caddy + the built web app), <code>api</code> (Node 22 + Hono) and <code>db</code> (Postgres 17). They build natively on the ARM64 VM. <span class="badge done">Built · Day 1</span></li>
+          <li><strong>Nginx Proxy Manager</strong> (NPM) on the VM owns <code>dental.cognifuze.com</code> and TLS. Our <code>proxy</code> joins the external Docker network <code>shared_net</code> as <code>dcad-proxy</code> and serves plain HTTP on :80. No service publishes a host port.</li>
+          <li><strong>One <code>.env</code> at the repo root</strong> holds all config and secrets. On the VM it is created by hand and never committed.</li>
+          <li><strong>Deploy</strong> on the VM with <code>git pull &amp;&amp; ./infra/compose.sh up -d --build</code>. The repo is private (<code>git@github.com:rohanakar/dental.git</code>), cloned with a read-only deploy key. Migrations run automatically on API start.</li>
+          <li><strong>Backups are manual today.</strong> The backup container is planned for Day 5. <span class="badge planned">Planned · Day 5</span></li>
+        </ul>
+      </div>
+
+      <div class="callout note"><strong>New to Caddy?</strong>Read <a href="./primer.html#caddy">Caddy, explained</a> in
+        the primer first: what it is, what each line of our Caddyfile does, and why we run it behind Nginx Proxy Manager.</div>
+
+      <h2>Topology</h2>
+      <figure class="diagram">
+        <div class="node ext">Browser<small>https://dental.cognifuze.com</small></div>
+        <div class="d-link down">DNS A record → VM public IP · HTTPS 443</div>
+        <div class="cluster accent"><span class="cluster-title">OCI VM · aarch64 · 12 vCPU · 6 GB</span>
+          <div class="d-col">
+            <div class="node">Nginx Proxy Manager (existing)<small>ports 80/443 · Let's Encrypt · proxy host dental.cognifuze.com · client_max_body_size 250m</small></div>
+            <div class="d-link down">HTTP → dcad-proxy:80 over Docker network shared_net</div>
+            <div class="cluster"><span class="cluster-title">Docker Compose project "dcad"</span>
+              <div class="d-col">
+                <div class="node accent">proxy · Caddy 2<small>on default + shared_net (alias dcad-proxy) · serves the SPA from /srv · /api/* → api:3000 (unbuffered)</small></div>
+                <div class="d-link down">project default network only</div>
+                <div class="d-row">
+                  <div class="node">api · Node 22 + Hono<small>:3000 · volume dcad_blobs → /data/blobs</small></div>
+                  <div class="node">db · Postgres 17<small>:5432 (not published) · volume dcad_pgdata</small></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>Figure — only NPM is reachable from the internet. Our stack publishes no host ports: NPM reaches <code>proxy</code> over <code>shared_net</code>, and <code>api</code> and <code>db</code> sit only on the project's default network, so NPM cannot reach them directly.</figcaption>
+      </figure>
+
+      <h2>Compose services</h2>
+      <p>Defined in <code>infra/docker-compose.yml</code> (project name <code>dcad</code>, so volumes are named <code>dcad_pgdata</code>, <code>dcad_blobs</code>, and so on). All services use <code>restart: unless-stopped</code>.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Service</th><th>Image / build</th><th>Memory limit</th><th>Health check</th><th>Storage &amp; notes</th></tr></thead>
+        <tbody>
+          <tr><td><code>proxy</code></td><td>Built from <code>infra/proxy.Dockerfile</code>: <code>node:22-slim</code> builds the web app (<code>vite build</code> with <code>VITE_BASE_PATH</code>), then <code>caddy:2</code> serves it</td><td>128 MB</td><td>none (starts after <code>api</code> is healthy)</td><td>No published port. Joins the project default network and the external <code>shared_net</code> (alias <code>dcad-proxy</code>). Volumes <code>caddy_data</code>, <code>caddy_config</code>. Admin API off. Trusts <code>X-Forwarded-*</code> from private ranges. Compresses with zstd/gzip.</td></tr>
+          <tr><td><code>api</code></td><td>Built from <code>infra/api.Dockerfile</code>: pnpm workspace build, <code>tsup</code> bundle, <code>pnpm deploy --prod</code> → <code>node:22-slim</code> runtime as non-root user <code>node</code></td><td>1 GB (V8 heap capped at 768 MB via <code>--max-old-space-size=768</code>)</td><td><code>fetch /healthz</code> every 10 s, 30 s start period, 5 retries (DB ping inside)</td><td>Volume <code>blobs</code> → <code>/data/blobs</code>. <code>NODE_ENV=production</code>. <code>DATABASE_URL</code> assembled from <code>POSTGRES_*</code>. Loads the repo-root <code>.env</code>. Waits for <code>db</code> healthy.</td></tr>
+          <tr><td><code>db</code></td><td><code>postgres:17</code> (<code>shared_buffers=512MB</code>, <code>max_connections=50</code>, <code>shm_size</code> 256 MB)</td><td>1.5 GB</td><td><code>pg_isready</code> every 5 s, 20 retries</td><td>Volume <code>pgdata</code>. Not published on the host (the dev override publishes it on 127.0.0.1 for local work).</td></tr>
+        </tbody>
+      </table></div>
+      <p><strong>Memory budget:</strong> the limits add up to about 2.6 GB of the VM's 6 GB, leaving roughly 3 GB for the OS, NPM and a future CPU inference container. The VM has no GPU, so future <code>ml.*</code> proposers will run on a separate GPU host (see <a href="./ai-assist.html">AI assist</a>).</p>
+      <div class="callout note"><strong>ARM64</strong>The VM is <strong>aarch64</strong>. <code>node:22-slim</code>, <code>postgres:17</code> and <code>caddy:2</code> are all multi-arch, so <code>compose up --build</code> on the VM produces native <code>linux/arm64</code> images, with no emulation. To build elsewhere for the VM, use <code>docker buildx build --platform linux/arm64 …</code>. The Day 1 stack was built and run on an arm64 Mac, the same architecture.</div>
+
+      <details class="deep">
+        <summary>Deeper detail: Caddy routing (<code>infra/Caddyfile</code>)</summary>
+        <div class="body">
+          <ul>
+            <li>Site address <code>:80</code>: plain HTTP only. Nginx Proxy Manager in front handles the domain and TLS.</li>
+            <li><code>handle_path {$BASE_PATH}/*</code> strips the sub-path (empty at the root), so the API always sees <code>/api/*</code> and the SPA files sit at the root of <code>/srv</code>. Anything outside the base path gets 404.</li>
+            <li><code>/api/*</code> goes to <code>reverse_proxy api:3000</code> with <code>flush_interval -1</code>, so scan streams are not buffered.</li>
+            <li>Everything else is a static file with <code>try_files {path} /index.html</code> for client-side routing. <code>/assets/*</code> gets <code>Cache-Control: public, max-age=31536000, immutable</code> (hashed file names); HTML gets <code>no-cache</code>.</li>
+          </ul>
+        </div>
+      </details>
+
+      <h2>Configuration: the <code>.env</code></h2>
+      <p>One gitignored file at the repo root, started from <code>.env.example</code>. Locally it is used by <code>pnpm dev:api</code>. On the VM it is used by <code>infra/compose.sh</code>, both for Compose variable interpolation and as the <code>api</code> container's environment. Empty values count as unset. Don't put comments on the same line as a value.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Key</th><th>Production value</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td><code>PUBLIC_URL</code></td><td><code>https://dental.cognifuze.com</code></td><td>Must match what the browser uses (the domain NPM serves)</td></tr>
+          <tr><td><code>POSTGRES_PASSWORD</code></td><td><code>openssl rand -hex 24</code></td><td>Hex only: it is embedded in <code>DATABASE_URL</code></td></tr>
+          <tr><td><code>AUTH_SECRET</code></td><td><code>openssl rand -base64 48</code></td><td>At least 32 characters</td></tr>
+          <tr><td><code>ANTHROPIC_API_KEY</code> and/or <code>OPENAI_API_KEY</code></td><td>your key(s)</td><td>Anthropic is preferred if both are set. Neither means the offline mock.</td></tr>
+        </tbody>
+      </table></div>
+      <p>Every other key is optional, with defaults in <code>apps/api/src/config.ts</code>. They are listed in the <a href="./backend.html">Backend API configuration reference</a>.</p>
+      <div class="callout warn"><strong>Fill the secrets before the first <code>up</code></strong><code>.env.example</code> ships <code>POSTGRES_PASSWORD</code> and <code>AUTH_SECRET</code> empty. An empty <code>POSTGRES_PASSWORD</code> stops Postgres from starting, and an <code>AUTH_SECRET</code> under 32 characters stops the API. Postgres keeps the password it was initialized with: changing it later requires <code>ALTER USER</code> inside the database, not just editing <code>.env</code>.</div>
+
+      <h2>Script: <code>compose.sh</code></h2>
+      <p><code>infra/compose.sh</code> does one thing: it changes to the repo root and runs <code>exec docker compose --env-file .env -f infra/docker-compose.yml "$@"</code>. Extra <code>-f</code> overrides (e.g. <code>infra/docker-compose.dev.yml</code>) pass straight through. There is no deploy script: the VM pulls from git.</p>
+
+      <h3>Migrations</h3>
+      <p>With <code>MIGRATE_ON_START=true</code> (the default), the API applies the Drizzle migrations in <code>/app/drizzle</code> before it starts listening, so a deploy that changes the schema needs no extra step. Manual run: <code>./infra/compose.sh exec api node dist/migrate.js</code>.</p>
+
+      <h2>First deployment checklist</h2>
+      <ol>
+        <li><strong>DNS:</strong> create an <code>A</code> record <code>dental.cognifuze.com</code> → the VM's public IP.</li>
+        <li><strong>VM prerequisites:</strong> Docker Engine with Compose v2.24+ (<code>docker compose version</code>). Create the shared network once with <code>docker network create shared_net</code>, and attach NPM to it (<code>shared_net</code> as an external network in NPM's compose file).</li>
+        <li><strong>Code:</strong> create a read-only deploy key and clone:
+<pre><code>ssh-keygen -t ed25519 -f ~/.ssh/dcad_deploy -N ""   # add the .pub under the repo's Settings → Deploy keys
+GIT_SSH_COMMAND="ssh -i ~/.ssh/dcad_deploy" git clone git@github.com:rohanakar/dental.git ~/dcad
+git -C ~/dcad config core.sshCommand "ssh -i ~/.ssh/dcad_deploy"</code></pre></li>
+        <li><strong>Create the <code>.env</code>:</strong> <code>cd ~/dcad &amp;&amp; cp .env.example .env</code>, then set <code>PUBLIC_URL</code>, <code>POSTGRES_PASSWORD</code>, <code>AUTH_SECRET</code>, and your LLM key.</li>
+        <li><strong>Start:</strong> <code>./infra/compose.sh up -d --build</code>, then <code>./infra/compose.sh ps</code>. All three services should show as running, with <code>api</code> and <code>db</code> healthy.</li>
+        <li><strong>Check from the VM:</strong> <code>docker run --rm --network shared_net curlimages/curl -s http://dcad-proxy/api/healthz</code> → <code>{"ok":true}</code>.</li>
+        <li><strong>NPM proxy host:</strong> domain <code>dental.cognifuze.com</code>, scheme <code>http</code>, forward host <code>dcad-proxy</code>, port <code>80</code>, <em>Websockets Support</em> on. On the SSL tab request a Let's Encrypt certificate and enable <em>Force SSL</em>. Add the <em>Advanced</em> snippet below.</li>
+        <li><strong>Firewall:</strong> only 80/443 (owned by NPM) need to be open in the OCI security list / NSG.</li>
+        <li>Run the post-deploy verification below.</li>
+      </ol>
+
+      <details class="deep" open>
+        <summary>NPM proxy host: <em>Advanced</em> tab</summary>
+        <div class="body">
+<pre><code># Scans are large; the API enforces MAX_UPLOAD_BYTES (default 200 MB) itself.
+client_max_body_size 250m;
+# Stream scan uploads/downloads instead of spooling them to disk
+proxy_request_buffering off;
+proxy_buffering off;
+proxy_read_timeout 300s;
+proxy_send_timeout 300s;</code></pre>
+          <p>The same snippet lives in <code>infra/README.md</code>.</p>
+        </div>
+      </details>
+
+      <h2>Post-deploy verification</h2>
+      <p>These are the same ten checks that passed in the Day 1 local smoke test (production stack on <code>localhost:8080</code>). Run them from any machine against the public URL. You need a scan file; the synthetic one is made by <code>pnpm --filter @dcad/web fixtures</code> → <code>data/synthetic/lower.stl</code>.</p>
+<pre><code>B=https://dental.cognifuze.com; J=/tmp/dcad-cookies.txt; O="Origin: $B"
+curl -s -o /dev/null -w '%{http_code}\n' $B/                    # 1  page → 200
+curl -s $B/api/healthz                                          # 2  {"ok":true}
+curl -s -c $J -H "$O" -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"a-long-password!","name":"You"}' \
+  $B/api/auth/sign-up/email -o /dev/null -w '%{http_code}\n'    # 3  sign-up → 200
+curl -s -b $J $B/api/me                                         # 4  {userId, orgId, role:"owner"}
+CASE=$(curl -s -b $J -H "$O" -H 'Content-Type: application/json' \
+  -d '{"setup":{"patientRef":"P-001","teeth":[{"fdi":36,"restoration":"anatomic-crown","material":"zirconia"}],"notes":""}}' \
+  $B/api/cases)                                                 # 5  case created (201)
+ID=$(echo "$CASE" | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
+SHA=$(shasum -a 256 lower.stl | cut -d' ' -f1); gzip -c lower.stl &gt; lower.stl.gz
+curl -s -b $J -H "$O" --data-binary @lower.stl.gz \
+  "$B/api/cases/$ID/files?kind=lower&amp;name=lower.stl&amp;sha256=$SHA&amp;encoding=gzip"   # 6  upload → 201 CaseFile
+FID=$(curl -s -b $J $B/api/cases/$ID | python3 -c 'import sys,json;print(json.load(sys.stdin)["files"][0]["id"])')
+curl -s -b $J --compressed $B/api/files/$FID -o back.stl
+shasum -a 256 back.stl                                          # 7  must equal $SHA
+curl -s -b $J -H "$O" --data-binary @lower.stl.gz -o /dev/null -w '%{http_code}\n' \
+  "$B/api/cases/$ID/files?kind=upper&amp;name=x.stl&amp;sha256=$(printf '0%.0s' {1..64})&amp;encoding=gzip"  # 8  → 422
+curl -s -b $J -H "$O" -H 'Content-Type: application/json' \
+  -d '{"purpose":"agent","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}' \
+  $B/api/llm/messages                                           # 9  LlmResponse
+curl -s -o /dev/null -w '%{http_code}\n' $B/api/cases           # 10 no cookie → 401</code></pre>
+      <div class="table-wrap"><table>
+        <thead><tr><th>#</th><th>Check</th><th>Expected</th></tr></thead>
+        <tbody>
+          <tr><td>1–2</td><td>Page and health</td><td><code>200</code> and <code>{"ok":true}</code></td></tr>
+          <tr><td>3–4</td><td>Sign-up and <code>/api/me</code></td><td>Session cookie set; a personal organization with role <code>owner</code></td></tr>
+          <tr><td>5</td><td>Create case</td><td>JSON with <code>id</code>, <code>status:"draft"</code>, <code>currentVersion:0</code></td></tr>
+          <tr><td>6–7</td><td>Gzip upload and download round-trip</td><td><code>CaseFile</code> returned; the downloaded file's sha256 equals the original's</td></tr>
+          <tr><td>8</td><td>Wrong sha256</td><td><code>422</code> (<code>integrity_error</code>), nothing stored</td></tr>
+          <tr><td>9</td><td>LLM proxy</td><td><code>provider:"mock"</code>, text <code>mock: hello</code> without keys; with a key, the configured provider and model</td></tr>
+          <tr><td>10</td><td>No auth</td><td><code>401</code></td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout note"><strong>Measured locally, not yet on the VM</strong>In the Day 1 smoke test, the 50 MB synthetic STL gzipped to about 23 MB and round-tripped with a matching sha256. In the backend builder's run, a 150 MB upload took about 1.1 s with the API at about 112 MiB, and a 210 MB upload got 413. Both ran on Docker on an arm64 Mac. Repeat on the VM to get real figures.</div>
+      <div class="callout warn"><strong>No login screen yet</strong>On Day 1 the web app is the scan viewer only. Sign-up and sign-in work through the API (as above). The web login and upload-to-case UI are planned. <span class="badge planned">Planned · Day 2</span></div>
+
+      <h2>Operations</h2>
+      <h3>Logs and day-to-day commands</h3>
+<pre><code>./infra/compose.sh ps                               # status and health
+./infra/compose.sh logs -f api                      # JSON logs (pino) with requestId, userId, orgId
+./infra/compose.sh exec api node dist/migrate.js    # run migrations manually
+git pull &amp;&amp; ./infra/compose.sh up -d --build        # deploy a new version on the VM
+./infra/compose.sh down                             # stop; volumes are kept</code></pre>
+      <p>Every API response carries an <code>X-Request-Id</code> header. Search the logs for it to trace a single request.</p>
+
+      <h3>Backups</h3>
+      <p><span class="badge planned">Planned · Day 5</span> A <code>backup</code> container (nightly <code>pg_dump</code> + a blob volume tarball, shipped off-box to an S3-compatible target) is in the plan but not built. Until then, run these manually from <code>~/dcad</code>, writing <strong>outside</strong> the deploy directory:</p>
+<pre><code>mkdir -p ~/backups
+./infra/compose.sh exec -T db pg_dump -U dcad -Fc dcad &gt; ~/backups/dcad-$(date +%F).dump
+docker run --rm -v dcad_blobs:/blobs -v ~/backups:/out alpine tar czf /out/blobs-$(date +%F).tgz -C /blobs .</code></pre>
+      <p>Copy both files off the VM (e.g. to OCI Object Storage). <strong>Restore:</strong> <code>pg_restore -U dcad -d dcad --clean</code> into the <code>db</code> container, and untar into the <code>dcad_blobs</code> volume. A restore drill onto a fresh stack is part of the planned verification (see <a href="./testing.html">Testing &amp; verification</a>).</p>
+
+      <h3>Troubleshooting</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Symptom</th><th>Likely cause and fix</th></tr></thead>
+        <tbody>
+          <tr><td><code>network shared_net declared as external, but could not be found</code></td><td>Create it once: <code>docker network create shared_net</code>.</td></tr>
+          <tr><td><code>502</code> from NPM</td><td>NPM is not on <code>shared_net</code>, or <code>proxy</code> is not running (<code>./infra/compose.sh ps</code>). Check with <code>docker network inspect shared_net</code>.</td></tr>
+          <tr><td>API exits with <code>Invalid configuration</code></td><td>The zod config check failed (e.g. <code>AUTH_SECRET</code> shorter than 32, or <code>BLOB_DRIVER=s3</code> without bucket or keys). Every bad key is listed in the log.</td></tr>
+          <tr><td><code>413</code> on scan upload</td><td>Set <code>client_max_body_size</code> in the NPM proxy host's <em>Advanced</em> tab and/or raise <code>MAX_UPLOAD_BYTES</code>.</td></tr>
+          <tr><td><code>Invalid origin</code> / sign-in fails</td><td><code>PUBLIC_URL</code> must match the browser's scheme + host. Add dev origins to <code>TRUSTED_ORIGINS</code>.</td></tr>
+          <tr><td>Upload is slow, or memory grows in NPM</td><td>Check the <code>proxy_request_buffering off</code> / <code>proxy_buffering off</code> lines in the NPM <em>Advanced</em> tab.</td></tr>
+          <tr><td>LLM answers come from <code>mock</code></td><td>No key was picked up. Check <code>.env</code> and the <code>llm route</code> lines in the API startup log.</td></tr>
+          <tr><td><code>429</code> from <code>/api/llm/messages</code></td><td>Per-user limit (<code>LLM_RATE_LIMIT_PER_MIN</code>, default 30/min). Honour <code>Retry-After</code>.</td></tr>
+          <tr><td>Postgres auth fails after changing <code>POSTGRES_PASSWORD</code></td><td>The data volume keeps the original password. Change it with <code>ALTER USER</code> inside the database, or recreate the volume (data loss).</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>Migration path</h2>
+      <p>Everything speaks open protocols (SQL, the S3 API, HTTP), so moving off this VM is a configuration change plus data copy. It does not require changing app code.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Concern</th><th>Now (this VM)</th><th>Later</th><th>What changes</th></tr></thead>
+        <tbody>
+          <tr><td>Database</td><td>Postgres 17 container</td><td>Any managed Postgres (OCI, RDS, Cloud SQL…)</td><td><code>DATABASE_URL</code> + <code>pg_dump</code>/<code>pg_restore</code></td></tr>
+          <tr><td>Files</td><td><code>fs</code> volume <code>dcad_blobs</code></td><td>OCI Object Storage (S3 compatibility), AWS S3, Cloudflare R2, MinIO</td><td><code>BLOB_DRIVER=s3</code> + <code>S3_*</code>; copy objects (keys are the same relative paths)</td></tr>
+          <tr><td>Auth</td><td>Better Auth, tables in our Postgres</td><td>External OIDC (Keycloak, Auth0, Cognito, OCI Identity Domains)</td><td>A new <code>AuthPort</code> adapter in <code>apps/api/src/adapters/auth</code></td></tr>
+          <tr><td>Jobs</td><td>Inline stub (501)</td><td>pg-boss → SQS / Cloud Tasks</td><td><code>JobQueue</code> adapter</td></tr>
+          <tr><td>LLM</td><td>Anthropic / OpenAI / mock</td><td>Other or self-hosted models</td><td>An <code>LlmProvider</code> adapter</td></tr>
+          <tr><td>Hosting</td><td>Compose on one VM</td><td>k8s / ECS / Cloud Run</td><td>Same images; the platform supplies the env vars</td></tr>
+          <tr><td>TLS</td><td>Nginx Proxy Manager</td><td>Cloud load balancer</td><td>Nothing in the app</td></tr>
+        </tbody>
+      </table></div>
+      <details class="deep">
+        <summary>Deeper detail: switching files to OCI Object Storage</summary>
+        <div class="body">
+          <ol>
+            <li>Create a bucket (e.g. <code>dcad-blobs</code>) and a <strong>Customer Secret Key</strong> (Identity → your user → Customer secret keys).</li>
+            <li>In <code>.env</code>: <code>BLOB_DRIVER=s3</code>, <code>S3_ENDPOINT=https://&lt;namespace&gt;.compat.objectstorage.&lt;region&gt;.oraclecloud.com</code>, <code>S3_REGION</code>, <code>S3_BUCKET</code>, <code>S3_ACCESS_KEY_ID</code>, <code>S3_SECRET_ACCESS_KEY</code>, <code>S3_FORCE_PATH_STYLE=true</code>.</li>
+            <li>Copy existing blobs (keys are <code>orgs/&lt;org&gt;/cases/&lt;case&gt;/&lt;file&gt;</code>), e.g. <code>aws s3 sync /var/lib/docker/volumes/dcad_blobs/_data s3://dcad-blobs --endpoint-url "$S3_ENDPOINT"</code>.</li>
+            <li><code>./infra/compose.sh up -d</code>.</li>
+          </ol>
+          <p>The S3 adapter disables the newer default request checksums (<code>WHEN_REQUIRED</code>), because some S3-compatible stores, including OCI, reject them. The <code>BlobStore</code> contract tests run against both <code>fs</code> and <code>s3</code> (SeaweedFS in tests), so the switch is configuration-only. It has not yet been exercised against OCI itself.</p>
+        </div>
+      </details>
+
+      <h2>Local runs</h2>
+      <ul>
+        <li><strong>Development:</strong> <code>cp .env.example .env</code>, then set <code>PUBLIC_URL=http://localhost:5173</code>, <code>TRUSTED_ORIGINS=http://localhost:5173</code>, a <code>DATABASE_URL</code> matching <code>POSTGRES_PASSWORD</code>, and <code>AUTH_SECRET</code>. Then run <code>./infra/compose.sh -f infra/docker-compose.dev.yml up -d db</code> (Postgres on <code>127.0.0.1:5432</code>), <code>pnpm dev:api</code> (:3000) and <code>pnpm dev:web</code> (:5173, proxies <code>/api</code>).</li>
+        <li><strong>Production-like:</strong> with <code>PUBLIC_URL=http://localhost:8080</code> in <code>.env</code> (and <code>docker network create shared_net</code> once), run <code>./infra/compose.sh -f infra/docker-compose.dev.yml up -d --build</code>. The dev override publishes the proxy on <code>127.0.0.1:8080</code>; open <code>http://localhost:8080</code>.</li>
+        <li><strong>Integration tests:</strong> <code>pnpm --filter @dcad/api test:infra</code> starts <code>infra/docker-compose.test.yml</code> (Postgres on <code>127.0.0.1:55432</code>, SeaweedFS S3 on <code>127.0.0.1:58333</code>, both on tmpfs), runs all tests, and tears it down.</li>
+      </ul>
+
+      <nav class="page-nav" id="page-nav" aria-label="Previous and next page"></nav>
+      <footer class="page-footer">Source of truth: <code>infra/</code> (compose files, Dockerfiles, Caddyfile, <code>compose.sh</code>, <code>README.md</code>), <code>.env.example</code> and <code>specs/plan.md</code>. Last updated 2026-10-11.</footer>
+    </main>
+
+    <aside class="toc" id="toc" aria-label="On this page"></aside>
+  </div>
+  <script src="./assets/docs.js"></script>
+</body>
+</html>

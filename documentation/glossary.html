@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en" data-root=".">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Glossary · DentalCAD docs</title>
+  <meta name="description" content="Dental and technical terms used across the DentalCAD design docs.">
+  <link rel="stylesheet" href="./assets/docs.css">
+  <style>
+    .gloss { display: grid; grid-template-columns: 220px 1fr; gap: 0; margin: 0 0 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+    .gloss dt, .gloss dd { margin: 0; padding: 9px 12px; border-bottom: 1px solid var(--border); font-size: 15px; }
+    .gloss dt { font-weight: 650; background: var(--surface-2); }
+    .gloss dt:last-of-type, .gloss dd:last-of-type { border-bottom: 0; }
+    .gloss dd small { color: var(--muted); }
+    @media (max-width: 600px) { .gloss { grid-template-columns: 1fr; } .gloss dt { border-bottom: 0; } }
+    .filter { width: 100%; max-width: 420px; padding: 9px 12px; margin: 0 0 18px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; }
+  </style>
+</head>
+<body data-page="glossary.html">
+  <header class="topbar">
+    <button class="icon-btn menu-btn" id="menu-toggle" aria-expanded="false" aria-controls="sidebar">☰</button>
+    <a class="brand" href="./index.html">DentalCAD <small>design docs</small></a>
+    <span class="spacer"></span>
+    <button class="icon-btn" id="theme-toggle" type="button">☾ Dark</button>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation"></nav>
+
+    <main>
+      <div class="eyebrow"><span class="badge depth">Reference</span> <span>For: engineers new to dentistry, dental experts new to the code</span></div>
+      <h1>Glossary</h1>
+      <p class="lede">Dental terms for engineers, and engineering terms for dental experts.</p>
+
+      <label for="gloss-filter" class="eyebrow" style="margin-bottom:6px">Filter terms</label>
+      <input id="gloss-filter" class="filter" type="search" placeholder="e.g. margin, BVH, undercut" autocomplete="off">
+
+      <h2>Teeth and directions</h2>
+      <dl class="gloss">
+        <dt>FDI notation</dt><dd>Two-digit tooth numbers: the first digit is the quadrant (1 upper right, 2 upper left, 3 lower left, 4 lower right), the second is the position from the midline (1 central incisor … 8 third molar). Tooth 36 is the lower-left first molar. <small>Schema: <code>Fdi</code>.</small></dd>
+        <dt>Posterior teeth</dt><dd>Premolars (positions 4–5) and molars (6–8). The MVP's scope. <small><code>isPosterior()</code></small></dd>
+        <dt>Anterior teeth</dt><dd>Incisors and canines (positions 1–3). Out of MVP scope.</dd>
+        <dt>Mesial / distal</dt><dd>Toward / away from the midline of the dental arch, along the arch. The "MD" axis in the tooth frame.</dd>
+        <dt>Buccal / lingual (palatal)</dt><dd>Toward the cheek / toward the tongue (palate in the upper jaw). The "BL" axis.</dd>
+        <dt>Occlusal / cervical</dt><dd>Toward the biting surface / toward the gum line (the tooth's "neck").</dd>
+        <dt>Proximal</dt><dd>The surfaces facing neighbouring teeth (mesial and distal).</dd>
+        <dt>Antagonist</dt><dd>The opposing tooth or teeth in the other jaw that the crown bites against.</dd>
+        <dt>Occlusion</dt><dd>How upper and lower teeth meet. Scans are assumed to arrive "in occlusion", already aligned to each other.</dd>
+        <dt>Gingiva / sulcus</dt><dd>The gum / the small groove between gum and tooth. The margin tool must not snap into the sulcus.</dd>
+        <dt>Cusp</dt><dd>A raised point on the chewing surface. Adapt-to-antagonist must preserve cusps (it smooths displacements, not positions).</dd>
+      </dl>
+
+      <h2>Restorations and design</h2>
+      <dl class="gloss">
+        <dt>Crown (anatomic)</dt><dd>A full cap over a prepared tooth, shaped like a natural tooth. The MVP's only restoration type (<code>anatomic-crown</code>).</dd>
+        <dt>Prep (preparation)</dt><dd>A tooth ground down by the dentist to receive a crown. Its scan is the main input.</dd>
+        <dt>Margin line</dt><dd>The closed curve on the prep where the crown ends. The most precision-critical line in the design. <small>Schema: <code>MarginLine</code> (anchors + dense points).</small></dd>
+        <dt>Chamfer / shoulder</dt><dd>Shapes of the prep's edge at the margin. A chamfer is a rounded bevel, a shoulder a flat ledge.</dd>
+        <dt>Insertion axis (path of insertion)</dt><dd>The direction the crown slides onto the prep. Must be free of undercuts. <small>Schema: <code>InsertionAxis</code>.</small></dd>
+        <dt>Undercut</dt><dd>Part of the prep hidden when viewed along the insertion axis. A rigid crown can't pass it, so it is "blocked out" (filled) in the intaglio.</dd>
+        <dt>Blockout</dt><dd>Filling undercuts in the inner surface so the crown can seat.</dd>
+        <dt>Intaglio</dt><dd>The crown's inner (fitting) surface, which sits on the prep with a cement gap.</dd>
+        <dt>Cement gap</dt><dd>Space between prep and intaglio for the cement, typically 0.03–0.05 mm. Ramps from 0 at the margin. <small><code>cementGapMm</code></small></dd>
+        <dt>Extra spacer</dt><dd>Additional gap applied beyond "distance to margin" to ease seating. <small><code>extraSpacerMm</code>, <code>distanceToMarginMm</code></small></dd>
+        <dt>Margin thickness / minimum thickness</dt><dd>Material thickness at the margin, and the material's required minimum elsewhere (e.g. 0.5 mm zirconia, 1.0 mm lithium disilicate in the presets). <small><code>MATERIAL_PRESETS</code></small></dd>
+        <dt>Occlusal clearance</dt><dd>Gap between crown and antagonist. The target is slightly positive (e.g. 0.05 mm); negative means intentional contact.</dd>
+        <dt>Contact point</dt><dd>Where the crown touches a neighbour. Too loose traps food; too tight won't seat.</dd>
+        <dt>Emergence profile</dt><dd>How the crown's surface leaves the gum line. Adapt-to-neighbours avoids the lower third to protect it.</dd>
+        <dt>Library tooth / template</dt><dd>A pre-made tooth shape fitted onto the margin as a starting proposal. The MVP uses 8 annotated templates.</dd>
+        <dt>Cervical loop</dt><dd>The open bottom edge of a template's outer shell, matched to the margin when fitting.</dd>
+        <dt>Coping / cutback</dt><dd>A thin substructure / a reduced crown for layering porcelain. Post-MVP.</dd>
+        <dt>Bridge / pontic / connector</dt><dd>A multi-unit restoration / its replacement tooth / the joint between units. Post-MVP.</dd>
+        <dt>Inlay / onlay / veneer</dt><dd>Partial restorations. Post-MVP.</dd>
+        <dt>Abutment / Ti-base / scan body</dt><dd>Implant parts: the connector above the implant / a titanium base / a scanned marker that locates the implant. Post-MVP.</dd>
+        <dt>Wax-up</dt><dd>A trial shape (physical or digital). "Copy mode" reuses it. Post-MVP.</dd>
+        <dt>Virtual articulator</dt><dd>Simulates jaw movement for dynamic occlusion. Out of scope.</dd>
+        <dt>Unmillable region</dt><dd>Concave detail smaller than the milling tool's radius; the mill can't reproduce it. Shown as a map; compensation is left to CAM.</dd>
+      </dl>
+
+      <h2>Materials, devices and products</h2>
+      <dl class="gloss">
+        <dt>Zirconia</dt><dd>Strong ceramic for crowns; thinner minimums. <small>Preset <code>zirconia</code>.</small></dd>
+        <dt>Lithium disilicate (e.max)</dt><dd>Glass-ceramic with high aesthetics; thicker minimums. <small>Preset <code>lithium-disilicate</code>.</small></dd>
+        <dt>PMMA</dt><dd>Acrylic, used for temporary crowns. <small>Preset <code>pmma</code>.</small></dd>
+        <dt>Intraoral scanner (IOS)</dt><dd>Handheld 3D scanner used in the mouth; exports STL/PLY.</dd>
+        <dt>CAM</dt><dd>Computer-aided manufacturing software that turns the STL into milling or printing toolpaths.</dd>
+        <dt>Rx (prescription)</dt><dd>The dentist's order: teeth, restoration, material, shade, notes. AI intake fills <code>CaseSetup</code> from it.</dd>
+        <dt>Shade</dt><dd>Tooth colour code (e.g. A2) for the material.</dd>
+        <dt>exocad DentalCAD</dt><dd>Widely used desktop dental CAD; the reference workflow for this project.</dd>
+        <dt>.dentalProject / .constructionInfo</dt><dd>exocad's XML order file / the file written next to the STL for CAM (margin, axis, tooth). Our JSON sidecar plays the same role.</dd>
+        <dt>Dentbird</dt><dd>Cloud dental CAD with AI auto-design; the model for our AI-assist ambitions.</dd>
+        <dt>Golden case</dt><dd>A de-identified real case (scans plus the finished exocad crown) used for regression testing and tuning.</dd>
+      </dl>
+
+      <h2>Geometry and graphics</h2>
+      <dl class="gloss">
+        <dt>Mesh / triangle soup</dt><dd>Surface made of triangles. STL stores each triangle separately, with no shared vertices (a "soup").</dd>
+        <dt>Vertex welding</dt><dd>Merging identical vertices so triangles share them. Required for normals, curvature and paths. Done by exact float bits.</dd>
+        <dt>Manifold / watertight</dt><dd>Every edge is shared by exactly two triangles, with consistent orientation: a closed solid that can be milled.</dd>
+        <dt>Signed volume</dt><dd>Volume computed from triangle orientation; positive means outward-facing normals.</dd>
+        <dt>Tri–tri intersection</dt><dd>Test for triangles crossing each other (self-intersection), e.g. the outer shell dipping below the intaglio.</dd>
+        <dt>BVH</dt><dd>Bounding volume hierarchy: a tree of boxes for fast ray casts and closest-point queries. Provided by three-mesh-bvh.</dd>
+        <dt>PCA</dt><dd>Principal component analysis: finds a point cloud's main directions. Used to guess "up" and "front" of an arch.</dd>
+        <dt>Normal</dt><dd>Direction perpendicular to the surface. Area-weighted vertex normals are used for shading and offsets.</dd>
+        <dt>Curvature (signed convex)</dt><dd>How sharply the surface bends, and whether outward (convex) or inward (concave). The margin follows convex edges.</dd>
+        <dt>Dijkstra / live-wire</dt><dd>Shortest-path search over the mesh graph. Live-wire shows the cheapest path to the cursor as you trace.</dd>
+        <dt>Geodesic</dt><dd>Shortest path along a surface (not through space).</dd>
+        <dt>Ray-cast envelope</dt><dd>The surface you'd see looking along a direction: rays keep the first hit. Used to block out undercuts.</dd>
+        <dt>Arc-length resampling</dt><dd>Placing points at equal distances along a curve, used to match loops point for point.</dd>
+        <dt>RBF deformation</dt><dd>Radial basis function warp: moves a mesh smoothly so chosen points hit targets (crown boundary → margin).</dd>
+        <dt>Displacement field</dt><dd>Per-vertex movement vectors. Smoothing these (not positions) keeps anatomy such as cusps.</dd>
+        <dt>ICP</dt><dd>Iterative closest point: aligns two shapes. Used for manual alignment refinement later.</dd>
+        <dt>Hausdorff distance</dt><dd>Largest distance from a point on one surface to the nearest point of another. Compares our crown with the exocad crown.</dd>
+        <dt>Matcap</dt><dd>"Material capture": shading from a small sphere image, independent of scene lights. Fast and consistent; generated procedurally here.</dd>
+        <dt>Render on demand</dt><dd>Drawing a frame only when something changed, which saves battery and GPU.</dd>
+        <dt>Orthographic vs perspective</dt><dd>Projection without / with depth foreshortening. Orthographic helps judge distances.</dd>
+        <dt>Colour map</dt><dd>Per-vertex values (distance, thickness) drawn as colours with a legend.</dd>
+        <dt>Units</dt><dd>Always millimetres. STL has no units, so implausible sizes trigger a warning.</dd>
+        <dt>WebGL</dt><dd>The browser's low-level API to the GPU. three.js wraps it.</dd>
+        <dt>Shader</dt><dd>A tiny program the GPU runs per vertex (where to draw) or per pixel (what colour). Materials are shaders plus settings.</dd>
+        <dt>Depth buffer</dt><dd>Per-pixel "distance of the nearest thing drawn so far", used to hide what's behind. It is why transparency needs careful draw order.</dd>
+        <dt>Raycast / picking</dt><dd>Firing an imaginary ray (e.g. from the mouse) and finding the first triangle it hits.</dd>
+        <dt>Winding</dt><dd>The order of a triangle's corners; it decides which side is the front.</dd>
+        <dt>Typed array</dt><dd><code>Float32Array</code>, <code>Uint32Array</code>, …: compact blocks of raw numbers, used for all mesh data instead of JS objects.</dd>
+        <dt>sRGB vs linear colour</dt><dd>Screen-encoded vs maths-friendly colour values; scan colours are converted to linear when loaded.</dd>
+      </dl>
+
+      <h2>Infrastructure</h2>
+      <dl class="gloss">
+        <dt>Caddy</dt><dd>A web server and reverse proxy (like nginx) with a short config file and automatic HTTPS. In our stack it serves the built web app and forwards <code>/api/*</code> to the API. See the <a href="./primer.html#caddy">primer</a>.</dd>
+        <dt>Caddyfile</dt><dd>Caddy's config file: <code>infra/Caddyfile</code>.</dd>
+        <dt>Reverse proxy</dt><dd>A server that receives requests and forwards them to internal services; clients only see the proxy.</dd>
+        <dt>TLS termination</dt><dd>Where HTTPS is decrypted. In our deployment: Nginx Proxy Manager on the VM.</dd>
+        <dt>Nginx Proxy Manager (NPM)</dt><dd>The VM's web UI around nginx that owns the domain and Let's Encrypt certificates. It forwards to our Caddy (<code>dcad-proxy:80</code>) over the shared Docker network <code>shared_net</code>.</dd>
+        <dt>SPA fallback</dt><dd>Returning <code>index.html</code> for unknown paths so deep links into the single-page app work on reload.</dd>
+        <dt>Docker Compose</dt><dd>Runs several containers together from one file; service names (<code>api</code>, <code>db</code>) act as hostnames between them.</dd>
+        <dt>Named volume</dt><dd>Docker-managed persistent storage (<code>pgdata</code>, <code>blobs</code>) that survives rebuilds.</dd>
+        <dt>arm64 / aarch64</dt><dd>The CPU architecture of the OCI Ampere VM and Apple-silicon Macs. Images must be built for it.</dd>
+        <dt>Health check</dt><dd>A command Docker runs to know a container is ready (e.g. the API's <code>/healthz</code>).</dd>
+        <dt>Let's Encrypt</dt><dd>Free certificate authority; Caddy can obtain its certificates automatically.</dd>
+        <dt>Migration (database)</dt><dd>A versioned SQL change script, applied in order on start (<code>apps/api/drizzle/</code>).</dd>
+      </dl>
+
+      <h2>Software architecture</h2>
+      <dl class="gloss">
+        <dt>DesignDocument</dt><dd>The single typed state of a case design: setup, scans, per-tooth frame, margin, axis, params, crown, step status.</dd>
+        <dt>Command</dt><dd>A typed, validated change to the document. The only way state changes, for the UI and AI alike.</dd>
+        <dt>Clinical command</dt><dd>A tooth-local command such as <code>moveCrown {direction: 'mesial', mm}</code>; also exposed to the LLM as a tool.</dd>
+        <dt>Snapshot undo</dt><dd>Undo by keeping immutable document versions (structural sharing keeps them cheap).</dd>
+        <dt>Step invalidation</dt><dd>Changing an earlier step marks later steps "stale" so they recompute.</dd>
+        <dt>Proposer</dt><dd>Anything that proposes a step's result: an algorithm, an ML model or an LLM. An async job with QA checks and a version id.</dd>
+        <dt>Orchestrator / QA gate</dt><dd>Runs proposers in sequence for one-click design; stops when a deterministic check fails.</dd>
+        <dt>ProposalEvent</dt><dd>A record of what was proposed and what the user accepted, with artifact references. Training data for future models.</dd>
+        <dt>Tool call</dt><dd>An LLM's structured request to run a named tool with JSON arguments.</dd>
+        <dt>Content-addressed</dt><dd>Identified by the hash (sha256) of its bytes, so identical data has an identical id everywhere.</dd>
+        <dt>Ports and adapters</dt><dd>Domain code depends on interfaces (ports); concrete technologies (adapters) plug in by config.</dd>
+        <dt>Web Worker / Comlink</dt><dd>A background browser thread / a library that makes calling worker functions look like normal async calls.</dd>
+        <dt>Transferable</dt><dd>A buffer moved (not copied) between threads.</dd>
+        <dt>zod / JSON Schema</dt><dd>TypeScript schema library / the standard JSON description of data shapes. zod generates JSON Schema for LLM tools.</dd>
+        <dt>Optimistic concurrency</dt><dd>Save only if nobody saved since you loaded (parent version check), otherwise 409.</dd>
+        <dt>Organisation (org)</dt><dd>A lab/tenant. Every row is scoped to one; each new user gets a personal org.</dd>
+        <dt>PUBLIC_URL / BASE_PATH</dt><dd>Where the app is served (e.g. <code>https://dental.cognifuze.com</code>) and the sub-path derived from it (empty at root).</dd>
+      </dl>
+
+      <nav class="page-nav" id="page-nav" aria-label="Previous and next page"></nav>
+      <footer class="page-footer">Missing a term? Add it to the matching section. Last updated 2026-10-03.</footer>
+    </main>
+
+    <aside class="toc" id="toc" aria-label="On this page"></aside>
+  </div>
+  <script src="./assets/docs.js"></script>
+  <script>
+    (function () {
+      var input = document.getElementById('gloss-filter');
+      if (!input) return;
+      input.addEventListener('input', function () {
+        var q = input.value.trim().toLowerCase();
+        document.querySelectorAll('.gloss dt').forEach(function (dt) {
+          var dd = dt.nextElementSibling;
+          var hit = !q || dt.textContent.toLowerCase().indexOf(q) >= 0 || (dd && dd.textContent.toLowerCase().indexOf(q) >= 0);
+          dt.style.display = hit ? '' : 'none';
+          if (dd) dd.style.display = hit ? '' : 'none';
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

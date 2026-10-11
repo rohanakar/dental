@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en" data-root=".">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Geometry pipeline · DentalCAD docs</title>
+  <meta name="description" content="Every geometry algorithm from scan import to a watertight crown STL: what is built, what is planned, and the math behind each step.">
+  <link rel="stylesheet" href="./assets/docs.css">
+</head>
+<body data-page="geometry.html">
+  <header class="topbar">
+    <button class="icon-btn menu-btn" id="menu-toggle" aria-expanded="false" aria-controls="sidebar">☰</button>
+    <a class="brand" href="./index.html">DentalCAD <small>design docs</small></a>
+    <span class="spacer"></span>
+    <button class="icon-btn" id="theme-toggle" type="button">☾ Dark</button>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation"></nav>
+
+    <main>
+      <div class="eyebrow"><span class="badge depth">L3 · Deep dive</span> <span>For: geometry and graphics engineers, dental reviewers</span></div>
+      <h1>Geometry pipeline</h1>
+      <p class="lede">How a pair of intraoral scans becomes a single posterior crown that seats on the prepared tooth: every algorithm, in pipeline order, with its status. Each step has a plain-language explanation first; the math is in the expandable blocks.</p>
+
+      <div class="tldr">
+        <strong>In short</strong>
+        <ul>
+          <li><strong>Built:</strong> scan import (parse, weld, clean up, normals, unit check) and PCA for orientation.</li>
+          <li><strong>Planned (Days 2–5):</strong> tooth frame, live-wire margin, insertion axis, inner surface (intaglio), crown fit from a template library, thickness and occlusion adaptation, stitching, validation and colour maps.</li>
+          <li>Every step is deterministic and runs in a Web Worker. AI proposers will plug in behind the same inputs and outputs later (see <a href="./ai-assist.html">AI assist</a>).</li>
+          <li>Two first-draft ideas were rejected after review: a grid-based dilation for the cement gap (it nearly erases the gap on steep walls), and milling-tool compensation in CAD (it makes the crown loose).</li>
+          <li>The output is watertight <em>by construction</em> (a strip joins the outer and inner rims) and then checked for holes, flipped faces and self-intersections.</li>
+        </ul>
+      </div>
+
+      <h2>End-to-end data flow</h2>
+      <p>One crown, from scans to the file a milling machine or printer receives. Each box names the step's output; the output types already exist as zod schemas in <code>packages/shared/src/design.ts</code>, even where the algorithm is not built yet.</p>
+      <figure class="diagram">
+        <div class="flow vertical">
+          <div class="node ext">Upper + lower scans<small>STL / PLY from the intraoral scanner</small></div><div class="arrow"></div>
+          <div class="node ok">1. Import<small>clean indexed meshes + normals + BVH · built</small></div><div class="arrow"></div>
+          <div class="node plan">2. Tooth frame<small>ToothFrame: occlusal, mesial, buccal, neighbour contacts · Day 2</small></div><div class="arrow"></div>
+          <div class="node plan">3. Margin line<small>MarginLine: anchors + dense closed curve · Day 2</small></div><div class="arrow"></div>
+          <div class="node plan">4. Insertion axis<small>InsertionAxis + undercut map · Day 2</small></div><div class="arrow"></div>
+          <div class="node plan">5. Intaglio (inner surface)<small>offset + blockout + radial mesh · Day 3</small></div><div class="arrow"></div>
+          <div class="node plan">6. Crown proposal + fit<small>Crown (template, pose, deform): rigid Day 3, RBF fit Day 4</small></div><div class="arrow"></div>
+          <div class="node plan">7. Thickness + adapt<small>min thickness, antagonist, neighbours · Days 4–5</small></div><div class="arrow"></div>
+          <div class="node plan">8. Stitch + validate<small>closed manifold, outward, no self-intersections · Days 3–5</small></div><div class="arrow"></div>
+          <div class="node ext">Binary STL + JSON sidecar<small>to CAM (milling / printing)</small></div>
+        </div>
+        <figcaption>Figure 1. Pipeline for one crown. Green = built, dashed purple = planned. Colour maps (undercut, clearance, contacts, thickness, unmillable) are computed alongside steps 4–7.</figcaption>
+      </figure>
+
+      <h2>Conventions</h2>
+      <dl class="kv">
+        <dt>Units</dt><dd>Millimetres everywhere. Scans are assumed to be in mm; the importer only warns if the size looks wrong.</dd>
+        <dt>Meshes</dt><dd><code>IndexedMesh</code>: <code>Float32Array</code> positions, <code>Uint32Array</code> indices, optional <code>Uint8Array</code> colors and <code>Float32Array</code> normals (<code>apps/web/src/geometry/mesh.ts</code>). Plain typed arrays, so they move between threads without copying.</dd>
+        <dt>Frames</dt><dd>Scans keep their native scanner frame (<code>MeshRef.frame = 'scan'</code>). Crown deltas live in the tooth-local frame so they survive pose changes.</dd>
+        <dt>Stable references</dt><dd>Face indices are <em>not</em> stable: the BVH build reorders them and future cuts would too. Anything persisted (margins, contacts) is stored as 3D points with at most an optional <code>faceHint</code>.</dd>
+        <dt>Where code runs</dt><dd>Heavy steps in the geometry worker; picking, gizmo and (later) sculpt on the main thread, where the crown is only tens of thousands of vertices.</dd>
+      </dl>
+
+      <h3>Design parameters</h3>
+      <p>Every step reads its numbers from <code>DesignParams</code>. Material presets are defined in <code>packages/shared/src/case.ts</code>; the user can override each value per tooth.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Parameter (mm)</th><th>Zirconia</th><th>Lithium disilicate</th><th>PMMA</th><th>Used by</th></tr></thead>
+        <tbody>
+          <tr><td><code>cementGapMm</code></td><td>0.03</td><td>0.04</td><td>0.05</td><td>Intaglio offset beyond the margin ramp</td></tr>
+          <tr><td><code>extraSpacerMm</code></td><td>0.04</td><td>0.05</td><td>0.05</td><td>Added beyond <code>distanceToMarginMm</code></td></tr>
+          <tr><td><code>distanceToMarginMm</code></td><td>1.0</td><td>1.0</td><td>1.0</td><td>Where the extra spacer starts</td></tr>
+          <tr><td><code>marginThicknessMm</code></td><td>0.1</td><td>0.15</td><td>0.2</td><td>Crown thickness at the margin</td></tr>
+          <tr><td><code>minThicknessMm</code></td><td>0.5</td><td>1.0</td><td>1.0</td><td>Thickness constraint away from the margin</td></tr>
+          <tr><td><code>toolRadiusMm</code></td><td>0.5</td><td>0.5</td><td>0.5</td><td>Unmillable map only (no compensation)</td></tr>
+          <tr><td><code>occlusalClearanceMm</code></td><td>0.05</td><td>0.05</td><td>0.05</td><td>Target gap to the opposing teeth</td></tr>
+          <tr><td><code>proximalContactMm</code></td><td>0.02</td><td>0.02</td><td>0.02</td><td>Target gap to neighbouring teeth</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>Built today: scan import</h2>
+      <p>Implemented in <code>apps/web/src/geometry/</code> and orchestrated by <code>processScan()</code>. Order: hash → parse → weld → clean up → normals → stats and warnings. The BVH is built afterwards in the worker (see <a href="./frontend.html">Web app</a>).</p>
+
+      <h3>Parsing STL and PLY <span class="badge done">Built · Day 1</span></h3>
+      <dl class="kv">
+        <dt>Input</dt><dd>File bytes + file name</dd>
+        <dt>Output</dt><dd>STL: a triangle soup (9 floats per triangle). PLY: an indexed mesh with optional colors.</dd>
+      </dl>
+      <p>STL repeats every shared corner for each triangle and has no units or colors. PLY is indexed and often carries the scanner's colors, which help tell gum from tooth.</p>
+      <details class="deep">
+        <summary>Deeper detail: format detection and parser coverage</summary>
+        <div class="body">
+          <ul>
+            <li><strong>Binary vs ASCII STL</strong> is decided by size: binary files are exactly 80 + 4 + 50 × <em>faces</em> bytes. The leading text "solid" is not trusted, because some binary exporters write it into the header. Truncated binary files are read up to the last complete face. Stored facet normals are ignored and recomputed.</li>
+            <li><strong>ASCII STL</strong> is read with a single regular expression over <code>vertex x y z</code> lines.</li>
+            <li><strong>PLY</strong>: ASCII, binary little-endian and binary big-endian; all scalar types (<code>char</code>…<code>double</code> and their sized aliases). Float colors are scaled to 0–255. Faces use <code>vertex_indices</code> or <code>vertex_index</code> lists; polygons are fan-triangulated; unknown elements and extra properties are skipped. Faces referencing missing vertices are rejected.</li>
+          </ul>
+        </div>
+      </details>
+
+      <h3>Welding <span class="badge done">Built · Day 1</span></h3>
+      <p>Turns the STL soup into an indexed mesh by merging corners that are the same point. Without this, there is no connectivity: no curvature, no paths along the surface, no smoothing.</p>
+      <details class="deep">
+        <summary>Deeper detail: exact float-bit welding</summary>
+        <div class="body">
+          <p>Two vertices merge only if their three float32 bit patterns are identical, with <code>-0</code> treated as <code>+0</code>. STL exporters write shared corners bit-identically, so no tolerance is needed, and an exact match can never merge two genuinely different points (a tolerance can, on fine scans).</p>
+          <p>Implementation (<code>weld.ts</code>): an open-addressing hash table over the raw <code>Uint32</code> bits, with a spatial-hash style mix (<code>x·73856093 ⊕ y·19349663 ⊕ z·83492791</code>) and linear probing. No string keys, so 3M soup vertices weld in tens of milliseconds. The remap array becomes the index buffer directly, because soup vertex <em>k</em> belongs to triangle ⌊<em>k</em>/3⌋. PLY files go through the same weld (<code>weldIndexed</code>) to merge duplicated vertices, keeping the first vertex's color.</p>
+        </div>
+      </details>
+
+      <h3>Cleanup <span class="badge done">Built · Day 1</span></h3>
+      <p>Removes geometry that breaks later algorithms: zero-area slivers, triangles listed twice, and loose fragments of scan debris (tongue, cheek, floating specks).</p>
+      <details class="deep">
+        <summary>Deeper detail: thresholds and methods</summary>
+        <div class="body">
+          <ul>
+            <li><strong>Degenerate faces:</strong> repeated vertex indices, or |(<em>b</em>−<em>a</em>) × (<em>c</em>−<em>a</em>)| ≤ 2 × 10⁻¹⁰ mm² (twice the minimum area). The comparison also rejects NaN.</li>
+            <li><strong>Duplicate faces:</strong> the three indices are sorted and hashed, so the same triangle with either winding counts as a duplicate. The first occurrence is kept.</li>
+            <li><strong>Small components:</strong> union-find over faces sharing vertices. Components with fewer than 1% of the largest component's faces are dropped (<code>smallComponentRatio = 0.01</code>).</li>
+            <li>Unused vertices are compacted away at the end; the importer reports what it removed as user-visible warnings.</li>
+          </ul>
+        </div>
+      </details>
+
+      <h3>Normals, unit check and hashing <span class="badge done">Built · Day 1</span></h3>
+      <ul>
+        <li><strong>Normals:</strong> each face adds its unnormalized cross product (length = twice its area) to its three corners, then each vertex normal is normalized. Big faces count more, small slivers barely matter.</li>
+        <li><strong>Unit check:</strong> an arch is roughly 10–80 mm across. If the largest bounding-box extent is over 200 mm or under 5 mm, the importer warns that the file may not be in millimetres. It does not rescale.</li>
+        <li><strong>Hash:</strong> sha256 of the original file bytes, used as the scan's content address (<code>MeshRef.sha256</code>) and verified by the backend on upload.</li>
+      </ul>
+
+      <h3>PCA orientation <span class="badge done">Built · Day 1</span></h3>
+      <p>Principal component analysis finds the three directions along which the scan's points spread most and least. For a dental arch, the least-spread direction is close to the normal of the biting (occlusal) plane. Today this drives the viewer's standard views; on Day 2 it becomes the first step of the tooth frame.</p>
+      <details class="deep">
+        <summary>Deeper detail: computation</summary>
+        <div class="body">
+          <p><code>principalAxes()</code> subsamples to at most 200,000 points, computes the centroid and the 3×3 covariance matrix, and diagonalizes it with a cyclic Jacobi eigen-solver (<code>symmetricEigen3</code>, up to 50 sweeps, stops when off-diagonal mass &lt; 10⁻¹⁴). Axes are returned sorted by decreasing variance. A test checks that the least-variance axis of the synthetic arch is within ~18° of +z (|z| &gt; 0.95). The whole-arch heuristics built on top (up from the lower-to-upper centroid direction, front = the narrow end of the arch) are described on the <a href="./frontend.html">Web app</a> page.</p>
+        </div>
+      </details>
+
+      <h2>Planned algorithms</h2>
+      <p>None of the following is implemented yet. The descriptions follow <code>specs/plan.md</code> as revised after the design review; exact constants will be tuned on the golden cases. Where a formula is given as a candidate, it is a starting point rather than a decision.</p>
+
+      <h3>Tooth frame <span class="badge planned">Planned · Day 2</span></h3>
+      <dl class="kv">
+        <dt>Input</dt><dd>Prep jaw mesh, antagonist (opposing jaw) mesh, FDI tooth number, margin centroid when available</dd>
+        <dt>Output</dt><dd><code>ToothFrame</code>: <code>origin</code>, <code>occlusal</code>, <code>mesial</code>, <code>buccal</code>, optional <code>mesialContact</code> / <code>distalContact</code>, <code>source</code></dd>
+      </dl>
+      <p>A small coordinate system attached to the tooth being restored: which way is "up" toward the opposing teeth, which way is toward the front of the mouth along the arch (mesial), and which way is toward the cheek (buccal). Fit, scaling, adaptation, the gizmo and the AI agent's "move 0.2 mm mesial" all depend on it, which is why it became an explicit step after the review.</p>
+      <details class="deep">
+        <summary>Deeper detail: directions and neighbour contacts</summary>
+        <div class="body">
+          <ul>
+            <li><strong>Occlusal:</strong> least-spread PCA axis of the prep jaw, flipped if needed so it points toward the antagonist's centroid.</li>
+            <li><strong>Mesial–distal:</strong> for a quadrant scan, the long PCA axis. For a full arch, the tangent of a parabola fitted to the arch in the occlusal plane, evaluated at the tooth's position. The sign points toward the midline (from the FDI quadrant).</li>
+            <li><strong>Buccal:</strong> completes an orthonormal, right-handed frame and points away from the inside of the arch.</li>
+            <li><strong>Neighbour contacts:</strong> cast rays along ±mesial from the margin centroid, ignoring hits on the prep region and a gingival ring around it. The first hits on each side are the contact points. The user can override them with two clicks; <code>source</code> records <code>auto</code> or <code>manual</code>.</li>
+          </ul>
+        </div>
+      </details>
+
+      <h3>Margin line: live-wire <span class="badge planned">Planned · Day 2</span></h3>
+      <dl class="kv">
+        <dt>Input</dt><dd>Prep jaw mesh with BVH, user clicks (anchors)</dd>
+        <dt>Output</dt><dd><code>MarginLine</code>: ordered <code>anchors</code> (≥ 3), dense resampled closed <code>points</code>, <code>source</code>; plus the prep region (faces inside the margin)</dd>
+      </dl>
+      <p>The margin is where the crown will end on the prepared tooth, and it is the most precision-critical line in the design. The tool works like a magnetic lasso: after each click, the path to the cursor follows the sharp ridge of the preparation and updates live as the mouse moves. Clicks pin anchors; closing the loop finishes the line. Anchors can be dragged later.</p>
+      <details class="deep">
+        <summary>Deeper detail: path cost, signed curvature and the prep region</summary>
+        <div class="body">
+          <p><strong>Path search.</strong> A bounded single-source Dijkstra on the mesh edge graph runs from the last anchor each time one is placed, so the path to any cursor position is a lookup. The bound keeps it interactive on 1M-triangle scans.</p>
+          <p><strong>Edge cost.</strong> <em>cost(e) = |e| · f(κ)</em>, where <em>κ</em> is the <em>signed</em> curvature across the edge, estimated over about 0.3 mm on smoothed normals, and <em>f</em> is small on convex ridges and large elsewhere. A candidate estimate for edge (<em>i</em>, <em>j</em>):</p>
+          <pre><code>κ_ij = ((n_i − n_j) · (p_i − p_j)) / |p_i − p_j|²
+// > 0 on convex surfaces (normals diverge), < 0 on concave ones.
+// On a sphere of radius r with outward normals this gives exactly 1/r.</code></pre>
+          <p><strong>Why signed.</strong> Unsigned measures (dihedral angle) are just as high in concave creases: the gingival sulcus next to the prep and the floor of a chamfer. On noisy intraoral scans the path would snap into those. Only convex ridges are cheap.</p>
+          <p><strong>Result.</strong> The anchors' paths form a closed loop of mesh edges. A flood fill from inside that loop gives the prep region, widened by 1–2 rings of faces so later steps see the margin's surroundings. The loop is resampled to even spacing, smoothed, and re-projected onto the surface with BVH closest-point queries to give <code>points</code>. Only 3D points (plus an optional face hint) are stored.</p>
+        </div>
+      </details>
+
+      <h3>Insertion axis and undercut map <span class="badge planned">Planned · Day 2</span></h3>
+      <dl class="kv">
+        <dt>Input</dt><dd>Prep region, margin, tooth frame</dd>
+        <dt>Output</dt><dd><code>InsertionAxis</code> (<code>direction</code>, <code>source</code>), a per-vertex undercut value, and a warning if the margin itself is in undercut</dd>
+      </dl>
+      <p>The direction along which the crown slides onto the tooth. Any part of the preparation that bulges out beyond what is visible from that direction (an undercut) would block the crown, so it gets filled in ("blocked out") on the inside of the crown. The best axis is the one needing the least blockout.</p>
+      <details class="deep">
+        <summary>Deeper detail: cone search</summary>
+        <div class="body">
+          <ul>
+            <li>Candidates: directions within a cone of about 25° around the occlusal direction.</li>
+            <li>For each candidate <em>a</em>, measure blockout. A simple proxy is Σ area(f) · max(0, −n_f · a) over prep faces. The exact measure can be the volume added by the ray-cast envelope used for the intaglio.</li>
+            <li>Pick the minimum. The mean surface normal is <em>not</em> used, because it is biased by uneven wall areas.</li>
+            <li>Undercut map: per-vertex <code>dot(normal, axis)</code>; negative values face away from the insertion direction.</li>
+            <li>Warn if any margin point is in undercut, i.e. not visible along +<em>a</em>: the crown edge could not reach it.</li>
+            <li>The user can also set the axis from the current view direction.</li>
+          </ul>
+        </div>
+      </details>
+
+      <h3>Intaglio (inner crown surface) <span class="badge planned">Planned · Day 3</span></h3>
+      <dl class="kv">
+        <dt>Input</dt><dd>Prep region, margin points, insertion axis, <code>cementGapMm</code>, <code>extraSpacerMm</code>, <code>distanceToMarginMm</code></dd>
+        <dt>Output</dt><dd>An open mesh whose boundary is exactly the resampled margin points</dd>
+      </dl>
+      <p>The inside of the crown that sits on the prepared tooth. It must be a copy of the prep, pushed out by a thin, even gap for cement, with undercuts filled in, so the crown slides on along the insertion axis and seats fully. Getting this right is the most likely place for the week to slip.</p>
+      <figure class="diagram">
+        <div class="flow">
+          <div class="node">Smooth normals<small>prep region</small></div><div class="arrow"></div>
+          <div class="node accent">Offset<small>by gap(d) along normals</small></div><div class="arrow"></div>
+          <div class="node accent">Envelope<small>ray-cast along −axis</small></div><div class="arrow"></div>
+          <div class="node ok">Radial mesh<small>N profiles × M samples</small></div>
+        </div>
+        <figcaption>Figure 2. Planned intaglio construction.</figcaption>
+      </figure>
+      <details class="deep">
+        <summary>Deeper detail: gap profile, envelope and radial meshing</summary>
+        <div class="body">
+          <p><strong>1. Gap profile.</strong> The offset depends on <em>d</em>, the distance from the margin. The gap is 0 at the margin (the crown edge must fit tightly) and ramps up to the cement gap over 0.1–0.2 mm. Beyond <code>distanceToMarginMm</code> the extra spacer is added. A candidate shape:</p>
+          <pre><code>gap(d) = cementGap · ramp(d / w)  +  extraSpacer · ramp((d − D) / w)
+ramp(t) = clamp(t, 0, 1) smoothed (e.g. smoothstep)
+w ≈ 0.1–0.2 mm,  D = distanceToMarginMm</code></pre>
+          <p><strong>2. Offset.</strong> Each prep vertex moves along its smoothed normal: <em>p′ = p + gap(d) · n̂</em>. Because the offset is along the true surface normal, steep axial walls get the full gap.</p>
+          <p><strong>3. Envelope (blockout).</strong> Cast rays along −axis onto the offset surface (using its BVH) and keep the first hit. Anything hidden underneath, the undercuts, is replaced by the "shadow" seen from above, so the result has no undercuts by construction.</p>
+          <p><strong>4. Radial-profile meshing.</strong> For each of the <em>N</em> resampled margin points, sample a profile toward the prep centre (in the plane perpendicular to the axis), ray-casting the height at each sample. Resample each profile by 3D arc length to <em>M</em> points, so steep walls get as many samples as flat areas. Connect neighbouring profiles with quads (two triangles each) and close the centre with a fan. The boundary is exactly the margin points, so stitching later is a simple index match, and no constrained-Delaunay library is needed.</p>
+          <p><strong>Assumption.</strong> The margin, projected along the axis, must be star-shaped around the centre: every ray from the centre crosses it once. That is normal for posterior preps. The step checks this and warns instead of producing a folded mesh.</p>
+        </div>
+      </details>
+      <div class="callout warn">
+        <strong>Rejected: heightfield dilation for the cement gap</strong>
+        The first draft rasterized the prep onto a 0.05 mm grid along the insertion axis and applied a spherical dilation of radius equal to the cement gap. A cement gap of 0.02–0.04 mm is smaller than one grid cell, so the dilation degenerates into a plain vertical shift by the gap. On an axial wall tapered about 5° from the axis, a vertical shift moves the surface only <em>gap × sin 5°</em> along its normal: 0.04 × 0.087 ≈ <strong>0.003 mm</strong> instead of 0.04 mm. Crowns would bind on the walls and not seat. The review replaced it with the normal offset above. See the <a href="./decisions.html">Decision log</a>.
+      </div>
+
+      <h3>Unmillable map and tool radius <span class="badge planned">Planned · Day 4</span></h3>
+      <dl class="kv">
+        <dt>Input</dt><dd>Intaglio, insertion axis, <code>toolRadiusMm</code> (R)</dd>
+        <dt>Output</dt><dd>A colour map marking regions a ball-end tool of radius R cannot reach</dd>
+      </dl>
+      <p>A milling bur has a rounded tip, so it cannot cut a concave corner inside the crown that is tighter than its own radius. Those spots correspond to sharp convex edges on the prep. The app shows them so the technician or dentist can decide (round the prep, or accept CAM relief); it does not change the surface.</p>
+      <details class="deep">
+        <summary>Deeper detail: morphological opening, and why no compensation in CAD</summary>
+        <div class="body">
+          <p><strong>Map.</strong> Build a heightfield of the intaglio along the insertion axis and apply a morphological opening with a ball of radius R (erosion, then dilation). Where the opened surface differs from the original, the tool cannot follow the surface.</p>
+          <p><strong>Why not compensate.</strong> The first draft dilated the whole intaglio by R (0.3–0.5 mm). That overcuts every surface by the tool radius and produces a loose crown. Real compensation is only needed locally, as small relief cavities at sharp convex prep edges, and the CAM software already does this with its knowledge of the actual tools. So compensation is left to CAM; <code>toolRadiusMm</code> drives only this map.</p>
+          <p><strong>Stretch goal.</strong> Optional relief domes: a ball of radius R centred at <em>p − R·n</em> at sharp convex edges sharper than R.</p>
+        </div>
+      </details>
+
+      <h3>Template library <span class="badge planned">Planned · annotation Days 0–3</span></h3>
+      <p>Crowns start from library teeth: <strong>8 hand-annotated templates</strong> (first premolar, second premolar, first molar, second molar, for the upper and lower jaws). The opposite side of the mouth uses mirrored copies. Each template is an <em>open outer shell</em>: only the visible tooth surface, ending in a rim at the gum line (the cervical loop).</p>
+      <details class="deep">
+        <summary>Deeper detail: template contents and mirroring</summary>
+        <div class="body">
+          <ul>
+            <li>Per template: the shell mesh; the cervical loop pre-resampled offline to a fixed <em>N</em> points; metadata (FDI number, local axes, cusp tips).</li>
+            <li>Mirroring: reflect across the sagittal plane of the template frame <strong>and flip the triangle winding</strong> (swap two indices per face), otherwise normals point inward.</li>
+            <li>Built by <code>tools/library-builder/</code> (planned). The review cut this from "extract templates from all 100 cases" to 8 annotated templates; separating the outer surface from the intaglio and building canonical frames was several hidden days of work.</li>
+            <li>In the document, a template crown is <code>{ kind: 'template', templateId, pose, deltas? }</code>; ML-generated crowns will use <code>{ kind: 'mesh', mesh }</code> instead.</li>
+          </ul>
+        </div>
+      </details>
+
+      <h3>Crown fit <span class="badge planned">Planned · rigid Day 3, RBF Day 4</span></h3>
+      <dl class="kv">
+        <dt>Input</dt><dd>Template, tooth frame, neighbour contacts, margin points, antagonist, <code>marginThicknessMm</code></dd>
+        <dt>Output</dt><dd>Template pose plus a deformation that puts the template's rim on the margin</dd>
+      </dl>
+      <p>The library tooth is placed over the prep, scaled to the space available, and its rim is pulled down onto the margin line while the chewing surface keeps its anatomy. The Day 3 walking skeleton uses rigid placement only; the deformation arrives on Day 4.</p>
+      <details class="deep">
+        <summary>Deeper detail: placement, loop matching and RBF deformation</summary>
+        <div class="body">
+          <ol>
+            <li><strong>Place</strong> at the margin centroid, aligned with the tooth frame.</li>
+            <li><strong>Scale anisotropically:</strong> mesial–distal from the gap between the neighbour contacts; bucco-lingual from the margin's extent; height from the space to the antagonist.</li>
+            <li><strong>Match the loops.</strong> Offset the margin outward by the margin thickness and resample it to the same <em>N</em> as the template rim. Pair points by <em>normalized arc length starting from the most mesial point, with both loops in the same winding</em>. Pairing by angle around the axis can silently twist the joining strip.</li>
+            <li><strong>Deform with radial basis functions.</strong> Known displacements at the <em>N</em> rim points (target − current) and zero displacement at anchor points on the occlusal third. Solve the RBF interpolation (a few hundred centres, a small dense solve) and apply it to every shell vertex. RBF instead of Laplacian deformation because JavaScript has no practical sparse solver.</li>
+            <li><strong>Re-solve on every pose change.</strong> The rim band stays locked during transforms and sculpting.</li>
+          </ol>
+        </div>
+      </details>
+
+      <h3>Thickness constraint <span class="badge planned">Planned · Day 4</span></h3>
+      <p>A crown that is too thin cracks. After fitting, adapting or sculpting, any part of the outer surface that is too close to the intaglio is pushed outward. This is enforced, not just reported, because "edge count is right" checks cannot see an outer surface dipping inside the inner one.</p>
+      <details class="deep">
+        <summary>Deeper detail: the thickness profile</summary>
+        <div class="body">
+          <p>For each outer vertex, <em>t(v)</em> = distance to the intaglio (BVH closest point). The required thickness rises from <code>marginThicknessMm</code> at the margin to <code>minThicknessMm</code> within about 1 mm. If <em>t(v)</em> is below the requirement, move <em>v</em> outward along its normal by the difference. Runs after every fit, adapt and sculpt operation.</p>
+        </div>
+      </details>
+
+      <h3>Adapt to antagonist and neighbours <span class="badge planned">Planned · Day 5</span></h3>
+      <p>Makes the crown just touch, or clear by a target gap, the opposing teeth when biting (<code>occlusalClearanceMm</code>) and the neighbouring teeth at the sides (<code>proximalContactMm</code>). The AI agent's <code>adapt_occlusion</code> and <code>set_contact</code> tools call this step.</p>
+      <details class="deep">
+        <summary>Deeper detail: displacement-field smoothing and conflict reporting</summary>
+        <div class="body">
+          <ul>
+            <li><strong>Antagonist:</strong> measure clearance along the axis from each occlusal-facing vertex to the antagonist (BVH ray cast). Where clearance differs from the target, compute a displacement along the axis.</li>
+            <li><strong>Neighbours:</strong> same idea along the mesial–distal direction, limited to proximal-facing vertices in the upper two thirds of the crown. Otherwise the gum-side shape (emergence profile) would be ruined.</li>
+            <li><strong>Smooth the displacements, not the positions.</strong> Laplacian smoothing of the displacement field spreads the change over the region while keeping cusps and grooves sharp. Smoothing positions would erode them. Repeat 2–3 iterations.</li>
+            <li><strong>Conflicts:</strong> if reaching the clearance would violate the minimum thickness, stop and report "insufficient reduction" (the tooth needs more preparation) instead of looping or producing a thin crown.</li>
+          </ul>
+        </div>
+      </details>
+
+      <h3>Stitching and validation <span class="badge planned">Planned · stitch Day 3, full checks Day 5</span></h3>
+      <p>The outer shell and the intaglio are joined into one closed solid, then checked before anything is exported.</p>
+      <details class="deep">
+        <summary>Deeper detail: watertight by construction, then verified</summary>
+        <div class="body">
+          <p><strong>Stitch.</strong> Both rims have the same <em>N</em> points in matching order, so a triangle strip connects point <em>i</em> on the outer rim to point <em>i</em> on the intaglio rim. No boolean operation is needed.</p>
+          <p><strong>Validate:</strong></p>
+          <ul>
+            <li>Closed manifold: every edge is shared by exactly two faces.</li>
+            <li>Consistent orientation: each directed edge appears once.</li>
+            <li>Outward normals: signed volume <em>V = ⅙ Σ a · (b × c)</em> &gt; 0 over all faces.</li>
+            <li>No triangle–triangle intersections, found with a BVH self-query that skips adjacent faces. This is what catches the outer surface crossing the intaglio.</li>
+          </ul>
+          <p><code>manifold-3d</code> (WASM) is kept only as a boolean repair fallback; it does not detect self-intersections, so it is not the validator.</p>
+          <p><strong>Export.</strong> Binary STL (the writer already exists in <code>stl.ts</code>) plus a JSON sidecar similar to exocad's <code>.constructionInfo</code>: tooth number, margin, insertion axis, material.</p>
+        </div>
+      </details>
+
+      <h3>Colour maps <span class="badge planned">Planned · material Day 3, maps Day 4</span></h3>
+      <p>Heatmaps painted on the surfaces: undercut, distance to the antagonist, proximal contacts, crown thickness, unmillable regions. Technicians look at them constantly while adjusting a crown.</p>
+      <details class="deep">
+        <summary>Deeper detail: rendering and update cost</summary>
+        <div class="body">
+          <p>The worker computes one <code>Float32Array</code> scalar per vertex (BVH distance queries); a shader maps it through a 1D lookup texture with a uniform value range, and React shows the legend. During adaptation only changed vertices are recomputed. Plan target: a colour-map update under 100 ms during adapt.</p>
+        </div>
+      </details>
+
+      <h3>Lasso cut <span class="badge planned">Planned · on the cut list</span></h3>
+      <p>Deleting scan debris by drawing a lasso. Stored as a face-mask bitset over the BVH-ordered faces and only compacted at export, so indices do not shift mid-session. This is one of the first features to drop if the week runs short; automatic small-component removal already handles most debris.</p>
+
+      <h2>Verification targets</h2>
+      <p>From the plan's verification section. All are targets; only the import tests exist today (see <a href="./testing.html">Testing &amp; verification</a>).</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Check</th><th>Target</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Weld and cleanup counts, PLY/STL parsing, normals, unit warnings</td><td>Unit tests</td><td><span class="badge done">Built · Day 1</span></td></tr>
+          <tr><td>Live-wire path continuity</td><td>Closed, connected loop on golden cases</td><td><span class="badge planned">Planned · Day 2</span></td></tr>
+          <tr><td>Intaglio gap on axial walls</td><td>Measured along the surface normal, within ±0.01 mm of the requested gap</td><td><span class="badge planned">Planned · Day 3</span></td></tr>
+          <tr><td>No undercut</td><td>Single hit per ray along the insertion axis</td><td><span class="badge planned">Planned · Day 3</span></td></tr>
+          <tr><td>Crown solid</td><td>Closed manifold, consistent orientation, signed volume &gt; 0, no tri–tri intersections</td><td><span class="badge planned">Planned · Day 5</span></td></tr>
+          <tr><td>Thickness</td><td>Outer-to-intaglio ≥ thickness profile everywhere</td><td><span class="badge planned">Planned · Day 4</span></td></tr>
+          <tr><td>Golden-case regression</td><td>Hausdorff mean/max vs the exocad crown, headless pipeline runner</td><td><span class="badge planned">Planned · Days 2–7</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>Risks and open questions</h2>
+      <ul>
+        <li><strong>Intaglio correctness</strong> and <strong>fit without intersections</strong> are the two most likely slips in the schedule.</li>
+        <li><strong>Curvature tuning:</strong> the live-wire cost function and the 0.3 mm smoothing radius need tuning on real intraoral scans; synthetic arches are too clean.</li>
+        <li><strong>Star-shaped margins:</strong> true for typical posterior preps; unusual preps will get a warning and a manual fallback.</li>
+        <li><strong>Quadrant vs full-arch scans:</strong> the mesial–distal estimate uses different methods for each; both need golden cases to validate.</li>
+        <li><strong>No real scans yet:</strong> everything built so far was tested on synthetic arches. The 3–5 de-identified golden cases are the main dependency for Day 2.</li>
+      </ul>
+
+      <nav class="page-nav" id="page-nav" aria-label="Previous and next page"></nav>
+      <footer class="page-footer">Source of truth: <code>specs/plan.md</code>, <code>apps/web/src/geometry</code> and <code>packages/shared/src</code>. Last updated 2026-10-03.</footer>
+    </main>
+
+    <aside class="toc" id="toc" aria-label="On this page"></aside>
+  </div>
+  <script src="./assets/docs.js"></script>
+</body>
+</html>

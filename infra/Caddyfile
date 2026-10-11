@@ -1,9 +1,7 @@
 # Caddy: serves the SPA and proxies /api/* to the API container.
+# Plain HTTP on :80; Nginx Proxy Manager in front handles the domain and TLS.
 #
 # Environment (set by docker-compose.yml from the repo-root .env):
-#   SITE_ADDRESS  ":80" (default; plain HTTP behind your existing HTTPS proxy)
-#                 or a domain, e.g. "dental.cognifuze.com", to let Caddy obtain
-#                 TLS certificates itself (needs ports 80/443).
 #   BASE_PATH     "" at the domain root (default), or a sub-path like "/dental".
 #                 The prefix is stripped before proxying, so the API always
 #                 serves /api/* and the SPA's files live at the root of /srv.
@@ -11,12 +9,12 @@
 {
 	admin off
 	servers {
-		# Accept X-Forwarded-* from a reverse proxy on the host / private network.
+		# Accept X-Forwarded-* from Nginx Proxy Manager on the shared Docker network.
 		trusted_proxies static private_ranges
 	}
 }
 
-{$SITE_ADDRESS::80} {
+:80 {
 	encode zstd gzip
 
 	# "/dental" -> "/dental/" (only when a sub-path is configured).

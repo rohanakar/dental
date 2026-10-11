@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en" data-root=".">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>3D &amp; infra primer · DentalCAD docs</title>
+  <meta name="description" content="Plain-language foundations for experienced web developers: 3D meshes, GPU rendering, geometry processing, browser performance, Caddy and the other unfamiliar parts of this project.">
+  <link rel="stylesheet" href="./assets/docs.css">
+</head>
+<body data-page="primer.html">
+  <header class="topbar">
+    <button class="icon-btn menu-btn" id="menu-toggle" aria-expanded="false" aria-controls="sidebar">☰</button>
+    <a class="brand" href="./index.html">DentalCAD <small>design docs</small></a>
+    <span class="spacer"></span>
+    <button class="icon-btn" id="theme-toggle" type="button">☾ Dark</button>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation"></nav>
+
+    <main>
+      <div class="eyebrow"><span class="badge depth">L1 · Foundations</span> <span>For: experienced web developers new to 3D · ~30-minute read</span></div>
+      <h1>3D &amp; infra primer for web developers</h1>
+      <p class="lede">You know HTTP, databases, React and Docker. This page covers what most web developers have never
+        needed but this project depends on: triangle meshes, the GPU, spatial indexes, geometry algorithms, threads in the
+        browser, and some less common infrastructure such as Caddy. Each idea gets an everyday analogy, then where it
+        appears in our code.</p>
+
+      <div class="tldr">
+        <strong>The whole project in one sentence</strong>
+        <p style="margin:6px 0 0">DentalCAD loads a big list of triangles (the scan), builds an index so it can ask
+          "what's under the mouse?" or "how far is this point from that surface?" quickly, draws it with the GPU, and
+          will run a chain of geometry steps that turn the scan into a new closed set of triangles (the crown) saved as
+          a file a milling machine can cut.</p>
+      </div>
+
+      <div class="callout note"><strong>How this page is organised</strong>
+        <ol>
+          <li><a href="#part-1">Shapes as data</a>: meshes, file formats, units, normals</li>
+          <li><a href="#part-2">Drawing them</a>: GPU, three.js, cameras, shading, transparency</li>
+          <li><a href="#part-3">Asking questions of shapes</a>: raycasting and the BVH spatial index</li>
+          <li><a href="#part-4">Changing shapes</a>: the geometry algorithms behind a crown</li>
+          <li><a href="#part-5">Keeping the browser fast</a>: workers, typed arrays, frame budget</li>
+          <li><a href="#part-6">Infrastructure you may not have met</a>: <strong>Caddy</strong>, Compose details, arm64, hashing, concurrency</li>
+          <li><a href="#part-7">AI plumbing</a>: LLM tool calling, schemas</li>
+          <li><a href="#part-8">How we test this kind of code</a></li>
+          <li><a href="#reading-order">Where to start reading the code</a></li>
+        </ol>
+      </div>
+
+      <!-- =============================================================== -->
+      <h2 id="part-1">1 · Shapes as data</h2>
+
+      <h3>A 3D model is a list of triangles</h3>
+      <p><strong>Analogy:</strong> a disco ball, or a paper model made of flat triangular pieces. With small enough
+        triangles, a surface looks smooth. A tooth scan is a surface like that, typically with 200,000 to over a million
+        triangles.</p>
+      <p>The data is two arrays:</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Array</th><th>What it holds</th><th>Web analogy</th></tr></thead>
+        <tbody>
+          <tr><td><strong>positions</strong></td><td>Every corner point (vertex) as x, y, z numbers: <code>[x0,y0,z0, x1,y1,z1, …]</code></td><td>A table of unique rows</td></tr>
+          <tr><td><strong>index</strong></td><td>Every triangle as three vertex numbers: <code>[0,1,2, 2,1,3, …]</code></td><td>Foreign keys into that table</td></tr>
+        </tbody>
+      </table></div>
+      <p>Neighbouring triangles share corners, so storing each corner once and referring to it by number saves memory
+        and, more importantly, tells you <em>which triangles are connected</em>. Almost every geometry algorithm needs
+        that connectivity. In our code this pair is the <code>IndexedMesh</code> type (<code>apps/web/src/geometry/mesh.ts</code>).</p>
+
+      <figure class="diagram">
+        <div class="d-grid-2">
+          <div class="cluster"><span class="cluster-title">"Triangle soup" (STL)</span>
+            <pre style="margin:0"><code>tri 0: (0,0,0) (1,0,0) (0,1,0)
+tri 1: (1,0,0) (1,1,0) (0,1,0)
+→ 6 corners stored, 2 duplicated</code></pre>
+          </div>
+          <div class="cluster accent"><span class="cluster-title">Indexed mesh (after welding)</span>
+            <pre style="margin:0"><code>positions: v0(0,0,0) v1(1,0,0)
+           v2(0,1,0) v3(1,1,0)
+index:     [0,1,2,  1,3,2]
+→ 4 corners, shared edge v1–v2 known</code></pre>
+          </div>
+        </div>
+        <figcaption>Figure 1. The same square made of two triangles, as soup and as an indexed mesh.</figcaption>
+      </figure>
+
+      <h3>File formats: STL and PLY</h3>
+      <ul>
+        <li><strong>STL</strong> is the lowest common denominator of 3D printing and milling. It's a "triangle soup":
+          each triangle lists its three corners in full, with no sharing. A binary STL is an 80-byte header, a count, then
+          50 bytes per triangle, so 1M triangles is a 50 MB file. There are no colours and <strong>no units</strong>
+          (dental files are millimetres by convention). There is also an ASCII variant, and the trap that some binary
+          files' headers start with the word "solid", which is how ASCII files start. Our parser checks the file size to
+          tell them apart.</li>
+        <li><strong>PLY</strong> has a small text header describing its tables, then a vertex table (position, often
+          colour) and a face table (vertex numbers). It's already indexed and can carry colour, which helps users tell gum
+          from tooth.</li>
+      </ul>
+      <p>Code: <code>apps/web/src/geometry/stl.ts</code>, <code>ply.ts</code>.</p>
+
+      <h3>Welding: deduplicating corners</h3>
+      <p><strong>Analogy:</strong> normalising a denormalised database table. After parsing an STL we hash each corner's
+        exact bit pattern; identical corners merge into one vertex and the triangles are rewritten to point at it. It
+        must be <em>exact</em>: STL writers copy the same float bits for a shared corner, and "close enough" merging can
+        glue together points that are genuinely separate (e.g. across a thin gap). One subtle case: <code>-0.0</code> and
+        <code>+0.0</code> are equal numbers with different bits, so they are normalised first. A unit test covers exactly
+        this. Code: <code>weld.ts</code>.</p>
+
+      <h3>Cleanup: removing junk triangles</h3>
+      <p>Scans contain debris: triangles with zero area, duplicate triangles, and small floating islands (a bit of cheek
+        or tongue). Cleanup removes them, after welding, because you can only find "duplicate" or "disconnected" once
+        you know which corners are shared. Code: <code>cleanup.ts</code>.</p>
+
+      <h3>Units, coordinates and frames</h3>
+      <ul>
+        <li><strong>Units:</strong> everything is millimetres. Clinical tolerances are about 0.05 mm (thinner than a human hair).
+          Because STL has no units, the importer warns when a jaw is implausibly large or small (meaning the file is
+          probably in metres or microns).</li>
+        <li><strong>Coordinates:</strong> x, y, z with the right-hand rule. Each scanner picks its own "up", so the code
+          never assumes +z is up.</li>
+        <li><strong>Frames:</strong> a frame is a local set of axes. We describe the tooth in clinical directions
+          (mesial = toward the front of the arch, buccal = toward the cheek, occlusal = toward the bite). "Move the crown
+          0.2 mm mesial" is converted to x/y/z through the <code>ToothFrame</code>. That's why the LLM tools speak
+          clinical directions, not xyz.</li>
+      </ul>
+
+      <h3>Normals: which way a surface faces</h3>
+      <p>A normal is a unit-length arrow sticking straight out of the surface. <strong>Analogy:</strong> a pin stuck
+        perpendicular into a pincushion. Normals drive lighting (surfaces facing the light are brighter), offsets ("push
+        the surface 0.04 mm outward" means move along the normal), and undercut checks (a surface facing away from the
+        insertion direction is an undercut). A vertex normal is the average of its neighbouring triangles' normals,
+        weighted by triangle area so tiny slivers don't skew it. Code: <code>normals.ts</code>.</p>
+
+      <h3>PCA: finding a shape's main directions</h3>
+      <p><strong>Analogy:</strong> lay a handful of rice on a table and ask which way it's spread most, which way
+        least. For a dental arch, the direction of least spread is roughly "up" (the arch is flat-ish), and the longest
+        is side to side. PCA (principal component analysis) computes those directions from the 3×3 covariance of all
+        vertices. We use it to guess the default view directions before the user has set up a tooth. Code:
+        <code>pca.ts</code>, <code>apps/web/src/engine/viewFrame.ts</code>.</p>
+
+      <!-- =============================================================== -->
+      <h2 id="part-2">2 · Drawing them: the GPU, three.js and cameras</h2>
+
+      <h3>The GPU draws triangles, very fast</h3>
+      <p>The graphics card is a specialised processor that colours millions of triangles in parallel. In the browser you
+        talk to it through <strong>WebGL</strong>, a low-level API where you upload arrays of numbers (buffers) and tiny
+        programs (<strong>shaders</strong>) that run once per vertex and once per pixel. Raw WebGL is verbose, roughly like
+        writing your own HTTP stack on sockets.</p>
+      <p><strong>three.js</strong> is the popular library that wraps it. Its vocabulary:</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>three.js concept</th><th>Plain meaning</th><th>In our code</th></tr></thead>
+        <tbody>
+          <tr><td><code>BufferGeometry</code></td><td>The positions/index/normals/colours arrays, ready for the GPU</td><td>built from <code>IndexedMesh</code></td></tr>
+          <tr><td><code>Material</code></td><td>How a surface is coloured (the shader + its settings)</td><td><code>engine/materials.ts</code></td></tr>
+          <tr><td><code>Mesh</code></td><td>Geometry + material = one drawable object</td><td>one per scan</td></tr>
+          <tr><td><code>Scene</code></td><td>The tree of everything to draw (like the DOM, for 3D)</td><td>inside <code>Viewer</code></td></tr>
+          <tr><td><code>Camera</code></td><td>Where we look from, and the lens</td><td>perspective or orthographic</td></tr>
+          <tr><td><code>WebGLRenderer</code></td><td>Turns scene + camera into pixels on a <code>&lt;canvas&gt;</code></td><td><code>engine/Viewer.ts</code></td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout decision"><strong>Why not React for 3D?</strong>There is a React wrapper (react-three-fiber),
+        but we keep the 3D engine as a plain class (<code>Viewer</code>) and let React only draw panels and buttons. 3D
+        rendering is a loop over big arrays, and we want full control over exactly when it redraws and how buffers
+        update. React's re-render model gets in the way. React tells the engine what to do through a small API in
+        <code>state/sceneController.ts</code>.</div>
+
+      <h3>Render loop vs render on demand</h3>
+      <p>Games redraw 60 times a second whether or not anything changed. A CAD viewer is mostly still, so we
+        <strong>render on demand</strong>: only when the camera moves or the scene changes. That saves battery and leaves
+        the GPU free for heavy work.</p>
+
+      <h3>Cameras: perspective vs orthographic</h3>
+      <ul>
+        <li><strong>Perspective</strong>: like your eye or a phone camera; far things look smaller.</li>
+        <li><strong>Orthographic</strong>: like an architect's drawing; size doesn't change with distance, which makes
+          distances easier to judge. Technicians switch to it for checking (key <kbd>O</kbd>).</li>
+      </ul>
+      <p><strong>Orbiting</strong> (dragging to rotate the view) normally spins around the centre of the scene. Dental
+        technicians zoom into one tooth, so we orbit around <em>the surface point under the cursor</em>: on mouse-down we
+        shoot a ray into the scene (see part 3), and the hit becomes the pivot. Navigation comes from the
+        <code>camera-controls</code> library.</p>
+
+      <h3>Shading with matcaps</h3>
+      <p>Realistic lighting needs light sources, shadows and tuning, and dental surfaces can still look flat. A
+        <strong>matcap</strong> ("material capture") is a small picture of a lit sphere. For each pixel, the shader takes
+        the surface's facing direction (its normal, relative to the camera) and looks up the colour at the matching spot
+        on the sphere picture. <strong>Analogy:</strong> painting by numbers, where the number is "which way am I
+        facing". It's cheap, looks the same from every angle, and shows every bump clearly. We draw the sphere pictures in
+        code at startup (<code>engine/matcap.ts</code>), so there are no image files.</p>
+
+      <h3>Back faces, colours and transparency</h3>
+      <ul>
+        <li><strong>Back faces:</strong> each triangle has a front and a back, decided by the order of its corners
+          ("winding"). Scans are open surfaces, so you can see their insides. We tint back faces differently so holes and
+          inside-out regions are obvious (a shader check of <code>gl_FrontFacing</code>).</li>
+        <li><strong>Colour spaces:</strong> colours in files are "sRGB" (gamma-encoded for screens) while lighting maths
+          wants "linear" values. Mixing them up makes colours washed out or too dark, so PLY colours are converted on
+          load.</li>
+        <li><strong>Transparency is hard:</strong> the GPU uses a <em>depth buffer</em> (per pixel, "how close is the
+          nearest thing drawn so far") to hide what's behind. See-through objects break that, because what's behind
+          must be drawn first. We draw opaque objects first, then transparent ones back faces first, then front faces.
+          It isn't perfect, but it's good enough for "see the prep through the crown".</li>
+      </ul>
+
+      <!-- =============================================================== -->
+      <h2 id="part-3">3 · Asking questions of shapes: raycasting and the BVH</h2>
+      <p>Almost every interaction is a geometric question: <em>which triangle is under the mouse?</em> (picking),
+        <em>how far is this crown point from the opposing tooth?</em> (occlusion colour map), <em>what's the first
+        surface along this direction?</em> (undercut blockout).</p>
+      <p>A <strong>raycast</strong> fires an imaginary laser from a point in a direction and reports the first triangle
+        it hits. Done naively, that means testing all one million triangles, for every mouse move.</p>
+      <p>A <strong>BVH</strong> (bounding volume hierarchy) is a spatial index. <strong>Analogy:</strong> a B-tree index
+        for 3D, or finding a book by floor, then shelf, then row, instead of scanning every book. It groups triangles
+        into boxes, boxes into bigger boxes, and so on. A ray only descends into boxes it actually passes through, about
+        20 levels for a million triangles, so each query touches a few hundred triangles instead of a million.</p>
+      <figure class="diagram">
+        <div class="flow">
+          <div class="node">Whole jaw box</div><div class="arrow"></div>
+          <div class="node">Left half box</div><div class="arrow"></div>
+          <div class="node">Molar region box</div><div class="arrow"></div>
+          <div class="node">… ~20 levels</div><div class="arrow"></div>
+          <div class="node accent">A few triangles<small>exact test</small></div>
+        </div>
+        <figcaption>Figure 2. A query skips every box the ray misses. Building the tree costs about 0.27 s for 1M
+          triangles (measured); each query then takes microseconds.</figcaption>
+      </figure>
+      <div class="callout warn"><strong>The gotcha we designed around</strong>The BVH library (three-mesh-bvh)
+        <em>reorders the triangle list</em> while building, so triangle number 5,000 before is a different triangle
+        after. Anything that stored triangle numbers earlier is now silently wrong. So we build the BVH once in the
+        worker, ship it to the main thread (<code>MeshBVH.serialize</code>/<code>deserialize</code>), treat that order as
+        the only one, and store margin points as 3D coordinates, never as triangle numbers.</div>
+
+      <!-- =============================================================== -->
+      <h2 id="part-4">4 · Changing shapes: the geometry behind a crown</h2>
+      <p>Most of this is <span class="badge planned">Planned · Days 2–5</span>. Here are the ideas in plain terms; the
+        maths is on the <a href="./geometry.html">Geometry pipeline</a> page.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Concept</th><th>Plain-language idea</th><th>Used for</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Curvature</strong></td><td>How sharply the surface bends at a point, and whether it bulges out (convex, a ridge) or dips in (concave, a groove). Like reading the slope on a contour map.</td><td>The margin follows the prep's convex edge and must not slip into the groove beside it.</td></tr>
+          <tr><td><strong>Shortest paths on a mesh</strong></td><td>Treat vertices as cities and edges as roads, then run Dijkstra, the same algorithm as map routing. Make roads along ridges "cheap" and the route hugs the ridge.</td><td><strong>Live-wire</strong> margin tool: click a few points; the path between them snaps to the edge live as you move the mouse.</td></tr>
+          <tr><td><strong>Offsetting</strong></td><td>Inflate a surface slightly by moving each point along its normal.</td><td>The crown's inner surface sits 0.03–0.05 mm off the prep for cement.</td></tr>
+          <tr><td><strong>Ray-cast envelope</strong></td><td>Look straight down the insertion direction and keep only what you'd see. Hidden pockets (undercuts) get filled.</td><td>Making the crown slide on without catching.</td></tr>
+          <tr><td><strong>Deformation (RBF)</strong></td><td>A rubber-sheet warp: pin some points to targets and everything else follows smoothly.</td><td>Bending a library tooth so its bottom edge lands exactly on the margin.</td></tr>
+          <tr><td><strong>Watertight / manifold</strong></td><td>A closed balloon with no holes, where every edge joins exactly two triangles. A mill or printer needs a solid with a clear inside and outside.</td><td>The exported crown; checked before export.</td></tr>
+          <tr><td><strong>Self-intersection</strong></td><td>The surface passing through itself, like a balloon pinched through itself.</td><td>Making sure the outer surface never dips below the inner one.</td></tr>
+          <tr><td><strong>Distance queries / colour maps</strong></td><td>For every crown point, the distance to another surface (via the BVH), drawn as a heat map.</td><td>Occlusion, contacts and thickness maps.</td></tr>
+          <tr><td><strong>Hausdorff distance</strong></td><td>"The worst-case gap" between two surfaces.</td><td>Testing our crown against the exocad crown for the same case.</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout note"><strong>Why "exact" matters here</strong>A float32 number has about 7 significant digits.
+        At jaw scale (around 100 mm) that's a resolution of about 0.00001 mm, thousands of times finer than the
+        0.05 mm clinical tolerance. So float32 is fine for storage, but algorithms must avoid accumulating error (e.g.
+        repeated smoothing that slowly shrinks a shape).</div>
+
+      <!-- =============================================================== -->
+      <h2 id="part-5">5 · Keeping the browser fast</h2>
+
+      <h3>The 16-millisecond budget</h3>
+      <p>For smooth motion the screen updates 60 times a second, so each frame has about 16 ms. JavaScript on the main
+        thread shares that time with layout, React and input handling. Parsing a 50 MB scan takes far longer than
+        16 ms, and on the main thread the page would freeze.</p>
+
+      <h3>Web Workers: background threads for the browser</h3>
+      <p>A <strong>Web Worker</strong> runs JavaScript on another CPU core. It has its own memory and can't touch the
+        page; you exchange messages. <strong>Comlink</strong> makes that look like calling an async function
+        (<code>await worker.importScan(bytes)</code>), much like an RPC client.</p>
+      <p>Messages are normally <em>copied</em>, and copying 50 MB twice is slow. <strong>Transferables</strong>
+        <em>move</em> a buffer to the other thread instead (the sender loses access). <strong>Analogy:</strong> handing
+        someone a box instead of photocopying its contents. Every big array we send is transferred.</p>
+      <p>Comlink can't cancel a call already running. If you drop a new file while the previous one is still
+        processing, we use a "latest wins" counter: when the old result arrives, it's thrown away.</p>
+
+      <h3>Typed arrays, not objects</h3>
+      <p>A million vertices as <code>{x, y, z}</code> objects would use several times more memory and give the garbage
+        collector a lot to do. Instead we use <strong>typed arrays</strong> (<code>Float32Array</code>,
+        <code>Uint32Array</code>): one compact block of raw numbers, exactly what the GPU wants and transferable between
+        threads. A welded 1M-triangle scan is roughly 500k vertices, about 6 MB of positions, 6 MB of normals and 12 MB
+        of index.</p>
+
+      <figure class="diagram">
+        <div class="d-grid-2">
+          <div class="cluster accent"><span class="cluster-title">Main thread</span>
+            <div class="d-col"><div class="node">React panels</div><div class="node">Viewer + camera</div><div class="node">Picking (BVH queries)</div></div>
+          </div>
+          <div class="cluster"><span class="cluster-title">Worker thread</span>
+            <div class="d-col"><div class="node">Parse · weld · cleanup</div><div class="node">Normals · PCA · sha256</div><div class="node">Build BVH</div></div>
+          </div>
+        </div>
+        <div class="d-link">Comlink calls · buffers transferred, not copied</div>
+        <figcaption>Figure 3. Measured: the 1M-triangle import pipeline (parse to BVH) takes about 0.45 s in Node's
+          test run, and two demo jaws are on screen about 1 s after the click in the browser. The page stays
+          responsive because none of it runs on the main thread.</figcaption>
+      </figure>
+
+      <!-- =============================================================== -->
+      <h2 id="part-6">6 · Infrastructure you may not have met</h2>
+
+      <h3 id="caddy">Caddy, explained</h3>
+      <p><strong>Caddy</strong> is a web server and reverse proxy, in the same family as nginx and Apache, written in Go.
+        It's known for two things: a short, readable config file (the <code>Caddyfile</code>) and <strong>automatic
+        HTTPS</strong> (it obtains and renews Let's Encrypt certificates by itself when given a domain name).</p>
+      <p><strong>Analogy:</strong> a receptionist at the front door. Visitors (browser requests) arrive. Requests for
+        brochures (the app's HTML/JS/CSS files) are handed out from the shelf. Requests for a specific person
+        (<code>/api/…</code>) are walked to the right office (the API container). The visitor never sees the building's
+        internal layout.</p>
+
+      <h4>What our Caddy does</h4>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Job</th><th>Caddyfile line(s)</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Serve the built web app (static files)</td><td><code>root * /srv</code> + <code>file_server</code></td><td>The React app compiles to plain files; Caddy hands them out.</td></tr>
+          <tr><td>Forward API calls</td><td><code>handle /api/* { reverse_proxy api:3000 }</code></td><td><code>api</code> is the Compose service name, which works as a hostname inside the Docker network.</td></tr>
+          <tr><td>Single-page-app fallback</td><td><code>try_files {path} /index.html</code></td><td>Reloading a deep link like <code>/cases/42</code> must return the app, not a 404. The app then decides what to show.</td></tr>
+          <tr><td>Compression</td><td><code>encode zstd gzip</code></td><td>Smaller JS/CSS downloads.</td></tr>
+          <tr><td>Caching</td><td><code>Cache-Control … immutable</code> for <code>/assets/*</code>, <code>no-cache</code> for HTML</td><td>Built asset names contain a content hash, so they can be cached for a year; <code>index.html</code> must always be fresh so new deploys show up.</td></tr>
+          <tr><td>Streaming uploads</td><td><code>flush_interval -1</code></td><td>Pass 50 MB scans straight through without buffering them.</td></tr>
+          <tr><td>Optional sub-path</td><td><code>handle_path {$BASE_PATH}/*</code></td><td>If the app is ever mounted at <code>/dental</code>, Caddy strips the prefix so the app and API stay unaware of it.</td></tr>
+          <tr><td>Trust the outer proxy</td><td><code>trusted_proxies static private_ranges</code></td><td>Real client IPs arrive in <code>X-Forwarded-For</code> from Nginx Proxy Manager; only trust that header from local addresses.</td></tr>
+          <tr><td>Lock down admin</td><td><code>admin off</code></td><td>Caddy has a live-config HTTP API; we don't need it.</td></tr>
+          <tr><td>Anything else</td><td><code>respond "Not found" 404</code></td><td>Explicit default.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4>How to read a Caddyfile (two-minute version)</h4>
+      <pre><code>{                       # global options block
+    admin off
+}
+
+:80 {                   # a "site block": which address to serve (plain HTTP on port 80)
+    encode zstd gzip    # a "directive": do this for every request in the block
+
+    handle /api/* {     # "handle" blocks are mutually exclusive; the most specific path wins
+        reverse_proxy api:3000
+    }
+    handle {            # fallback for everything else
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
+}</code></pre>
+      <p>For comparison, the nginx equivalent of the important part:</p>
+      <pre><code>location /api/ { proxy_pass http://api:3000; proxy_request_buffering off; }
+location /     { root /srv; try_files $uri /index.html; }</code></pre>
+
+      <h4>Why both Nginx Proxy Manager <em>and</em> Caddy?</h4>
+      <figure class="diagram">
+        <div class="flow">
+          <div class="node ext">Browser<small>https://dental.cognifuze.com</small></div><div class="arrow"></div>
+          <div class="node">Nginx Proxy Manager on the VM<small>owns ports 80/443, TLS certificate</small></div><div class="arrow"></div>
+          <div class="node accent">Caddy container<small>dcad-proxy:80 on shared_net, plain HTTP</small></div><div class="arrow"></div>
+          <div class="node">api / static files</div>
+        </div>
+        <figcaption>Figure 4. The VM's existing Nginx Proxy Manager already handles HTTPS for the domain;
+          it only needs one proxy host forwarding to <code>dcad-proxy:80</code> over the Docker network <code>shared_net</code>.</figcaption>
+      </figure>
+      <ul>
+        <li><strong>The app's routing rules travel with the app.</strong> SPA fallback, <code>/api</code> routing, cache
+          headers, upload streaming and sub-path stripping live in the repo's <code>Caddyfile</code>, versioned with the
+          code. Nginx Proxy Manager doesn't need to know any of it.</li>
+        <li><strong>Portability.</strong> Any HTTPS front (NPM, a cloud load balancer) only has to forward to Caddy;
+          nothing app-specific moves with it.</li>
+        <li>The cost is one small extra hop, which is negligible.</li>
+      </ul>
+      <p>Files: <code>infra/Caddyfile</code>, <code>infra/proxy.Dockerfile</code> (builds the web app, then copies the
+        output into a Caddy image). See <a href="./deployment.html">Deployment</a> for operating it.</p>
+
+      <h3>Docker Compose details that matter here</h3>
+      <ul>
+        <li><strong>Service names are hostnames.</strong> Inside the Compose network, the API reaches Postgres at
+          <code>db:5432</code> and Caddy reaches the API at <code>api:3000</code>. Nothing is published on the host: Caddy also joins
+          the external network <code>shared_net</code>, where Nginx Proxy Manager reaches it as <code>dcad-proxy</code>.</li>
+        <li><strong>Named volumes hold state.</strong> <code>pgdata</code> (database) and <code>blobs</code> (scan
+          files) survive container rebuilds. Deleting them deletes data.</li>
+        <li><strong>Health checks</strong> make start-up ordered: the API waits until Postgres answers.</li>
+        <li><strong>Memory limits</strong> (<code>mem_limit</code>) keep one service from starving the 6 GB VM.</li>
+      </ul>
+
+      <h3>arm64 vs x86</h3>
+      <p>CPUs speak different instruction sets. The OCI VM (Ampere) and Apple-silicon Macs are <strong>arm64</strong>
+        (also called aarch64); most cloud servers and older PCs are <strong>x86-64</strong> (amd64). A Docker image is
+        built for one of them. Our base images (Node, Postgres, Caddy) publish both, and we build on the VM itself, so
+        everything is native arm64. The trap: an image built on an Intel laptop and copied over would fail on the VM, or
+        run very slowly under emulation.</p>
+
+      <h3>Content addressing and integrity</h3>
+      <p>Every scan is identified by the <strong>sha256 hash of its bytes</strong>, its fingerprint. Two identical
+        files have the same id wherever they are (browser, API, a future ML service), and a single flipped bit changes
+        it. On upload (built in the API; the web app starts uploading on Day 2), the browser gzips the file and sends the
+        hash of the <em>original</em>. The API streams the
+        compressed bytes to storage while decompressing a copy just to compute the hash, and rejects the upload (and
+        deletes what it stored) on a mismatch. The whole file is never held in memory: measured, a 150 MB upload kept the
+        API at about 112 MiB.</p>
+
+      <h3>Optimistic concurrency</h3>
+      <p>Two tabs editing the same case could overwrite each other. Each save says "I'm based on version 7". If the
+        server is already at version 8, it answers <code>409 Conflict</code> instead of silently overwriting.
+        <strong>Analogy:</strong> a wiki's "someone edited this page while you were editing". There are no locks, so
+        nobody waits.</p>
+
+      <h3>Multi-tenancy with organisations</h3>
+      <p>Each user belongs to an <strong>organisation</strong> (a lab); a personal one is created at sign-up. Every
+        database query includes the organisation id, so one lab can never read another's cases, and asking for someone
+        else's case returns 404, not 403, to avoid revealing that it exists. Auth is handled by the Better Auth library,
+        with session cookies, and its tables live in our own Postgres.</p>
+
+      <!-- =============================================================== -->
+      <h2 id="part-7">7 · AI plumbing</h2>
+      <h3>LLM tool calling</h3>
+      <p>Besides text, modern LLM APIs can answer with a <strong>tool call</strong>: a structured request like
+        <code>{"name": "move_crown", "input": {"fdi": 36, "direction": "mesial", "mm": 0.2}}</code>. You send the model a
+        list of tools, each described by a JSON Schema. When it "calls" one, <em>your code</em> runs it and sends the
+        result back, and the model continues. It's an RPC protocol where the model is the client.</p>
+      <p>In DentalCAD, the tools are generated from the same zod schemas that validate user commands
+        (<code>agentToolDefs()</code> in <code>packages/shared/src/tools.ts</code>). So the model can only request
+        things a user could do, every request is validated, and each batch is shown with Accept/Revert. The model never
+        produces geometry itself. <span class="badge done">Contracts built</span> <span class="badge planned">Agent loop · Day 6</span></p>
+
+      <h3>zod as the single source of truth</h3>
+      <p><strong>zod</strong> defines a data shape once in TypeScript and gives you three things: static types,
+        runtime validation (parse untrusted input and get a clear error if it's wrong), and JSON Schema (for the LLM
+        tools and the <a href="./reference/schemas.html">reference docs</a>). Both the web app and the API import the
+        same definitions from <code>packages/shared</code>, so a change breaks typechecking everywhere it matters.</p>
+
+      <!-- =============================================================== -->
+      <h2 id="part-8">8 · How we test this kind of code</h2>
+      <p>Geometry code is unusual to test: outputs are huge arrays, and "correct" is often a property ("closed",
+        "nothing thinner than 0.5 mm") rather than an exact value. In short:</p>
+      <ul>
+        <li><strong>Tiny hand-made inputs</strong>: a cube written as an STL must weld to exactly 8 corners and 12
+          triangles.</li>
+        <li><strong>Round trips</strong>: write a PLY, read it back, get the same data; serialize the BVH in the worker,
+          rebuild it on the main thread, and the same ray hits the same triangle.</li>
+        <li><strong>Synthetic data</strong>: the generated demo jaw (with a prep on tooth 36) is used in tests, never
+          patient data.</li>
+        <li><strong>Contract tests</strong>: one test suite run against two storage back-ends (local disk and S3), which
+          proves they're swappable.</li>
+        <li><strong>Real infrastructure for integration</strong>: API tests run against real Postgres and S3-compatible
+          storage in Docker, not mocks.</li>
+        <li><strong>Performance as a test</strong>: a 1M-triangle import must finish within a budget.</li>
+      </ul>
+      <p>Every kind, with real examples and how to run it: <a href="./testing.html#kinds-of-tests">Testing &amp;
+        verification → Kinds of tests</a>.</p>
+
+      <!-- =============================================================== -->
+      <h2 id="reading-order">Where to start reading the code</h2>
+      <p>A suggested path for a developer new to 3D, from most familiar to least:</p>
+      <ol>
+        <li><code>packages/shared/src/design.ts</code> and <code>commands.ts</code>: the data model, plain TypeScript +
+          zod.</li>
+        <li><code>apps/api/src/http/app.ts</code> → <code>domain/files.ts</code>: a familiar web backend; then the
+          upload streaming.</li>
+        <li><code>apps/web/src/ui/ScanImport.tsx</code> → <code>state/sceneController.ts</code>: React to engine
+          boundary.</li>
+        <li><code>apps/web/src/workers/geometry.worker.ts</code> → <code>geometry/processScan.ts</code>: the import
+          pipeline, one function per step.</li>
+        <li><code>geometry/stl.ts</code>, <code>weld.ts</code>, <code>cleanup.ts</code>, <code>normals.ts</code>: small,
+          tested, array-based algorithms. Read them alongside their <code>*.test.ts</code>.</li>
+        <li><code>apps/web/src/engine/Viewer.ts</code>: three.js scene, camera, picking, transparency.</li>
+        <li><code>geometry/synthetic.ts</code>: how a fake jaw is built from formulas; good for building intuition.</li>
+      </ol>
+      <p>Then: <a href="./architecture.html">System architecture</a> for how it fits together, and
+        <a href="./geometry.html">Geometry pipeline</a> for what's coming.</p>
+
+      <nav class="page-nav" id="page-nav" aria-label="Previous and next page"></nav>
+      <footer class="page-footer">Terms used here are also defined in the <a href="./glossary.html">Glossary</a>.
+        Last updated 2026-10-03.</footer>
+    </main>
+
+    <aside class="toc" id="toc" aria-label="On this page"></aside>
+  </div>
+  <script src="./assets/docs.js"></script>
+</body>
+</html>

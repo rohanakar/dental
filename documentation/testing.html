@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en" data-root=".">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Testing &amp; verification · DentalCAD docs</title>
+  <meta name="description" content="How DentalCAD is tested: the test pyramid, the current suites and counts, how to run them, measured performance, the Day 1 full-stack smoke test and the planned verification for geometry, AI and operations.">
+  <link rel="stylesheet" href="./assets/docs.css">
+</head>
+<body data-page="testing.html">
+  <header class="topbar">
+    <button class="icon-btn menu-btn" id="menu-toggle" aria-expanded="false" aria-controls="sidebar">☰</button>
+    <a class="brand" href="./index.html">DentalCAD <small>design docs</small></a>
+    <span class="spacer"></span>
+    <button class="icon-btn" id="theme-toggle" type="button">☾ Dark</button>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation"></nav>
+
+    <main>
+      <div class="eyebrow"><span class="badge depth">L3 · Deep dive</span> <span>For: engineers, QA, whoever deploys</span></div>
+      <h1>Testing &amp; verification</h1>
+      <p class="lede">What is tested today, how to run it, what was measured, and what still has to be proven before the crown pipeline can be trusted.</p>
+
+      <div class="tldr">
+        <strong>In short</strong>
+        <ul>
+          <li><strong>70 automated tests, all passing</strong> (2026-10-03): 52 unit tests (shared 6, web 28, API 18) plus 18 API integration tests against real Postgres and S3-compatible storage in Docker.</li>
+          <li>A <strong>1M-triangle scan</strong> parses, cleans, welds and gets its BVH in <strong>438 ms</strong> in Node (measured; the soft limit is 5 s).</li>
+          <li>The production Docker stack passed a <strong>10-check end-to-end smoke test</strong> locally: sign-up → case → 50 MB scan upload → identical download → mock LLM.</li>
+          <li>Not yet tested because not yet built: the crown geometry (margin, intaglio, fit, adapt, export) and the AI loop. They are verified by planned invariant tests and a <strong>golden-case regression against real exocad crowns</strong>, which needs 3–5 cases from you.</li>
+          <li>There is no CI yet. Tests run locally with <code>pnpm</code>.</li>
+        </ul>
+      </div>
+
+      <h2>Test pyramid</h2>
+      <p>Fast tests at the bottom run on every change. Slower ones at the top prove the parts work together and against real data.</p>
+      <figure class="diagram">
+        <div class="stack">
+          <div class="layer"><div class="layer-name">Manual review<small>per golden case</small></div>
+            <div class="parts"><div class="node plan">Open exported STL in a slicer / Meshmixer / exocad; technician judges fit and anatomy<small>Planned · Day 7</small></div></div></div>
+          <div class="layer"><div class="layer-name">System<small>whole stack</small></div>
+            <div class="parts">
+              <div class="node ok">Compose smoke test<small>10 checks · done 2026-10-03</small></div>
+              <div class="node plan">Playwright browser smoke<small>Planned · Day 7</small></div>
+              <div class="node plan">Backup → restore drill<small>Planned · Day 5+</small></div>
+            </div></div>
+          <div class="layer"><div class="layer-name">Regression<small>real data</small></div>
+            <div class="parts"><div class="node plan">Headless golden-case runner vs exocad crowns (Hausdorff)<small>Planned · Day 2–7</small></div></div></div>
+          <div class="layer"><div class="layer-name">Integration<small>Docker: Postgres + S3</small></div>
+            <div class="parts"><div class="node ok">API integration · 13</div><div class="node ok">S3 BlobStore contract · 5</div></div></div>
+          <div class="layer"><div class="layer-name">Unit<small>no infrastructure</small></div>
+            <div class="parts"><div class="node ok">shared · 6</div><div class="node ok">web · 28</div><div class="node ok">api · 18</div></div></div>
+        </div>
+        <figcaption>Figure 1. Green = built and passing. Dashed purple = planned in specs/plan.md.</figcaption>
+      </figure>
+
+      <h2 id="kinds-of-tests">Kinds of tests, in plain terms</h2>
+      <p>Geometry and infrastructure code is tested differently from typical CRUD code. The outputs are big arrays, and
+        "correct" is often a <em>property</em> ("closed", "nothing thinner than 0.5 mm") rather than one exact value.
+        These are the kinds of tests in the repo today, each with a real example.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Kind</th><th>What it means</th><th>Real examples (test names)</th><th>Why we use it</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Hand-made input</strong></td><td>Build a tiny input in the test (a few bytes or triangles) where the right answer is obvious.</td><td><code>stl.test.ts</code>: "welds a cube soup into 8 vertices and 12 faces"; <code>ply.test.ts</code>: "parses ASCII PLY with colors and triangulates quads"; <code>cleanup.test.ts</code>: "removes faces with repeated indices and zero area"</td><td>Pin down each rule of a parser or algorithm.</td></tr>
+          <tr><td><strong>Edge cases from real-world files</strong></td><td>Inputs that broke other software or arrive from odd scanners.</td><td>"detects binary STL whose header starts with 'solid'"; "treats -0 and +0 as the same vertex"; "parses binary big-endian PLY with double coordinates, float colors and extra properties"; "rejects faces that reference missing vertices"</td><td>Scanner exports vary, and these bugs are silent: wrong geometry, no crash.</td></tr>
+          <tr><td><strong>Round trip</strong></td><td>Write, then read back (or send, then receive), and check nothing changed.</td><td>"round-trips binary STL"; "round-trips binary little-endian PLY with colors"; <code>scanPayload.test.ts</code>: "serializes the BVH in the worker and rebuilds it on the main thread" (the same ray hits the same triangle)</td><td>Catches asymmetric bugs between writer and reader, and between the worker and main thread.</td></tr>
+          <tr><td><strong>Geometric property</strong></td><td>Assert a mathematical fact instead of exact numbers.</td><td>"computes +z normals for a flat grid"; "weights by face area"; "finds the occlusal-plane normal of an arch as the least-variance axis"; "diagonalizes a symmetric matrix"</td><td>Robust to harmless changes like vertex order or float noise.</td></tr>
+          <tr><td><strong>Synthetic data</strong></td><td>Generated jaws (the same as the demo, with a prep on tooth 36) instead of patient scans.</td><td>"imports a synthetic arch STL without warnings"; "estimates a view frame for the synthetic jaws"; "warns when units look wrong" (the same jaw scaled ×1000 and ÷1000, as if exported in microns or metres)</td><td>Realistic size and shape, with no patient data in the repo.</td></tr>
+          <tr><td><strong>Behaviour of small helpers</strong></td><td>Plain logic tests for non-geometry code.</td><td><code>files.test.ts</code>: "detects roles from common export names", "normalizes VITE_BASE_PATH"; "discards superseded results" (latest wins); <code>shared.test.ts</code>: tool schemas and FDI validation</td><td>Cheap, fast, and these rules are easy to break.</td></tr>
+          <tr><td><strong>Performance budget</strong></td><td>Run at full size and fail if it's too slow.</td><td>"processes and builds the BVH for a ~1M-triangle STL" (soft limit 5 s; measured about 0.44 s)</td><td>Speed is a feature here; regressions show up immediately.</td></tr>
+          <tr><td><strong>Contract test</strong></td><td>One suite run against <em>every</em> implementation of an interface.</td><td><code>blob-store.contract.test.ts</code> runs the same 5 tests on the local-disk and S3 stores: "round-trips a streamed object", "returns null for missing objects", "overwrites", "deletes idempotently", "rejects a failing upload stream and stores nothing"</td><td>Proves the backends are interchangeable, which is the point of the portable design.</td></tr>
+          <tr><td><strong>Security check</strong></td><td>Try to break a boundary.</td><td>"rejects keys that escape the root" (path traversal on the disk store); "isolates organizations" (another lab's case returns 404)</td><td>Tenancy and file-system safety must never regress.</td></tr>
+          <tr><td><strong>Translation (no network)</strong></td><td>Check our format converts correctly to and from each provider's API, without calling it.</td><td><code>llm-adapters.test.ts</code>: "maps provider-agnostic messages and tools to the Messages API"; "turns optional properties into required nullable ones" (OpenAI strict mode); "normalises every agent tool schema"</td><td>Free, fast and deterministic; provider quirks are captured once.</td></tr>
+          <tr><td><strong>Configuration</strong></td><td>Env vars in, chosen behaviour out.</td><td>"falls back to mock without keys"; "prefers anthropic, then openai"; "derives the base path from PUBLIC_URL"</td><td>Deployment mistakes become test failures, not outages.</td></tr>
+          <tr><td><strong>Integration (real infrastructure)</strong></td><td>The real HTTP app against real Postgres and real S3-compatible storage in Docker; no mocks.</td><td><code>api.integration.test.ts</code>: "signs up into a personal organization", "uploads gzip with streaming sha256 verification and downloads it back", "rejects sha256 mismatch, invalid gzip and oversize uploads without leaving blobs", "saves versions with optimistic concurrency", "accepts proxy-stripped auth requests and scopes cookies to the sub-path"</td><td>SQL, auth cookies, streams and migrations behave differently from mocks.</td></tr>
+          <tr><td><strong>Smoke test (manual, scripted)</strong></td><td>curl against the full production Docker stack.</td><td>10 checks on 2026-10-03 (see <a href="#full-stack-smoke-test-2026-10-03">below</a>)</td><td>Proves images, Caddy routing, env and migrations work together.</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout note"><strong>Coming with the crown pipeline</strong>
+        <ul>
+          <li><strong>Invariant tests</strong> on every geometry step, e.g. "the exported crown is closed", "no triangle
+            crosses another", "the inner surface is 0.04 mm ± 0.01 from the prep measured along the normal".</li>
+          <li><strong>Golden-case regression</strong>: run real de-identified cases headlessly and compare our crown to the
+            exocad crown by Hausdorff distance.</li>
+          <li><strong>Browser end-to-end tests</strong> with Playwright, and <strong>mocked-LLM tests</strong> for the
+            agent loop.</li>
+        </ul>
+        Details are in <a href="#planned-verification">Planned verification</a>.</div>
+
+      <h2>Current test inventory</h2>
+      <p>Counts are from running every suite on 2026-10-03. They match <code>pnpm test</code> and <code>pnpm --filter @dcad/api test:infra</code>. <span class="badge done">Built · Day 1</span></p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>File</th><th>Level</th><th>Tests</th><th>What it proves</th></tr></thead>
+        <tbody>
+          <tr><td><code>packages/shared/src/shared.test.ts</code></td><td>Unit</td><td>6</td><td>Material presets satisfy <code>DesignParams</code>; invalid FDI rejected; agent tool defs are valid JSON Schema; tool calls map back to validated commands; proposer id format; downstream step invalidation.</td></tr>
+          <tr><td><code>apps/web/src/geometry/stl.test.ts</code></td><td>Unit</td><td>5</td><td>Binary STL round-trip; binary files whose header starts with "solid"; ASCII STL; a cube triangle soup welds to 8 vertices / 12 faces; −0 and +0 weld together.</td></tr>
+          <tr><td><code>apps/web/src/geometry/ply.test.ts</code></td><td>Unit</td><td>4</td><td>ASCII PLY with colors + quad triangulation; binary little-endian round-trip with colors; binary big-endian with doubles, float colors and extra properties; faces pointing at missing vertices are rejected.</td></tr>
+          <tr><td><code>apps/web/src/geometry/cleanup.test.ts</code></td><td>Unit</td><td>6</td><td>Removes repeated-index and zero-area faces, duplicate faces in either winding, small disconnected pieces and unused vertices; normals are +z on a flat grid and area-weighted.</td></tr>
+          <tr><td><code>apps/web/src/geometry/processScan.test.ts</code></td><td>Unit</td><td>6</td><td>Synthetic arch imports without warnings; PLY colors survive; wrong units trigger a warning; sha256 is of the original bytes; PCA is correct and finds the occlusal-plane normal.</td></tr>
+          <tr><td><code>apps/web/src/ui/files.test.ts</code></td><td>Unit</td><td>3</td><td>Upper/lower role detection from file names; unnamed files assigned sensibly; <code>VITE_BASE_PATH</code> normalization.</td></tr>
+          <tr><td><code>apps/web/src/workers/scanPayload.test.ts</code></td><td>Unit</td><td>4</td><td>BVH built in the worker, serialized and rebuilt on the main thread (the hit triangle contains the hit point); view-frame estimate; "latest wins" discards superseded imports; 1M-triangle performance.</td></tr>
+          <tr><td><code>apps/api/test/llm-adapters.test.ts</code></td><td>Unit</td><td>12</td><td>Anthropic and OpenAI request/response translation (incl. tool calls and stop reasons); OpenAI strict-mode normalization of every agent tool schema; mock provider; provider/model selection from config and base path from <code>PUBLIC_URL</code>; rate limiter.</td></tr>
+          <tr><td><code>apps/api/test/blob-store.contract.test.ts</code> (fs)</td><td>Unit</td><td>6</td><td>Filesystem BlobStore contract (5): streamed round-trip with size, missing → null, overwrite, idempotent delete, failed upload stores nothing. Plus keys cannot escape the storage root (1).</td></tr>
+          <tr><td><code>apps/api/test/blob-store.contract.test.ts</code> (s3)</td><td>Integration</td><td>5</td><td>The <em>same</em> contract against S3 (SeaweedFS), proving the storage backend is swappable.</td></tr>
+          <tr><td><code>apps/api/test/api.integration.test.ts</code></td><td>Integration</td><td>13</td><td>Health; 401 without auth; sign-up creates a personal org and sign-in works; case create/list/get; gzip upload with streaming sha256 check + download; uncompressed upload; sha mismatch, bad gzip and oversize are rejected <em>without leaving blobs</em>; org isolation; optimistic version saves (409 on conflict); LLM proxy records usage; proposal events stored; jobs answer 501; auth under a <code>/dental</code> sub-path scopes cookies correctly.</td></tr>
+        </tbody>
+      </table></div>
+      <p>Totals: <strong>52 unit</strong> (shared 6 + web 28 + API 18) and <strong>18 integration</strong> (5 S3 contract + 13 API), so <strong>70 tests</strong>. <code>pnpm test</code> runs the 52 unit tests and reports the 18 integration tests as skipped. <code>test:infra</code> runs all 36 API tests.</p>
+
+      <h2>How to run</h2>
+      <pre><code># once per machine (works around a corepack signing-key bug on this Node version)
+export COREPACK_INTEGRITY_KEYS=0
+corepack enable
+pnpm install
+
+pnpm test                                  # all unit tests (integration suites skip)
+pnpm typecheck                             # TypeScript 7, every package
+pnpm --filter @dcad/web test               # web only
+pnpm --filter @dcad/shared test            # shared schemas only
+pnpm --filter @dcad/api test               # API unit tests
+pnpm --filter @dcad/api test:infra         # API unit + integration (starts/stops Docker)
+pnpm --filter @dcad/web fixtures           # write synthetic scans to data/synthetic/</code></pre>
+
+      <h3>The integration harness</h3>
+      <p><code>test:infra</code> runs <code>apps/api/scripts/test-infra.sh</code>, which:</p>
+      <figure class="diagram">
+        <div class="flow">
+          <div class="node">docker compose up --wait<small>infra/docker-compose.test.yml</small></div><div class="arrow"></div>
+          <div class="node accent">TEST_INFRA=1 vitest run<small>integration suites un-skip</small></div><div class="arrow"></div>
+          <div class="node">docker compose down -v<small>always, even on failure</small></div>
+        </div>
+        <figcaption>Figure 2. Throwaway infrastructure. The exit code is the test result.</figcaption>
+      </figure>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Service</th><th>Image</th><th>Host port</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Postgres</td><td><code>postgres:17</code></td><td><code>127.0.0.1:55432</code></td><td>Data on tmpfs (nothing persists); database <code>dcad_test</code>.</td></tr>
+          <tr><td>S3-compatible store</td><td><code>chrislusf/seaweedfs</code></td><td><code>127.0.0.1:58333</code></td><td>Data on tmpfs; test credentials defined inline in the compose file.</td></tr>
+        </tbody>
+      </table></div>
+      <p>The ports are non-default, so the harness can run next to a local dev database. Integration suites use <code>describe.skipIf(!TEST_INFRA)</code>, which is why they show as skipped in a plain <code>pnpm test</code>.</p>
+      <div class="callout warn"><strong>Deviation</strong><span class="badge deviation">Deviation</span> The plan named MinIO for S3 tests, but the <code>minio/minio</code> image is no longer published on Docker Hub. SeaweedFS speaks the same S3 API. Production storage is unaffected: the app uses the filesystem adapter by default and any S3-compatible service via <code>BLOB_DRIVER=s3</code>.</div>
+
+      <h2>Performance</h2>
+      <p>The import pipeline has a performance test in <code>apps/web/src/workers/scanPayload.test.ts</code>. It runs the full pipeline plus BVH build on a synthetic ~1M-triangle binary STL (50 MB) in Node, logs the timings and soft-asserts &lt; 5 s.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Stage</th><th>Measured (Node, Apple Silicon arm64, 2026-10-03)</th></tr></thead>
+        <tbody>
+          <tr><td>Parse</td><td>13 ms</td></tr>
+          <tr><td>Weld (exact float-bit)</td><td>60 ms</td></tr>
+          <tr><td>Cleanup</td><td>49 ms</td></tr>
+          <tr><td>Normals</td><td>27 ms</td></tr>
+          <tr><td>Process total (incl. sha256)</td><td>176 ms</td></tr>
+          <tr><td>BVH build</td><td>261 ms</td></tr>
+          <tr><td><strong>Total</strong></td><td><strong>438 ms</strong> (an earlier run measured 467 ms)</td></tr>
+        </tbody>
+      </table></div>
+      <p>In the browser (headless Chrome, measured informally while building Day 1), the 1M-triangle lower plus 300k-triangle upper demo scans were ready about <strong>0.8–1 s</strong> after the click. The API side was checked by hand: a 150 MB upload took about 1.1 s while the API process stayed near 112 MiB, so uploads are streamed, not buffered. A 210 MB upload was refused with 413.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Target from the plan</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>1M-triangle arch loads in &lt; 3 s</td><td><span class="badge done">Met</span> about 1 s in browser, 0.44 s in Node</td></tr>
+          <tr><td>60 fps orbit on a mid-range laptop</td><td><span class="badge planned">To measure</span> render-on-demand is in place; no fps test yet</td></tr>
+          <tr><td>Color-map update &lt; 100 ms during adapt</td><td><span class="badge planned">Planned · Day 4–5</span> (color maps not built yet)</td></tr>
+        </tbody>
+      </table></div>
+
+      <h2 id="full-stack-smoke-test-2026-10-03">Full-stack smoke test (2026-10-03)</h2>
+      <p>The production Docker Compose stack (Caddy proxy + API + Postgres, arm64 images built locally) was started under a separate project name with throwaway secrets, exercised with <code>curl</code> at <code>http://localhost:8080</code>, then removed with its volumes and images. All 10 checks passed:</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>#</th><th>Check</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>Web app served at <code>/</code></td><td>200</td></tr>
+          <tr><td>2</td><td><code>GET /api/healthz</code> (database ping)</td><td><code>{"ok":true}</code></td></tr>
+          <tr><td>3</td><td>Sign up via <code>/api/auth/sign-up/email</code></td><td>200</td></tr>
+          <tr><td>4</td><td><code>GET /api/me</code></td><td>user, personal org, role <code>owner</code></td></tr>
+          <tr><td>5</td><td>Create a case for tooth 36, zirconia</td><td>Created, status <code>draft</code>, version 0</td></tr>
+          <tr><td>6</td><td>Upload the 50 MB synthetic lower scan gzipped with its sha256</td><td>Stored (23 MB on disk)</td></tr>
+          <tr><td>7</td><td>Download it back</td><td>sha256 identical to the original</td></tr>
+          <tr><td>8</td><td>Upload with a wrong sha256</td><td>422 <code>integrity_error</code></td></tr>
+          <tr><td>9</td><td>LLM proxy with no keys configured</td><td>Mock provider reply + usage recorded</td></tr>
+          <tr><td>10</td><td><code>GET /api/cases</code> without a session</td><td>401</td></tr>
+        </tbody>
+      </table></div>
+      <p>Separately, a stack mounted under <code>/dental</code> was checked by hand: <code>/dental</code> redirects to <code>/dental/</code>, assets load, the sign-in cookie has <code>Path=/dental</code>, and an un-prefixed <code>/api</code> returns 404. The same checks can be run on the VM after deploy; see <a href="./deployment.html">Deployment &amp; operations</a>.</p>
+
+      <h2 id="planned-verification">Planned verification</h2>
+      <p>Most of the product risk is in the geometry, which is not built yet. Each planned item is listed with when it lands.</p>
+
+      <h3>Geometry invariants (unit) <span class="badge planned">Planned · Day 2–5</span></h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Component</th><th>Invariant the test asserts</th></tr></thead>
+        <tbody>
+          <tr><td>Live-wire margin</td><td>Path is continuous along mesh edges between anchors; the loop closes.</td></tr>
+          <tr><td>Intaglio (inner surface)</td><td>Cement gap measured <strong>along the surface normal on the axial walls</strong> is within ±0.01 mm of the target; no undercut (every ray along the insertion axis hits once).</td></tr>
+          <tr><td>Crown solid</td><td>Closed manifold (every edge has two faces), consistent orientation, signed volume &gt; 0, no triangle–triangle intersections.</td></tr>
+          <tr><td>Thickness</td><td>Outer-to-intaglio distance ≥ the thickness profile everywhere (margin thickness at the margin, material minimum beyond).</td></tr>
+          <tr><td>Undo</td><td>Snapshot undo/redo round-trips; editing an upstream step marks downstream steps <code>stale</code>.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Golden-case regression (headless) <span class="badge planned">Planned · Day 2–7</span></h3>
+      <p>The backbone of geometry testing. A headless runner (<code>tools/pipeline-runner</code>) loads each golden case, places the margin from stored points, runs axis → intaglio → fit → adapt → export, and writes the STL and a metrics JSON. The metrics are compared with the crown the lab actually made in exocad.</p>
+      <figure class="diagram">
+        <div class="flow">
+          <div class="node">Golden case<small>scans + stored margin points</small></div><div class="arrow"></div>
+          <div class="node plan">Pipeline runner<small>Node, no browser</small></div><div class="arrow"></div>
+          <div class="node plan">Our crown STL<small>+ metrics JSON</small></div><div class="arrow"></div>
+          <div class="node plan">Compare<small>Hausdorff mean/max vs exocad crown; thickness; clearance</small></div><div class="arrow"></div>
+          <div class="node plan">Thresholds<small>fail the build on regression</small></div>
+        </div>
+        <figcaption>Figure 3. The same runner later becomes batch mode and backfills training data for the ML models.</figcaption>
+      </figure>
+
+      <h3>Everything else</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Area</th><th>Verification</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Browser end to end</td><td>Playwright: upload → margin (scripted clicks) → axis → proposal → adapt → export downloads a valid STL</td><td><span class="badge planned">Planned · Day 7</span></td></tr>
+          <tr><td>Storage portability</td><td>BlobStore contract on fs <em>and</em> S3</td><td><span class="badge done">Built · Day 1</span></td></tr>
+          <tr><td>Tenant isolation</td><td>Org A cannot read org B's case or files</td><td><span class="badge done">Built · Day 1</span></td></tr>
+          <tr><td>Streaming uploads</td><td>100+ MB upload stays within API memory</td><td><span class="badge done">Checked by hand · Day 1</span> (automated test not written)</td></tr>
+          <tr><td>Portability drill</td><td>Restore last night's backup onto a fresh Compose stack and open a case end to end</td><td><span class="badge planned">Planned · Day 5+</span></td></tr>
+          <tr><td>LLM providers</td><td>Anthropic/OpenAI translation and strict-schema normalization</td><td><span class="badge done">Built · Day 1</span></td></tr>
+          <tr><td>Agent tool loop</td><td>Mocked-LLM tests: zod-validated calls, one-transaction Accept/Revert</td><td><span class="badge planned">Planned · Day 6</span></td></tr>
+          <tr><td>Rx intake</td><td>Extraction checked against 10 synthetic prescriptions</td><td><span class="badge planned">Planned · Day 6</span></td></tr>
+          <tr><td>Data flywheel</td><td>A ProposalEvent with artifact refs is written for every accepted or edited proposal</td><td><span class="badge planned">Planned · Day 6</span></td></tr>
+          <tr><td>Manual clinical check</td><td>Technician opens each exported STL in a slicer / Meshmixer (and exocad if available) and judges fit and anatomy</td><td><span class="badge planned">Planned · Day 7</span></td></tr>
+          <tr><td>CI</td><td>Run unit + integration tests on every push</td><td><span class="badge future">Post-MVP</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>Golden cases needed</h2>
+      <p>Synthetic scans (<code>pnpm --filter @dcad/web fixtures</code>) are enough for import and viewer tests, but not for margins or crown fit. Those need real preps. Please provide <strong>3–5 de-identified cases</strong> from the ~100 in-house cases:</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Item</th><th>Required?</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Prep jaw scan (STL or PLY)</td><td>Yes</td><td>Margin, axis and intaglio are computed on it.</td></tr>
+          <tr><td>Opposing jaw scan</td><td>Yes</td><td>Occlusal clearance and adapt-to-antagonist.</td></tr>
+          <tr><td>Scans exported in occlusion (common coordinates)</td><td>Yes</td><td>Automatic bite alignment is out of MVP scope.</td></tr>
+          <tr><td>Finished crown STL from exocad</td><td>Strongly preferred</td><td>Reference for the Hausdorff regression.</td></tr>
+          <tr><td>exocad project files (<code>.dentalProject</code>, <code>.constructionInfo</code>)</td><td>If available</td><td>Ground-truth margin line and insertion axis.</td></tr>
+          <tr><td>Pre-op scan</td><td>Optional</td><td>Useful later for copy-mode.</td></tr>
+        </tbody>
+      </table></div>
+      <ul>
+        <li><strong>Mix:</strong> single posterior crowns (premolars and molars), both jaws, at least one zirconia and one lithium disilicate.</li>
+        <li><strong>Where:</strong> <code>data/golden/&lt;case-id&gt;/</code> in the repo. <code>data/</code> is gitignored, so scans never reach git.</li>
+        <li><strong>Privacy:</strong> strip patient names from file names and metadata; use a pseudonymous case id.</li>
+      </ul>
+
+      <nav class="page-nav" id="page-nav" aria-label="Previous and next page"></nav>
+      <footer class="page-footer">Source of truth: the test files listed above, <code>apps/api/scripts/test-infra.sh</code>, <code>infra/docker-compose.test.yml</code> and <code>specs/plan.md</code> § Verification. Counts and timings measured 2026-10-03.</footer>
+    </main>
+
+    <aside class="toc" id="toc" aria-label="On this page"></aside>
+  </div>
+  <script src="./assets/docs.js"></script>
+</body>
+</html>

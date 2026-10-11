@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en" data-root=".">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Product &amp; workflow · DentalCAD docs</title>
+  <meta name="description" content="Which exocad features DentalCAD replicates first, the single-crown workflow step by step, and the file formats it handles.">
+  <link rel="stylesheet" href="./assets/docs.css">
+</head>
+<body data-page="product.html">
+  <header class="topbar">
+    <button class="icon-btn menu-btn" id="menu-toggle" aria-expanded="false" aria-controls="sidebar">☰</button>
+    <a class="brand" href="./index.html">DentalCAD <small>design docs</small></a>
+    <span class="spacer"></span>
+    <button class="icon-btn" id="theme-toggle" type="button">☾ Dark</button>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation"></nav>
+
+    <main>
+      <div class="eyebrow"><span class="badge depth">L1 · Product</span> <span>For: product, dental technicians, everyone new to the domain</span></div>
+      <h1>Product &amp; workflow</h1>
+      <p class="lede">What a dental technician does in DentalCAD, which exocad features we replicate first and why, and
+        which files go in and out.</p>
+
+      <div class="tldr">
+        <strong>In short</strong>
+        <ul>
+          <li>The MVP covers one job end to end: <strong>a single anatomic crown on a prepared premolar or molar</strong>,
+            designed from intraoral scans and exported as a watertight STL for milling.</li>
+          <li>It follows exocad's step-by-step wizard: setup → scans → frame → margin → axis → parameters → proposal →
+            adapt → export.</li>
+          <li>Inputs: STL and PLY scans. Output: binary STL plus a JSON sidecar (like exocad's
+            <code>.constructionInfo</code>).</li>
+          <li>AI assist will offer a one-click draft crown, plain-language edits ("lower the occlusion 0.1 mm") and
+            prescription intake. The technician always reviews and accepts.</li>
+        </ul>
+      </div>
+
+      <h2>Who it's for and what problem it solves</h2>
+      <p>Dental labs and clinics design crowns in desktop CAD software such as exocad DentalCAD. DentalCAD (this
+        project) brings the most-used part of that workflow to the browser:</p>
+      <ul>
+        <li>Nothing to install, and cases are stored in the cloud.</li>
+        <li>Built from day one so AI can take over the routine steps, the way Dentbird does, while the technician keeps
+          control.</li>
+      </ul>
+      <dl class="kv">
+        <dt>Primary user</dt><dd>Dental lab technician (CAD designer)</dd>
+        <dt>Primary job</dt><dd>Design a single crown that seats on the prep, touches its neighbours and the opposing
+          teeth correctly, is thick enough, and mills cleanly</dd>
+        <dt>Input</dt><dd>Intraoral scans (upper jaw, lower jaw; one of them has the prepared tooth), plus the order
+          (tooth number, material, shade)</dd>
+        <dt>Output</dt><dd>A watertight crown STL for the CAM/milling software</dd>
+      </dl>
+
+      <h2>Why a single posterior crown first (the 80:20)</h2>
+      <p>Most of a lab's daily volume is single crowns and short bridges, on natural teeth or implants. Nearly every
+        other restoration reuses the crown's building blocks (margin, insertion axis, inner fitting surface, outer
+        anatomy, occlusion), so getting the crown path right covers the most real use and builds the foundation for
+        everything else. Premolars and molars come first: their anatomy is more forgiving than front-tooth aesthetics,
+        and their preps are usually "star-shaped" seen from above, which keeps the geometry robust.</p>
+
+      <h3>exocad features by usage tier</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Tier</th><th>Feature</th><th>In MVP?</th></tr></thead>
+        <tbody>
+          <tr><td rowspan="9"><strong>1 · Core</strong><br><small>covers most cases</small></td><td>Case setup: tooth chart, restoration type, material presets</td><td><span class="badge planned">Day 2</span> <small>(contract built)</small></td></tr>
+          <tr><td>Scan import and occlusion alignment</td><td><span class="badge done">Import built</span> <small>alignment assumed: scanners export in occlusion</small></td></tr>
+          <tr><td>Margin line (one-click detect, editable points)</td><td><span class="badge planned">Day 2</span> <small>live-wire; one-click later</small></td></tr>
+          <tr><td>Insertion axis, undercut map, blockout</td><td><span class="badge planned">Day 2–3</span></td></tr>
+          <tr><td>Restoration parameters (cement gap, spacer, thickness)</td><td><span class="badge planned">Day 3</span></td></tr>
+          <tr><td>Library tooth proposal</td><td><span class="badge planned">Day 3–4</span></td></tr>
+          <tr><td>Free-forming: transform, adapt to antagonist and neighbours, sculpt</td><td><span class="badge planned">Day 4–6</span></td></tr>
+          <tr><td>Colour maps: occlusion, contacts, thickness</td><td><span class="badge planned">Day 3–4</span></td></tr>
+          <tr><td>Finalize: watertight STL, project save</td><td><span class="badge planned">Day 3–5</span></td></tr>
+          <tr><td rowspan="5"><strong>2 · Next</strong></td><td>Bridges (pontics, connectors with cross-section control)</td><td><span class="badge future">Post-MVP</span></td></tr>
+          <tr><td>Inlays, onlays, veneers</td><td><span class="badge future">Post-MVP</span></td></tr>
+          <tr><td>Copings and cutback for layering</td><td><span class="badge future">Post-MVP</span></td></tr>
+          <tr><td>Implant crowns and abutments (scan bodies, Ti-bases, screw channels)</td><td><span class="badge future">Post-MVP</span></td></tr>
+          <tr><td>Model Creator (printable models), Smile Creator (photo-based design)</td><td><span class="badge future">Post-MVP</span></td></tr>
+          <tr><td><strong>3 · Specialised</strong></td><td>Virtual articulator, bite splints, dentures, bars, guided surgery, photoreal rendering</td><td><span class="badge future">Later</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>The single-crown workflow, step by step</h2>
+      <p>The app mirrors exocad's wizard: one step at a time, with Back/Next, and steps further down are recomputed
+        when an earlier input changes. Each step has a manual path and, once the AI layer lands, a proposed result to
+        accept or edit.</p>
+      <figure class="diagram">
+        <div class="flow">
+          <div class="node">1 · Setup</div><div class="arrow"></div>
+          <div class="node ok">2 · Scans</div><div class="arrow"></div>
+          <div class="node plan">3 · Frame</div><div class="arrow"></div>
+          <div class="node plan">4 · Margin</div><div class="arrow"></div>
+          <div class="node plan">5 · Axis</div><div class="arrow"></div>
+          <div class="node plan">6 · Params</div><div class="arrow"></div>
+          <div class="node plan">7 · Proposal</div><div class="arrow"></div>
+          <div class="node plan">8 · Adapt</div><div class="arrow"></div>
+          <div class="node plan">9 · Finalize</div>
+        </div>
+        <figcaption>Figure 1. The nine steps match <code>StepId</code> in the shared contracts. Changing an earlier
+          step marks the later ones "stale".</figcaption>
+      </figure>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Step</th><th>The technician…</th><th>The system…</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>1 · Setup</td><td>Picks the tooth on an FDI chart (e.g. 36), the material (zirconia, lithium
+            disilicate, PMMA) and the shade; or pastes the prescription.</td><td>Loads the material's default
+            parameters. With AI, it extracts the order from Rx text for confirmation.</td><td><span class="badge planned">Day 2</span></td></tr>
+          <tr><td>2 · Scans</td><td>Drops upper and lower STL/PLY files.</td><td>Parses, cleans and welds them,
+            builds a spatial index, warns on suspicious units, and shows them in the viewer.</td><td><span class="badge done">Built</span></td></tr>
+          <tr><td>3 · Frame</td><td>Confirms the tooth's directions; clicks two neighbour contacts if auto-detection
+            misses.</td><td>Estimates the chewing direction, the front-to-back (mesial-distal) direction and the
+            neighbour contact points.</td><td><span class="badge planned">Day 2</span></td></tr>
+          <tr><td>4 · Margin</td><td>Clicks around the prep; the line follows the edge live; drags points to
+            fix.</td><td>Snaps the path along the prep's convex edge and smooths it.</td><td><span class="badge planned">Day 2</span></td></tr>
+          <tr><td>5 · Axis</td><td>Accepts or adjusts the insertion direction.</td><td>Finds the direction with the
+            least undercut, shows an undercut map, and warns if the margin is in undercut.</td><td><span class="badge planned">Day 2</span></td></tr>
+          <tr><td>6 · Params</td><td>Reviews cement gap, spacer, thickness and contact targets.</td><td>Builds the
+            inner (intaglio) surface live and shows "unmillable" areas for the tool radius.</td><td><span class="badge planned">Day 3</span></td></tr>
+          <tr><td>7 · Proposal</td><td>Reviews the proposed crown; moves, rotates and scales it in tooth terms
+            (mesial, buccal, occlusal), with keyboard nudges.</td><td>Places and deforms a library tooth onto the
+            margin, scaled to the gap.</td><td><span class="badge planned">Day 3–4</span></td></tr>
+          <tr><td>8 · Adapt</td><td>Runs "adapt to antagonist / neighbours"; sculpts if needed.</td><td>Sets
+            occlusal clearance and contacts, enforces minimum thickness, shows colour maps, and reports conflicts
+            ("insufficient reduction").</td><td><span class="badge planned">Day 5</span></td></tr>
+          <tr><td>9 · Finalize</td><td>Exports.</td><td>Joins outer and inner surfaces, checks watertightness and
+            self-intersection, writes the STL and JSON sidecar.</td><td><span class="badge planned">Day 3–5</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>What the screen offers</h2>
+      <h3>Viewing (used constantly)</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Feature</th><th>Why technicians need it</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Orbit around the point under the cursor; zoom toward the cursor</td><td>They zoom into one tooth all day; orbiting around the scene centre throws them off</td><td><span class="badge done">Built</span></td></tr>
+          <tr><td>Standard views (occlusal, buccal, lingual, mesial, distal) and fit</td><td>Fast, repeatable inspection angles; keys 1–5, F</td><td><span class="badge done">Built</span></td></tr>
+          <tr><td>Perspective / orthographic toggle</td><td>Orthographic makes distances easier to judge</td><td><span class="badge done">Built</span></td></tr>
+          <tr><td>Matcap shading, scan colours, distinct back faces</td><td>Surface detail reads clearly; holes and scan interiors are obvious</td><td><span class="badge done">Built</span></td></tr>
+          <tr><td>Per-object visibility and opacity</td><td>See the prep through the crown, hide the antagonist</td><td><span class="badge done">Built</span></td></tr>
+          <tr><td>Screenshot (PNG)</td><td>Communicate with the dentist</td><td><span class="badge done">Built</span></td></tr>
+          <tr><td>Colour maps with a legend (occlusion, contacts, thickness, undercut, unmillable)</td><td>The main way to judge a design</td><td><span class="badge planned">Day 3–4</span></td></tr>
+          <tr><td>Clipping plane with section outlines</td><td>Check cement gap and thickness in cross-section</td><td><span class="badge planned">Cut-list item</span></td></tr>
+          <tr><td>Point-to-point measurement</td><td>Quick distance checks</td><td><span class="badge future">Post-MVP</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Editing (the minimal set)</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Tool</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Undo / redo for every edit; Back / Next between steps without losing work</td><td><span class="badge planned">Day 4</span></td></tr>
+          <tr><td>Live-wire margin: add, move, delete points; smooth</td><td><span class="badge planned">Day 2</span></td></tr>
+          <tr><td>Transform gizmo on tooth axes plus keyboard nudges (e.g. 0.05 mm)</td><td><span class="badge planned">Day 4</span></td></tr>
+          <tr><td>Adapt to antagonist, adapt to neighbours, enforce minimum thickness</td><td><span class="badge planned">Day 4–5</span></td></tr>
+          <tr><td>Sculpt: add, remove, smooth</td><td><span class="badge planned">Day 6 if time</span></td></tr>
+          <tr><td>Lasso cut to remove scan artifacts</td><td><span class="badge planned">Cut-list item</span></td></tr>
+          <tr><td>Locked zones: margin band and inner surface are never changed by brushes or adapt</td><td><span class="badge planned">Day 4</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>Files in and out</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Format</th><th>Direction</th><th>Used for</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><strong>STL</strong> (binary + ASCII)</td><td>In + out</td><td>Scans in; the crown out. Geometry only, with no colour or units (millimetres assumed).</td><td><span class="badge done">Import built</span> <span class="badge planned">Export Day 3</span></td></tr>
+          <tr><td><strong>PLY</strong> (binary + ASCII)</td><td>In</td><td>Intraoral scans with vertex colour (gum vs tooth)</td><td><span class="badge done">Built</span></td></tr>
+          <tr><td>JSON sidecar</td><td>Out</td><td>Margin points, insertion axis, tooth, material: the equivalent of exocad's <code>.constructionInfo</code> for CAM</td><td><span class="badge planned">Day 5</span></td></tr>
+          <tr><td>Project file</td><td>In + out</td><td>Our own format: a zip of JSON plus compressed meshes, versioned; also stored on the server as design versions</td><td><span class="badge planned">Day 5</span></td></tr>
+          <tr><td>OBJ (+ texture)</td><td>In</td><td>Textured scans, face scans</td><td><span class="badge future">Post-MVP</span></td></tr>
+          <tr><td>3MF</td><td>Out</td><td>Some 3D-printer workflows</td><td><span class="badge future">Post-MVP</span></td></tr>
+          <tr><td>exocad <code>.dentalProject</code> / <code>.constructionInfo</code></td><td>In (+ out)</td><td>Interoperability; harvesting margins from the in-house cases</td><td><span class="badge future">Post-MVP</span></td></tr>
+          <tr><td>DICOM (CBCT), photos</td><td>In</td><td>Implant planning, smile design</td><td><span class="badge future">Later</span></td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout note"><strong>Scanner formats</strong>Scanner-native formats (e.g. 3Shape DCM) are
+        proprietary or encrypted. Labs export open STL/PLY from the scanner software, which DentalCAD reads.</div>
+
+      <h2>AI assist, from the technician's side</h2>
+      <p>AI proposes; the technician decides. Everything the AI does is shown first and can be undone.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Experience</th><th>What happens</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><strong>One-click crown</strong></td><td>Runs every step's proposer in order. It stops at any step
+            whose automatic quality checks fail (open margin, too thin, no clearance). Otherwise it leaves a full draft
+            to review.</td><td><span class="badge planned">Day 6</span></td></tr>
+          <tr><td><strong>Plain-language edits</strong></td><td>"Open the distal contact by 0.05 mm", "reduce occlusion
+            to 0.1 mm clearance". The assistant turns these into the same clinical commands the UI uses, and shows the
+            result with Accept / Revert.</td><td><span class="badge planned">Day 6</span></td></tr>
+          <tr><td><strong>Prescription intake</strong></td><td>Paste the Rx text and the case setup is filled in for
+            confirmation.</td><td><span class="badge planned">Day 6</span></td></tr>
+          <tr><td><strong>Design review</strong></td><td>Explains the measured problems in plain words and suggests
+            fixes as commands.</td><td><span class="badge planned">Day 6</span></td></tr>
+          <tr><td><strong>True one-click margin and crown</strong></td><td>Specialised 3D models trained on the lab's
+            cases and on technicians' corrections.</td><td><span class="badge future">Post-MVP</span></td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><strong>What general LLMs can't do</strong>Claude and OpenAI models are good at
+        orchestration, extracting structure from prescriptions, and explaining problems. They cannot produce margin
+        lines or crown surfaces at clinical precision (around 0.05 mm) from meshes. Deterministic geometry does that
+        now, and specialised models will later. See <a href="./ai-assist.html">AI assist</a>.</div>
+
+      <h2>Out of scope for the MVP</h2>
+      <ul>
+        <li>Bridges, implants, inlays/onlays/veneers, anterior teeth, dentures, splints</li>
+        <li>Virtual articulator and jaw motion; automatic bite alignment (scans are assumed to arrive in occlusion)</li>
+        <li>OBJ textures, DICOM, photos</li>
+        <li>Regulatory work and real patient data</li>
+      </ul>
+
+      <h2>After the MVP</h2>
+      <ol>
+        <li>Bridges and implant crowns: the next biggest share of lab volume.</li>
+        <li>Specialised models: tooth segmentation, then margin detection, then crown generation (Dentbird-style), then
+          batch mode.</li>
+        <li>Inlays/onlays/veneers, anteriors, model creation for printing.</li>
+        <li>Clinical readiness: BAAs with vendors, de-identification, the medical-device regulatory path.</li>
+      </ol>
+
+      <nav class="page-nav" id="page-nav" aria-label="Previous and next page"></nav>
+      <footer class="page-footer">Source of truth: <code>specs/plan.md</code> and the code. Last updated 2026-10-03.</footer>
+    </main>
+
+    <aside class="toc" id="toc" aria-label="On this page"></aside>
+  </div>
+  <script src="./assets/docs.js"></script>
+</body>
+</html>

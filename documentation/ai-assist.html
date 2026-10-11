@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en" data-root=".">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI assist · DentalCAD docs</title>
+  <meta name="description" content="How AI assistance plugs into DentalCAD: the Proposer contract, the QA-gated auto-design orchestrator, the browser-side LLM agent loop, Rx intake, the data flywheel and the ML roadmap.">
+  <link rel="stylesheet" href="./assets/docs.css">
+</head>
+<body data-page="ai-assist.html">
+  <header class="topbar">
+    <button class="icon-btn menu-btn" id="menu-toggle" aria-expanded="false" aria-controls="sidebar">☰</button>
+    <a class="brand" href="./index.html">DentalCAD <small>design docs</small></a>
+    <span class="spacer"></span>
+    <button class="icon-btn" id="theme-toggle" type="button">☾ Dark</button>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation"></nav>
+
+    <main>
+      <div class="eyebrow"><span class="badge depth">L3 · Deep dive</span> <span>For: engineers, ML engineers, product</span></div>
+      <h1>AI assist</h1>
+      <p class="lede">How Dentbird-style assistance (a one-click crown, edits in plain language, prescription intake) fits into the design without rewrites, and where each kind of AI is, and is not, the right tool.</p>
+
+      <div class="tldr">
+        <strong>In short</strong>
+        <ul>
+          <li><strong>LLMs orchestrate and interpret; geometry is computed deterministically.</strong> Claude/OpenAI turn prescriptions and plain-language requests into validated commands and explain results. They never produce margin lines or crown surfaces.</li>
+          <li>Every design step has a <strong>Proposer</strong> behind one async job contract. Classical algorithms (now), ML models (later) and LLMs all plug into the same slot.</li>
+          <li>The <strong>auto-design orchestrator</strong> chains proposers and continues only while deterministic QA checks pass. When one fails, it stops for review.</li>
+          <li>The <strong>agent tool loop runs in the browser</strong>. The API is a thin, keyed proxy. Agent edits land as one previewed transaction the user accepts or reverts.</li>
+          <li>Status: contracts and the LLM proxy are <span class="badge done">Built · Day 1</span>. Orchestrator, agent UI and Rx intake are <span class="badge planned">Planned · Day 6</span>. Trained models are <span class="badge future">Post-MVP</span>.</li>
+        </ul>
+      </div>
+
+      <h2>What AI is (and is not) good for here</h2>
+      <p>A crown has to fit the prepared tooth to about 0.05 mm. General-purpose LLMs read text and images well, but they cannot place points on a 1-million-triangle mesh at that precision, and they cannot be audited the way an algorithm can. Specialized 3D deep-learning models (what Dentbird uses) can do geometry, but they need training data we don't have yet. So each task goes to the tool that can actually do it:</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Task</th><th>Who does it</th><th>Why</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Read a prescription (Rx) into a structured case setup</td><td>LLM (structured output), user confirms</td><td>Language understanding; output validated by the <a href="./reference/schemas.html#schema-CaseSetup"><code>CaseSetup</code></a> schema</td><td><span class="badge planned">Planned · Day 6</span></td></tr>
+          <tr><td>Turn "tighten the mesial contact on 36" into an edit</td><td>LLM chooses a tool; algorithm executes it</td><td>LLM picks intent + numbers; tooth-local commands do the geometry</td><td><span class="badge planned">Planned · Day 6</span></td></tr>
+          <tr><td>Explain QA failures and metrics</td><td>LLM, reading deterministic metrics</td><td>Metrics are computed, not guessed; LLM only phrases them</td><td><span class="badge planned">Planned · Day 6</span></td></tr>
+          <tr><td>Decide whether the next step may run</td><td>Orchestrator, gated on QA checks</td><td>Pass/fail must be reproducible, not a model's "confidence"</td><td><span class="badge planned">Planned · Day 6</span></td></tr>
+          <tr><td>Margin line (≈0.05 mm)</td><td>Live-wire algorithm now; ML margin model later</td><td>Needs sub-0.1 mm precision on the mesh</td><td><span class="badge planned">Planned · Day 2</span> / <span class="badge future">Post-MVP</span></td></tr>
+          <tr><td>Crown surface</td><td>Library template fit now; generative 3D model later</td><td>Anatomy + thickness + contacts are geometric constraints</td><td><span class="badge planned">Planned · Day 3–4</span> / <span class="badge future">Post-MVP</span></td></tr>
+          <tr><td>Occlusion and contact adjustment</td><td>Deterministic adapt algorithms</td><td>LLM may only set the target (e.g. 0.05 mm clearance)</td><td><span class="badge planned">Planned · Day 5</span></td></tr>
+          <tr><td>Visual review of rendered views</td><td>LLM vision on <code>capture_view</code> PNGs</td><td>Can flag obvious issues; never a measurement</td><td><span class="badge planned">Planned · Day 6 (stretch)</span></td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><strong>Limitation</strong>"AI-assisted" here does not mean an LLM designs the crown. If an LLM's output ever reaches geometry, it is through a command whose arguments are validated by zod and whose effect is computed by an algorithm. The user can always undo it.</div>
+
+      <h2>The Proposer contract</h2>
+      <p><span class="badge done">Built · Day 1</span> as schemas in <code>packages/shared/src/proposer.ts</code>. A <em>proposer</em> suggests the output of one design step (a tooth frame, a margin line, an insertion axis, a crown). Each proposer is an async job, so a local algorithm and a remote GPU model look the same to the caller.</p>
+
+      <figure class="diagram">
+        <div class="flow">
+          <div class="node accent">ProposalInput<small>caseId, fdi, step, docVersion, meshes (sha256 refs), params, hints</small></div><div class="arrow"></div>
+          <div class="node">Proposer job<small>queued → running → succeeded / failed / cancelled; progress 0–1</small></div><div class="arrow"></div>
+          <div class="node ok">ProposalResult<small>output + qa[] + rationale + proposerId@version (+ modelHash)</small></div>
+        </div>
+        <figcaption>Figure 1. One contract for every proposer. Inputs are content-addressed, so the same request works in the browser or on a server.</figcaption>
+      </figure>
+
+      <dl class="kv">
+        <dt>Identity</dt><dd><code>ProposerId</code> = <code>&lt;namespace&gt;.&lt;name&gt;@&lt;version&gt;</code>, namespace ∈ <code>classical</code> | <code>ml</code> | <code>llm</code>, e.g. <code>classical.livewire-margin@1</code>, <code>ml.margin-unet@0.3.1</code> (pattern-validated).</dd>
+        <dt>Inputs</dt><dd>Meshes as <a href="./reference/schemas.html#schema-MeshRef"><code>MeshRef</code></a> (sha256 + units <code>mm</code> + frame), never face indices. Face IDs change on re-import and BVH build. A server can fetch the bytes by <code>fileId</code> and verify the hash.</dd>
+        <dt>Output</dt><dd>Step-specific and typed <code>unknown</code> in the envelope. The consumer validates it against that step's schema (e.g. <a href="./reference/schemas.html#schema-MarginLine"><code>MarginLine</code></a>).</dd>
+        <dt>QA</dt><dd><a href="./reference/schemas.html#schema-QaCheck"><code>QaCheck[]</code></a> of <code>{id, passed, value?, threshold?, message}</code>: deterministic, numeric and explainable.</dd>
+        <dt>Provenance</dt><dd><code>proposerId@version</code> on every result, plus <code>modelHash</code> for ML proposers, so every proposal can be traced to the code or weights that made it.</dd>
+      </dl>
+
+      <h3>Namespaces and where they run</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Namespace</th><th>Runs in</th><th>Transport</th><th>Examples (illustrative ids)</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><code>classical.*</code></td><td>Browser (Web Worker)</td><td>In-process async job</td><td><code>classical.tooth-frame@1</code>, <code>classical.livewire-margin@1</code>, <code>classical.axis-cone@1</code>, <code>classical.template-fit@1</code></td><td><span class="badge planned">Planned · Day 2–6</span></td></tr>
+          <tr><td><code>ml.*</code></td><td>Python GPU service (separate host)</td><td><code>POST /api/jobs</code> → job status polling</td><td><code>ml.tooth-seg@…</code>, <code>ml.margin@…</code>, <code>ml.crown-gen@…</code></td><td><span class="badge future">Post-MVP</span></td></tr>
+          <tr><td><code>llm.*</code></td><td>Browser loop + API proxy</td><td><code>POST /api/llm/messages</code></td><td><code>llm.rx-intake@1</code></td><td><span class="badge planned">Planned · Day 6</span></td></tr>
+        </tbody>
+      </table></div>
+      <p>The server-side job endpoints already exist with the final shape: <code>POST /api/jobs</code> (validated <a href="./reference/schemas.html#schema-ProposalJobRequest"><code>ProposalJobRequest</code></a>), <code>GET /api/jobs/:id</code> and <code>DELETE /api/jobs/:id</code>. In the MVP, <code>InlineJobQueue</code> (<code>apps/api/src/adapters/jobs/inline.ts</code>) answers <strong>501</strong> because classical proposers run in the browser. Adding ML means swapping that adapter for a real queue (pg-boss, then SQS or Cloud Tasks). Routes and contracts stay the same. <span class="badge done">Built · Day 1</span></p>
+
+      <details class="deep">
+        <summary>Deeper detail: proposer per design step <span class="badge planned">Planned</span></summary>
+        <div class="body">
+          <div class="table-wrap"><table>
+            <thead><tr><th>Step (<code>StepId</code>)</th><th>Proposer output</th><th>QA checks that gate it</th><th>Later ML replacement</th></tr></thead>
+            <tbody>
+              <tr><td><code>setup</code></td><td><code>CaseSetup</code> from an Rx</td><td>Schema-valid; user confirmation required</td><td>(LLM stays)</td></tr>
+              <tr><td><code>frame</code></td><td><code>ToothFrame</code>: occlusal, mesial, buccal axes; neighbour contacts</td><td>Axes orthonormal; both neighbours found or overridden</td><td>Tooth segmentation model</td></tr>
+              <tr><td><code>margin</code></td><td><code>MarginLine</code> (anchors + dense curve)</td><td>Closed loop; no self-crossing; on-surface</td><td>Margin detection model</td></tr>
+              <tr><td><code>axis</code></td><td><code>InsertionAxis</code></td><td>No margin point in undercut</td><td>(algorithm stays)</td></tr>
+              <tr><td><code>proposal</code></td><td><code>Crown</code> (<code>{kind:'template'}</code>)</td><td>Seats without intersecting the intaglio; thickness profile met</td><td>Crown generation → <code>{kind:'mesh'}</code></td></tr>
+              <tr><td><code>adapt</code></td><td>Crown displacements</td><td>Occlusal clearance and contacts at target; min thickness not violated</td><td>(algorithm stays)</td></tr>
+              <tr><td><code>finalize</code></td><td>Watertight STL</td><td>Closed manifold, consistent orientation, signed volume &gt; 0, no tri–tri intersections</td><td>(algorithm stays)</td></tr>
+            </tbody>
+          </table></div>
+          <p>The <code>Crown</code> union (<code>template</code> | <code>mesh</code>) exists so an ML-generated crown can be stored without changing the document schema.</p>
+        </div>
+      </details>
+
+      <h2>Auto-design orchestrator ("one-click crown")</h2>
+      <p><span class="badge planned">Planned · Day 6</span> The orchestrator runs the step proposers in order and checks each result's QA before continuing. Classical proposers have no calibrated confidence, so the gate is pass/fail on measurable checks, not a "confidence threshold".</p>
+      <figure class="diagram">
+        <div class="flow">
+          <div class="node">Frame<small>QA: orthonormal, neighbours</small></div><div class="arrow"></div>
+          <div class="node">Margin<small>QA: closed, on-surface</small></div><div class="arrow"></div>
+          <div class="node">Axis<small>QA: margin not in undercut</small></div><div class="arrow"></div>
+          <div class="node">Crown fit<small>QA: seats, thickness</small></div><div class="arrow"></div>
+          <div class="node">Adapt<small>QA: clearance, contacts</small></div><div class="arrow"></div>
+          <div class="node ok">Finalize<small>QA: watertight, no self-intersection</small></div>
+        </div>
+        <div class="d-link down">any QA check fails</div>
+        <div class="node plan">Pause for review: show the proposal as a ghost overlay with the failing checks → user accepts, edits or rejects → resume from that step</div>
+        <figcaption>Figure 2. QA-gated chaining. A failed check never silently continues.</figcaption>
+      </figure>
+      <ul>
+        <li><strong>Proposals are overlays, not edits.</strong> The UI shows each proposal as a ghost with <em>Accept / Edit / Reject</em>. Accepting applies it through the normal command path, so undo works.</li>
+        <li><strong>Invalidation.</strong> Changing an upstream result (e.g. moving the margin) marks downstream steps <code>stale</code> (<code>downstreamSteps()</code> in <code>packages/shared/src/design.ts</code>). The orchestrator re-runs only those.</li>
+        <li><strong>Every proposal is logged</strong> as a <code>ProposalEvent</code> with what the user finally kept (see <a href="#data-flywheel">Data flywheel</a>).</li>
+      </ul>
+
+      <h2>LLM agent loop</h2>
+      <p>The agent lets a user say what they want ("open the distal contact a bit", "reduce occlusal height on 46 by 0.2 mm") and see the result. The loop runs <strong>in the browser</strong>, because geometry, metrics, view capture and the preview all live there. A server-side loop would need two-way tool-call messaging back to the browser. The API only holds the keys and forwards provider calls.</p>
+
+      <figure class="diagram">
+        <ol class="sequence">
+          <li><span class="actors">User → Browser</span><span>Types a request in the AI panel.</span></li>
+          <li><span class="actors">Browser → API</span><span><code>POST /api/llm/messages</code> with <code>{purpose: 'agent', system, messages, tools: agentToolDefs()}</code>. No model or key from the client.</span></li>
+          <li><span class="actors">API</span><span>Authenticates, rate-limits per user, picks provider + model for the purpose, translates to Anthropic or OpenAI format (OpenAI tools normalized to strict mode).</span></li>
+          <li><span class="actors">API → Provider → API</span><span>Provider replies; the API maps it back to the shared <code>LlmResponse</code> and records token usage in <code>llm_usage</code>.</span></li>
+          <li><span class="actors">Browser</span><span>For each <code>tool_call</code>: query tools read deterministic metrics; action tools go through <code>commandFromToolCall()</code> (zod validation) and are applied to a <strong>staged transaction</strong>. Each tool result returns fresh metrics.</span></li>
+          <li><span class="actors">Browser ↔ API</span><span>Tool results go back as <code>tool_result</code> parts; repeat until <code>stopReason: 'end'</code>.</span></li>
+          <li><span class="actors">User</span><span>Sees the preview with an <strong>Accept / Revert</strong> banner. Accept = one undoable version authored by <code>agent</code>. Revert discards the whole batch.</span></li>
+        </ol>
+        <figcaption>Figure 3. Agent loop. Steps 2–4 are <span class="badge done">Built · Day 1</span> (proxy + adapters); steps 1 and 5–7 are <span class="badge planned">Planned · Day 6</span>.</figcaption>
+      </figure>
+
+      <h3>Tools the agent gets</h3>
+      <p>Action tools are <strong>generated from the clinical command schemas</strong> (<code>packages/shared/src/commands.ts</code> → <code>agentToolDefs()</code> in <code>tools.ts</code>, via zod v4's <code>z.toJSONSchema()</code>). So the agent can do exactly what a user can do through a command, nothing more. Arguments are tooth-local and clinical (mesial, buccal, occlusal…) because LLMs are unreliable with world-space xyz. This table matches the generated output. The full JSON is in <a href="./reference/schemas.html#generated-tool-definitions">Data contracts → Generated tool definitions</a>.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Tool</th><th>Kind</th><th>Arguments</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td><code>move_crown</code></td><td>action</td><td><code>fdi</code>, <code>direction</code>: mesial | distal | buccal | lingual | occlusal | cervical, <code>mm</code> (0–2)</td><td>Translate the crown along a tooth-local clinical direction.</td></tr>
+          <tr><td><code>rotate_crown</code></td><td>action</td><td><code>fdi</code>, <code>axis</code>: mesial-distal | buccal-lingual | occlusal, <code>deg</code> (−30–30)</td><td>Rotate the crown about a tooth-local axis through its centre.</td></tr>
+          <tr><td><code>scale_crown</code></td><td>action</td><td><code>fdi</code>, <code>axis</code>, <code>pct</code> (−20–20)</td><td>Scale along one tooth-local axis; the margin stays fixed.</td></tr>
+          <tr><td><code>set_contact</code></td><td>action</td><td><code>fdi</code>, <code>side</code>: mesial | distal, <code>targetMm</code> (−0.2–0.5)</td><td>Adapt the proximal surface to a target gap (negative = tighter).</td></tr>
+          <tr><td><code>adapt_occlusion</code></td><td>action</td><td><code>fdi</code>, <code>clearanceMm</code> (−0.2–1)</td><td>Reduce or raise the occlusal surface to a target clearance.</td></tr>
+          <tr><td><code>set_param</code></td><td>action</td><td><code>fdi</code>, <code>name</code> (one of the 8 <code>DesignParams</code> keys), <code>value</code></td><td>Change one design parameter; downstream steps recompute.</td></tr>
+          <tr><td><code>run_step</code></td><td>action</td><td><code>fdi</code>, <code>step</code> (<code>StepId</code>)</td><td>Run the automatic proposer for one step.</td></tr>
+          <tr><td><code>get_case_summary</code></td><td>query</td><td>none</td><td>Case setup and which steps are done or stale.</td></tr>
+          <tr><td><code>get_design_metrics</code></td><td>query</td><td><code>fdi</code></td><td>Min occlusal clearance, mesial/distal contact distances, min thickness, margin length (mm).</td></tr>
+          <tr><td><code>capture_view</code></td><td>query</td><td><code>fdi</code>, <code>view</code>: occlusal | buccal | lingual | mesial | distal</td><td>PNG of the current design from a standard view (stretch goal).</td></tr>
+        </tbody>
+      </table></div>
+      <p><code>fdi</code> is an FDI tooth number 11–48 (quadrant 1–4, position 1–8). Unknown tool names return <code>null</code> from <code>commandFromToolCall()</code>. Invalid arguments throw a <code>ZodError</code>, which the loop sends back to the model as a tool error so it can correct itself.</p>
+
+      <h3>The LLM proxy <span class="badge done">Built · Day 1</span></h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Concern</th><th>Behaviour</th><th>Where</th></tr></thead>
+        <tbody>
+          <tr><td>Endpoint</td><td><code>POST /api/llm/messages</code>, body = <a href="./reference/schemas.html#schema-LlmRequest"><code>LlmRequest</code></a>, reply = <a href="./reference/schemas.html#schema-LlmResponse"><code>LlmResponse</code></a>. Non-streaming in the MVP (SSE is a later addition).</td><td><code>apps/api/src/http/routes/llm.ts</code></td></tr>
+          <tr><td>Provider + model</td><td>Chosen by the server per <em>purpose</em> (<code>agent</code>, <code>rx-intake</code>); clients cannot choose. An explicit <code>LLM_AGENT_PROVIDER</code> / <code>LLM_RX_PROVIDER</code> wins. Otherwise Anthropic if <code>ANTHROPIC_API_KEY</code> is set, else OpenAI if <code>OPENAI_API_KEY</code> is set, else <code>mock</code>. Default models: <code>claude-sonnet-5</code> / <code>gpt-5</code>. <code>rx-intake</code> falls back to the agent model when <code>LLM_RX_MODEL</code> is unset.</td><td><code>apps/api/src/config.ts</code></td></tr>
+          <tr><td>Allowlist</td><td>If <code>LLM_MODEL_ALLOWLIST</code> is set, startup fails when a configured model is not in it.</td><td><code>config.ts</code></td></tr>
+          <tr><td>Rate limit</td><td>Per user, in memory, <code>LLM_RATE_LIMIT_PER_MIN</code> (default 30). Over the limit → <strong>429</strong> with <code>retryAfterSec</code>. Behind a <code>RateLimiter</code> port, so it can move to a shared store when there is more than one API instance.</td><td><code>adapters/rate-limit/memory.ts</code></td></tr>
+          <tr><td>Errors</td><td>Provider failure → <strong>502</strong> <code>upstream_error</code>; unconfigured provider → <strong>501</strong>.</td><td><code>domain/llm.ts</code>, <code>http/errors.ts</code></td></tr>
+          <tr><td>Usage</td><td>Each call records org, user, purpose, provider, model, input/output tokens in <code>llm_usage</code>.</td><td><code>adapters/db/schema.ts</code></td></tr>
+          <tr><td>Anthropic adapter</td><td>Maps text, image, <code>tool_call</code> ↔ <code>tool_use</code>, <code>tool_result</code>; maps stop reasons.</td><td><code>adapters/llm/anthropic.ts</code></td></tr>
+          <tr><td>OpenAI adapter</td><td>Maps to chat messages with assistant <code>tool_calls</code> and tool results. Tool schemas pass through <code>toOpenAiStrictSchema()</code>: every property required, optional → nullable, <code>additionalProperties: false</code>, unsupported keywords dropped; strict-mode nulls are removed from replies.</td><td><code>adapters/llm/openai.ts</code>, <code>openai-strict.ts</code></td></tr>
+          <tr><td>Mock provider</td><td>Offline and deterministic: echoes text; if the last user text is <code>/tool &lt;name&gt; &lt;json&gt;</code> and that tool was offered, returns that tool call. Used by tests and keyless local dev.</td><td><code>adapters/llm/mock.ts</code></td></tr>
+        </tbody>
+      </table></div>
+
+      <h2>Rx intake</h2>
+      <p><span class="badge planned">Planned · Day 6</span> The user pastes the prescription text (photo or PDF upload is a stretch goal). The browser sends it with <code>purpose: 'rx-intake'</code>, asking for output that matches <a href="./reference/schemas.html#schema-CaseSetup"><code>CaseSetup</code></a>: teeth (FDI), restoration type, material, shade, notes. The result is validated by zod and shown as a pre-filled form; <strong>nothing is saved until the user confirms</strong>. <code>patientRef</code> is a pseudonymous reference (≤ 64 chars), never a name. This week, intake is tested only with synthetic prescriptions.</p>
+
+      <h2 id="data-flywheel">Data flywheel</h2>
+      <p>The ML models on the roadmap need labelled examples, and the cheapest labels are the corrections users make anyway. Each time a proposal is shown, the app records a <a href="./reference/schemas.html#schema-ProposalEvent"><code>ProposalEvent</code></a> with <em>artifacts</em>, not just counts:</p>
+      <figure class="diagram">
+        <div class="flow">
+          <div class="node">Input snapshot<small>scan sha256s, params, appVersion, docVersion</small></div><div class="arrow"></div>
+          <div class="node">Proposal<small>artifact: JSON (margin, axis, pose) or mesh ref</small></div><div class="arrow"></div>
+          <div class="node accent">User action<small>accepted / edited / rejected, editsCount, durationMs</small></div><div class="arrow"></div>
+          <div class="node ok">Final accepted<small>artifact of what was kept</small></div>
+        </div>
+        <figcaption>Figure 4. One ProposalEvent = one training example (input → model output → human-corrected target).</figcaption>
+      </figure>
+      <ul>
+        <li><span class="badge done">Built · Day 1</span> Storage: <code>POST /api/proposal-events</code> validates the event and stores it in <code>proposal_events</code>, indexed by org + case and by step + proposer.</li>
+        <li><span class="badge planned">Planned · Day 6</span> Emitting events from the UI for every accepted, edited or rejected proposal.</li>
+        <li><span class="badge future">Post-MVP</span> <strong>Backfill of the ~100 in-house cases</strong> into the same "training bundle" format. Margin and axis come from exocad project files where present; otherwise the margin is derived from the finished crown's intaglio rim.</li>
+      </ul>
+
+      <h2>Safety and privacy</h2>
+      <ul>
+        <li><strong>Keys stay on the server.</strong> The browser never sees API keys or chooses models. The proxy enforces auth, rate limits and the allowlist.</li>
+        <li><strong>No patient identifiers to LLMs.</strong> Payloads carry case metadata, computed metrics and rendered images only. <code>patientRef</code> is pseudonymous.</li>
+        <li><strong>Agent edits are reversible and bounded.</strong> Arguments are range-checked by zod (e.g. <code>mm</code> ≤ 2, <code>deg</code> within ±30). A batch lands as one transaction the user must accept.</li>
+        <li><strong>Synthetic data only this week.</strong> Real prescriptions contain patient data.</li>
+      </ul>
+      <div class="callout danger"><strong>Before any real patient data</strong>Put a BAA or equivalent zero-retention terms in place with each LLM and cloud vendor, de-identify everything before LLM calls, and plan the medical-device regulatory path (FDA 510(k) / EU MDR). None of this is in the 1-week MVP.</div>
+
+      <h2>ML roadmap</h2>
+      <p><span class="badge future">Post-MVP</span> Each step below plugs into an existing Proposer slot, so the app does not change shape.</p>
+      <figure class="diagram">
+        <div class="flow">
+          <div class="node future">1 · Inference service<small>FastAPI + PyTorch/ONNX; ml.* over POST /api/jobs; pydantic from shared JSON Schema</small></div><div class="arrow"></div>
+          <div class="node future">2 · Tooth segmentation<small>pretrain on Teeth3DS / 3DTeethSeg'22, fine-tune in-house → auto frame &amp; neighbours</small></div><div class="arrow"></div>
+          <div class="node future">3 · Margin model<small>in-house cases + logged corrections → true one-click</small></div><div class="arrow"></div>
+          <div class="node future">4 · Crown generation<small>Dentbird-style; emits {kind:'mesh'} crowns</small></div><div class="arrow"></div>
+          <div class="node future">5 · Batch mode<small>headless pipeline runner over many cases</small></div>
+        </div>
+        <figcaption>Figure 5. ML roadmap. Every model reuses the Proposer contract and the QA gates.</figcaption>
+      </figure>
+      <div class="callout note"><strong>Where models run</strong>The production VM (12 vCPU, 6 GB RAM, no GPU) hosts the web app, API and database only. Model inference runs on a <strong>separate GPU host</strong> behind the same HTTP job contract. Small models could also run on CPU via ONNX in a spare container.</div>
+
+      <details class="deep">
+        <summary>Deeper detail: making the contracts cross-language</summary>
+        <div class="body">
+          <p>zod v4 schemas in <code>packages/shared</code> are the single source of truth. JSON Schema produced by <code>z.toJSONSchema()</code> (as on the <a href="./reference/schemas.html">Data contracts</a> page) can generate pydantic models for the Python service, so <code>ProposalInput</code>, <code>ProposalResult</code> and <code>ProposalJobStatus</code> stay identical on both sides. Mesh inputs are <code>MeshRef</code>s with explicit <code>units: 'mm'</code> and <code>frame</code>, so a Python service can fetch them through the API and verify the sha256 without sharing in-memory state with the browser.</p>
+        </div>
+      </details>
+
+      <nav class="page-nav" id="page-nav" aria-label="Previous and next page"></nav>
+      <footer class="page-footer">Source of truth: <code>specs/plan.md</code>, <code>packages/shared/src/{proposer,tools,commands,events,llm}.ts</code>, <code>apps/api/src/{domain/llm.ts,adapters/llm/,adapters/jobs/inline.ts}</code>. Last updated 2026-10-03.</footer>
+    </main>
+
+    <aside class="toc" id="toc" aria-label="On this page"></aside>
+  </div>
+  <script src="./assets/docs.js"></script>
+</body>
+</html>
