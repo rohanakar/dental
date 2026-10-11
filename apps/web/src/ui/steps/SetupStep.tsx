@@ -1,6 +1,7 @@
 import { type CaseSetup, Material, MATERIAL_PRESETS, type ToothOrder } from '@dcad/shared';
 import { useState } from 'react';
 import { useDesignStore } from '../../design/store';
+import { RxIntake } from '../ai/RxIntake';
 import { ToothChart } from '../ToothChart';
 
 export const MATERIAL_LABEL: Record<Material, string> = {
@@ -46,6 +47,7 @@ export function SetupStep() {
 
   return (
     <div className="step-body">
+      <RxIntake />
       <p className="muted">Select the teeth to restore. Anatomic crowns on premolars and molars only.</p>
       <ToothChart selected={setup.teeth.map((t) => t.fdi)} active={active?.fdi} onToggle={toggle} />
       {error && <div className="error">{error}</div>}

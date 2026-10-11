@@ -22,3 +22,4 @@ export * from './thickness';
 export * from './crownMaps';
 export * from './adapt';
 export * from './selfIntersect';
+export * from './autoMargin';

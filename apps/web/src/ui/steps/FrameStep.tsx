@@ -4,6 +4,7 @@ import { useSceneStore } from '../../state/sceneStore';
 import { FRAME_COLORS } from '../../tools/controller';
 import { clearContact, flipMesialDistal } from '../../tools/frameTool';
 import { useToolStore } from '../../tools/toolStore';
+import { AutoDesign } from '../ai/AutoDesign';
 
 const dist = (a: readonly number[], b: readonly number[]) => Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!);
 
@@ -13,6 +14,7 @@ export function FrameStep() {
   const ready = useSceneStore((s) => s.objects.some((o) => o.role === jawOf(fdi) && o.phase === 'ready'));
   const framePick = useToolStore((s) => s.framePick);
   const warnings = useToolStore((s) => s.frameWarnings);
+  const autoArmed = useToolStore((s) => s.autoArmed);
   const set = useToolStore((s) => s.set);
   const frame = tooth?.frame;
 
@@ -21,12 +23,19 @@ export function FrameStep() {
 
   const pickHint =
     framePick === 'seed'
-      ? `Click the top of the prepared tooth ${tooth.fdi}.`
+      ? autoArmed
+        ? `One-click crown: click the top of the prepared tooth ${tooth.fdi}. Frame, margin, axis, crown and adaptation are proposed for review.`
+        : `Click the top of the prepared tooth ${tooth.fdi}.`
       : `Click the ${framePick === 'mesialContact' ? 'mesial' : 'distal'} neighbour where it should touch the crown.`;
 
   return (
     <div className="step-body">
       <p className="hint-box">{pickHint}</p>
+      <label className="row">
+        <input type="checkbox" checked={autoArmed} onChange={(e) => set({ autoArmed: e.target.checked, framePick: 'seed' })} />
+        One-click crown (auto-design after the click)
+      </label>
+      {frame && <AutoDesign compact />}
       {frame ? (
         <>
           <ul className="axis-legend">

@@ -1,7 +1,7 @@
 import * as Comlink from 'comlink';
 import type { BufferGeometry } from 'three';
 import type { GeometryWorkerApi } from './geometry.worker';
-import type { AxisAnalysis, AxisRequest, CrownRequest, CrownResult, FrameEstimate, FrameRequest, MarginTrace, SurfaceInfo, V3 } from './analysisTypes';
+import type { AutoMarginRequest, AutoMarginResult, AxisAnalysis, AxisRequest, CrownRequest, CrownResult, FrameEstimate, FrameRequest, MarginTrace, SurfaceInfo, V3 } from './analysisTypes';
 import { LatestWins } from './latestWins';
 import { geometryFromPayload, type ScanPayload } from './scanPayload';
 
@@ -68,4 +68,11 @@ export const analysis = {
   axis: (request: AxisRequest): Promise<AxisAnalysis> => latest.run('axis', () => geometryWorker().axisAnalysis(request)),
   releaseScan: (sha: string): Promise<void> => geometryWorker().releaseScan(sha),
   designCrown: (request: CrownRequest): Promise<CrownResult> => latest.run('crown', () => geometryWorker().designCrown(request)),
+  /** Automatic margin (never superseded: used by the auto-design orchestrator). */
+  autoMargin: (request: AutoMarginRequest): Promise<AutoMarginResult> => geometryWorker().autoMargin(request),
+  /** Frame/axis without "latest wins", so interactive tools cannot cancel an orchestrator run. */
+  estimateFrameUnlatched: (request: FrameRequest): Promise<FrameEstimate> => geometryWorker().estimateFrame(request),
+  axisUnlatched: (request: AxisRequest): Promise<AxisAnalysis> => geometryWorker().axisAnalysis(request),
+  /** Like designCrown but never superseded (independent evaluations, e.g. metrics). */
+  designCrownUnlatched: (request: CrownRequest): Promise<CrownResult> => geometryWorker().designCrown(request),
 };

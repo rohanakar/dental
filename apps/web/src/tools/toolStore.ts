@@ -17,6 +17,8 @@ export interface MarginAnchor {
 export interface ToolState {
   /** What a click in the viewport does in the frame step. */
   framePick: FramePick;
+  /** One-click crown armed: the next click on the prep runs the whole auto-design. */
+  autoArmed: boolean;
   frameWarnings: string[];
   /** Live-wire anchors placed so far (open path until the margin is closed). */
   marginAnchors: MarginAnchor[];
@@ -72,6 +74,7 @@ export interface AxisReport {
 
 const initial = {
   framePick: 'seed' as FramePick,
+  autoArmed: false,
   frameWarnings: [] as string[],
   marginAnchors: [] as MarginAnchor[],
   surface: 'idle' as const,

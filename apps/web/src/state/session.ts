@@ -7,6 +7,8 @@ import { newDocument } from '../design/document';
 import { selectDirty, useDesignStore } from '../design/store';
 import { downloadBytes } from '../io/exportCrown';
 import { exportProject, importProject, type ProjectScan } from '../io/projectZip';
+import { flushProposalEvents } from '../ai/events';
+import { recordEditsOnSave } from '../ai/orchestrator';
 import { useToolStore } from '../tools/toolStore';
 import { sceneController } from './sceneController';
 
@@ -175,6 +177,7 @@ export async function openCase(id: string): Promise<void> {
         ? `${missing.map((s) => s.name).join(', ')} never reached the server and cannot be loaded. Import them again.`
         : null,
     });
+    void flushProposalEvents();
     void sceneController.loadScans(
       doc.scans.filter((s) => s.mesh.fileId),
       (scan) => api.downloadFile(scan.mesh.fileId!),
@@ -206,11 +209,17 @@ export function backToCases(): void {
 export async function save(): Promise<void> {
   const current = get().currentCase;
   if (!current || get().saving) return;
-  const { doc, version } = useDesignStore.getState();
+  const { doc, version, lastAuthor, transaction } = useDesignStore.getState();
+  if (transaction) {
+    set({ saveError: 'Accept or revert the open AI proposal before saving.' });
+    return;
+  }
   set({ saving: true, saveError: null });
   try {
-    const saved = await api.saveVersion(current.id, { parentVersion: version, author: 'user', doc });
+    const saved = await api.saveVersion(current.id, { parentVersion: version, author: lastAuthor, doc });
     useDesignStore.getState().markSaved(saved.version, doc);
+    recordEditsOnSave();
+    void flushProposalEvents();
     const setupChanged = JSON.stringify(doc.setup) !== JSON.stringify(current.setup);
     let currentCase = { ...current, currentVersion: saved.version };
     if (setupChanged || current.status === 'draft') {

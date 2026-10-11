@@ -259,3 +259,38 @@ describe('adaptation commands', () => {
     expect((doc.teeth[0]!.crown as { adapt?: unknown }).adapt).toBeUndefined();
   });
 });
+
+describe('design store transactions', () => {
+  beforeEach(() => useDesignStore.getState().load(newDocument(), 0));
+  const s = useDesignStore.getState;
+
+  it('applies changes live, commits as one undo entry and records the author', () => {
+    s().dispatch({ type: 'addScan', scan: scan('lower') });
+    s().beginTransaction({ label: 'auto-design', author: 'proposer' });
+    s().dispatch({ type: 'setFrame', fdi: 36, frame });
+    s().dispatch({ type: 'setMargin', fdi: 36, margin });
+    expect(s().doc.teeth[0]!.margin).toEqual(margin);
+    expect(s().past).toHaveLength(1);
+    s().undo(); // blocked while open
+    expect(s().doc.teeth[0]!.margin).toEqual(margin);
+    expect(() => s().beginTransaction({ label: 'x', author: 'agent' })).toThrow(/already open/);
+    s().commitTransaction();
+    expect(s().past).toHaveLength(2);
+    expect(s().lastAuthor).toBe('proposer');
+    s().undo();
+    expect(s().doc.teeth[0]!.frame).toBeUndefined();
+    expect(s().doc.scans).toHaveLength(1);
+  });
+
+  it('rolls back to the base document', () => {
+    const before = s().doc;
+    s().beginTransaction({ label: 'agent', author: 'agent' });
+    s().dispatch({ type: 'setFrame', fdi: 36, frame });
+    s().rollbackTransaction();
+    expect(s().doc).toBe(before);
+    expect(s().transaction).toBeNull();
+    expect(s().past).toHaveLength(0);
+    s().dispatch({ type: 'setFrame', fdi: 36, frame });
+    expect(s().lastAuthor).toBe('user');
+  });
+});

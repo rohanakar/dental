@@ -9,6 +9,7 @@ import {
   estimateToothFrame,
   liveWireWeight,
   marginFromAnchors,
+  proposeMarginAnchors,
   marginUndercut,
   prepRegion,
   prepSeedVertex,
@@ -40,6 +41,10 @@ export interface CaseMetrics {
     distal?: { point: V3; distanceMm: number };
   };
   margin: {
+    /** 'scripted' = the case's anchors; 'auto' = classical.margin-ridge. */
+    source: 'scripted' | 'auto';
+    /** Auto mode: fraction of radial profiles that found the ridge. */
+    confidence?: number;
     anchors: V3[];
     lengthMm: number;
     points: number;
@@ -130,7 +135,17 @@ function distanceToClosedPolyline(p: V3, poly: Float32Array): number {
  * → margin from the scripted anchors → prep region → insertion axis →
  * undercut map, then evaluate QA checks. `baseDir` holds the scan files.
  */
-export async function runCase(spec: GoldenCase, baseDir: string): Promise<CaseResult> {
+export interface RunOptions {
+  /**
+   * Auto mode: the margin comes from the classical.margin-ridge proposer
+   * (radial-profile anchors + live-wire) instead of the case's scripted
+   * anchors. Checks are the same (deviation vs expect.marginRing) plus the
+   * proposer's ridge confidence.
+   */
+  auto?: boolean;
+}
+
+export async function runCase(spec: GoldenCase, baseDir: string, options: RunOptions = {}): Promise<CaseResult> {
   const timings: Record<string, number> = {};
   const time = async <T>(name: string, fn: () => T | Promise<T>): Promise<T> => {
     const t0 = performance.now();
@@ -165,6 +180,7 @@ export async function runCase(spec: GoldenCase, baseDir: string): Promise<CaseRe
     }),
   );
 
+  const autoAnchors = options.auto ? await time('autoMarginAnchors', () => proposeMarginAnchors({ positions, indices, ray, frame })) : null;
   const trace = await time('margin', () =>
     marginFromAnchors({
       positions,
@@ -172,7 +188,7 @@ export async function runCase(spec: GoldenCase, baseDir: string): Promise<CaseRe
       graph: analysis.graph,
       weight: liveWireWeight(analysis.curvature),
       ray,
-      anchors: spec.marginAnchors,
+      anchors: autoAnchors ? autoAnchors.anchors : spec.marginAnchors,
     }),
   );
 
@@ -251,6 +267,9 @@ export async function runCase(spec: GoldenCase, baseDir: string): Promise<CaseRe
       check(`contacts.${side}`, found === spec.expect.contacts[side], `${side} contact ${spec.expect.contacts[side] ? 'found' : 'absent'}`);
     }
   }
+  if (autoAnchors) {
+    check('margin.autoConfidence', autoAnchors.confidence >= 0.75, 'Auto margin: the ridge was found on most radial profiles', autoAnchors.confidence, 0.75);
+  }
   check('margin.closed', region.closed, 'Margin is closed on the surface (prep region does not leak)');
   check('margin.length', trace.lengthMm > 8 && trace.lengthMm < 60, 'Margin length is plausible for a posterior tooth (8–60 mm)', trace.lengthMm);
   if (meanDev !== undefined && maxDev !== undefined) {
@@ -325,6 +344,8 @@ export async function runCase(spec: GoldenCase, baseDir: string): Promise<CaseRe
         : {}),
     },
     margin: {
+      source: autoAnchors ? 'auto' : 'scripted',
+      ...(autoAnchors ? { confidence: round(autoAnchors.confidence) } : {}),
       anchors: trace.anchorVertices.map((v) => roundV([positions[v * 3]!, positions[v * 3 + 1]!, positions[v * 3 + 2]!])),
       lengthMm: round(trace.lengthMm),
       points: trace.points.length / 3,

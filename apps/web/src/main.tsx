@@ -5,11 +5,15 @@ import { exposeForDebug } from './debug';
 import { useDesignStore } from './design/store';
 import { useSceneStore } from './state/sceneStore';
 import { useToolStore } from './tools/toolStore';
+import { useOrchestrator } from './ai/orchestrator';
+import { useAssistant } from './ai/agent';
 import { App } from './ui/App';
 
 exposeForDebug('design', useDesignStore);
 exposeForDebug('scene', useSceneStore);
 exposeForDebug('tools', useToolStore);
+exposeForDebug('orchestrator', useOrchestrator);
+exposeForDebug('assistant', useAssistant);
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root element missing');

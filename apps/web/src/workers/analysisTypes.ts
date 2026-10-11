@@ -107,3 +107,16 @@ export interface CrownResult {
   timingsMs: Record<string, number>;
   ms: number;
 }
+
+export interface AutoMarginRequest {
+  jawSha: string;
+  frame: { origin: V3; occlusal: V3; mesial: V3 };
+}
+
+/** Automatic margin (classical.margin-ridge): anchors from radial profiles, closed by the live-wire. */
+export interface AutoMarginResult extends MarginTrace {
+  anchors: V3[];
+  /** Fraction of radial profiles that found the ridge (0..1). */
+  confidence: number;
+  ms: number;
+}

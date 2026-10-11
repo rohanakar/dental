@@ -1,6 +1,7 @@
 import type { ToothFrame } from '@dcad/shared';
 import { useDesignStore } from '../design/store';
 import type { InteractionHandler } from '../engine/Viewer';
+import { runAutoDesign } from '../ai/orchestrator';
 import { analysis } from '../workers/geometryClient';
 import { isStale } from '../workers/latestWins';
 import { errorText, toothContext } from './context';
@@ -68,7 +69,12 @@ export function frameInteraction(jawRole: string): InteractionHandler {
     onClick(hit) {
       if (!hit) return;
       const point: V3 = [hit.point.x, hit.point.y, hit.point.z];
-      const { framePick, set } = useToolStore.getState();
+      const { framePick, set, autoArmed } = useToolStore.getState();
+      if (framePick === 'seed' && autoArmed) {
+        set({ autoArmed: false });
+        void runAutoDesign({ seed: point });
+        return;
+      }
       if (framePick === 'seed') {
         void estimateFrameAt(point);
         return;

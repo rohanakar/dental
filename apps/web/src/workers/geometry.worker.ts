@@ -16,10 +16,22 @@ import { prepRegion, prepSeedVertex, type PrepRegion } from '../geometry/prepReg
 import { processScan } from '../geometry/processScan';
 import { bvhRayCaster, type RayCaster } from '../geometry/raycast';
 import { analyzeSurface, smoothVertexNormals, type SurfaceAnalysis } from '../geometry/surface';
+import { proposeMarginAnchors } from '../geometry/autoMargin';
 import { designCrown } from '../geometry/crown';
 import { syntheticArch } from '../geometry/synthetic';
 import { estimateToothFrame } from '../geometry/toothFrame';
-import type { AxisAnalysis, AxisRequest, CrownRequest, CrownResult, FrameEstimate, FrameRequest, MarginTrace, SurfaceInfo } from './analysisTypes';
+import type {
+  AutoMarginRequest,
+  AutoMarginResult,
+  AxisAnalysis,
+  AxisRequest,
+  CrownRequest,
+  CrownResult,
+  FrameEstimate,
+  FrameRequest,
+  MarginTrace,
+  SurfaceInfo,
+} from './analysisTypes';
 import { buildScanPayload, type ScanPayload } from './scanPayload';
 import { ScanRegistry, type RetainedScan } from './scanRegistry';
 
@@ -134,6 +146,32 @@ const api = {
       anchors,
     });
     const result: MarginTrace = { points: trace.points, anchorVertices: trace.anchorVertices, lengthMm: trace.lengthMm };
+    return Comlink.transfer(result, [trace.points.buffer as ArrayBuffer]);
+  },
+
+  /** Automatic margin: ridge anchors on radial profiles from the prep top, closed by the live-wire. */
+  autoMargin(request: AutoMarginRequest): AutoMarginResult {
+    const t0 = performance.now();
+    const scan = registry.get(request.jawSha);
+    const ray = rayOf(scan);
+    const proposal = proposeMarginAnchors({ positions: scan.positions, indices: scan.indices, ray, frame: request.frame });
+    if (proposal.anchors.length < 3) throw new Error('No margin ridge found around the prep (check the tooth frame)');
+    const trace = marginFromAnchors({
+      positions: scan.positions,
+      indices: scan.indices,
+      graph: surfaceOf(scan).graph,
+      weight: weightOf(scan),
+      ray,
+      anchors: proposal.anchors,
+    });
+    const result: AutoMarginResult = {
+      points: trace.points,
+      anchorVertices: trace.anchorVertices,
+      lengthMm: trace.lengthMm,
+      anchors: proposal.anchors,
+      confidence: proposal.confidence,
+      ms: performance.now() - t0,
+    };
     return Comlink.transfer(result, [trace.points.buffer as ArrayBuffer]);
   },
 

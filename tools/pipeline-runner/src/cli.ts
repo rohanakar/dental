@@ -1,11 +1,13 @@
 /**
  * Headless golden-case runner.
  *
- *   pnpm pipeline [--cases data/golden] [--out out/pipeline] [--case <id>] [--synthetic]
+ *   pnpm pipeline [--cases data/golden] [--out out/pipeline] [--case <id>] [--synthetic] [--auto]
  *
  * --synthetic first writes data/golden/synthetic-36 (no patient data). Each
- * case writes <out>/<id>/metrics.json and crown.stl. Exits 1 if any check
- * fails or a case errors.
+ * case writes <out>/<id>/metrics.json and crown.stl. --auto also runs every
+ * case with the automatic margin (classical.margin-ridge) instead of the
+ * scripted anchors, writing <out>/<id>-auto/. Exits 1 if any check fails or a
+ * case errors.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -21,6 +23,7 @@ const { values } = parseArgs({
     out: { type: 'string', default: join(repoRoot, 'out', 'pipeline') },
     case: { type: 'string' },
     synthetic: { type: 'boolean', default: false },
+    auto: { type: 'boolean', default: false },
   },
 });
 const casesDir = resolve(values.cases);
@@ -48,27 +51,33 @@ if (ids.length === 0) {
 }
 
 let failed = 0;
+let runs = 0;
+const modes = values.auto ? [false, true] : [false];
 for (const id of ids) {
   const dir = join(casesDir, id);
-  try {
-    const spec = GoldenCase.parse(JSON.parse(readFileSync(join(dir, 'case.json'), 'utf8')));
-    const { metrics, crownStl } = await runCase(spec, dir);
-    const caseOut = join(outDir, id);
-    mkdirSync(caseOut, { recursive: true });
-    writeFileSync(join(caseOut, 'metrics.json'), `${JSON.stringify(metrics, null, 2)}\n`);
-    writeFileSync(join(caseOut, 'crown.stl'), crownStl);
-    const total = Object.values(metrics.timingsMs).reduce((a, b) => a + b, 0);
-    console.log(`\n${metrics.ok ? 'PASS' : 'FAIL'}  ${id} (FDI ${metrics.fdi}) in ${Math.round(total)} ms → ${join(caseOut, 'metrics.json')}`);
-    for (const c of metrics.checks) {
-      const value = c.value !== undefined ? ` = ${c.value}${c.threshold !== undefined ? ` (limit ${c.threshold})` : ''}` : '';
-      console.log(`  ${c.passed ? '✓' : '✗'} ${c.id}${value}: ${c.message}`);
+  for (const auto of modes) {
+    const label = auto ? `${id}-auto` : id;
+    runs++;
+    try {
+      const spec = GoldenCase.parse(JSON.parse(readFileSync(join(dir, 'case.json'), 'utf8')));
+      const { metrics, crownStl } = await runCase(spec, dir, { auto });
+      const caseOut = join(outDir, label);
+      mkdirSync(caseOut, { recursive: true });
+      writeFileSync(join(caseOut, 'metrics.json'), `${JSON.stringify(metrics, null, 2)}\n`);
+      writeFileSync(join(caseOut, 'crown.stl'), crownStl);
+      const total = Object.values(metrics.timingsMs).reduce((a, b) => a + b, 0);
+      console.log(`\n${metrics.ok ? 'PASS' : 'FAIL'}  ${label} (FDI ${metrics.fdi}, ${metrics.margin.source} margin) in ${Math.round(total)} ms → ${join(caseOut, 'metrics.json')}`);
+      for (const c of metrics.checks) {
+        const value = c.value !== undefined ? ` = ${c.value}${c.threshold !== undefined ? ` (limit ${c.threshold})` : ''}` : '';
+        console.log(`  ${c.passed ? '✓' : '✗'} ${c.id}${value}: ${c.message}`);
+      }
+      console.log(`  timings ms: ${Object.entries(metrics.timingsMs).map(([k, v]) => `${k} ${Math.round(v)}`).join(', ')}`);
+      if (!metrics.ok) failed++;
+    } catch (e) {
+      failed++;
+      console.error(`\nERROR ${label}: ${e instanceof Error ? e.message : String(e)}`);
     }
-    console.log(`  timings ms: ${Object.entries(metrics.timingsMs).map(([k, v]) => `${k} ${Math.round(v)}`).join(', ')}`);
-    if (!metrics.ok) failed++;
-  } catch (e) {
-    failed++;
-    console.error(`\nERROR ${id}: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
-console.log(`\n${ids.length - failed}/${ids.length} cases passed`);
+console.log(`\n${runs - failed}/${runs} runs passed`);
 process.exit(failed > 0 ? 1 : 0);

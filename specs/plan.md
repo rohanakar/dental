@@ -209,3 +209,5 @@ Claude writes most code; the developer supplies data, annotates templates, does 
 **Day 4: done (2026-10-11).** RBF fit, thickness enforcement, crown colour maps (thickness, occlusion, proximal, unmillable), clinical move/rotate/scale commands, translate gizmo + nudge pad + keyboard. See [day-04-fit-and-feedback.md](day-04-fit-and-feedback.md).
 
 **Day 5: done (2026-10-11).** Occlusion/contact adaptation with conflict reports (stored as targets, crown re-derived), self-intersection check (printable), `.dcad.zip` project files, nightly backup service with a verified restore drill. See [day-05-adapt-and-persist.md](day-05-adapt-and-persist.md).
+
+**Day 6: done (2026-10-11).** Design-store transactions, classical proposers incl. automatic margin, QA-gated one-click auto-design (Accept/Reject), LLM agent tool loop with metrics, Rx intake (LLM + classical parser), ProposalEvent logging. Sculpt cut. See [day-06-ai-layer.md](day-06-ai-layer.md).

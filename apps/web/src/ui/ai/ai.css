@@ -1,0 +1,129 @@
+.assistant {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.assistant-examples {
+  margin: 4px 0 6px;
+  padding-left: 18px;
+}
+
+.assistant-log {
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.assistant-msg {
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.assistant-msg.user {
+  align-self: flex-end;
+  background: color-mix(in srgb, var(--accent) 15%, var(--panel));
+}
+
+.assistant-msg.assistant {
+  background: var(--panel-2);
+}
+
+.assistant-msg.tool {
+  color: var(--text-muted);
+}
+
+.assistant-msg.tool.failed,
+.assistant-msg.error {
+  color: var(--error-text);
+}
+
+.assistant-msg.note {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.assistant-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 12px;
+}
+
+.assistant-banner span {
+  flex: 1;
+}
+
+.assistant-input textarea,
+.rx-intake textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+}
+
+.assistant-input {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.link-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  text-align: left;
+}
+
+.rx-intake {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+}
+
+.rx-intake[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rx-intake summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.rx-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rx-tooth {
+  display: contents;
+}
+
+.rx-diff {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  border-radius: 3px;
+  padding: 0 3px;
+}
+
+.rx-notes {
+  white-space: pre-wrap;
+}

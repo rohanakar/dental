@@ -7,7 +7,8 @@ export function normalizeBase(raw: string | undefined): string {
   return trimmed ? `/${trimmed}/` : '/';
 }
 
-const API_TARGET = 'http://localhost:3000';
+/** Where the dev/preview proxy sends /api (override with DCAD_API_TARGET, e.g. a second API for tests). */
+const API_TARGET = process.env.DCAD_API_TARGET ?? 'http://localhost:3000';
 
 export default defineConfig(({ mode }) => {
   // VITE_BASE_PATH comes from the environment (Docker build arg) or a .env file.

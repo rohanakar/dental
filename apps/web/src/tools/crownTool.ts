@@ -59,6 +59,8 @@ class CrownTool {
   private inputs: unknown[] = [];
   private geometry: BufferGeometry | null = null;
   private last: CrownResult | null = null;
+  /** The compute currently in flight (for settled()). */
+  private inflight: Promise<CrownResult | null> | null = null;
 
   attach(viewer: Viewer | null): void {
     this.viewer = viewer;
@@ -131,6 +133,35 @@ class CrownTool {
     }
   }
 
+  /**
+   * Resolves once the displayed crown matches the current document (after
+   * dispatches the recompute starts synchronously, so await this before
+   * reading metrics). Null when there is no crown.
+   */
+  async settled(): Promise<CrownResult | null> {
+    for (;;) {
+      const pending = this.inflight;
+      if (!pending) return this.last;
+      await pending.catch(() => null);
+      if (this.inflight === pending) {
+        this.inflight = null;
+        return this.last;
+      }
+    }
+  }
+
+  /**
+   * Compute the crown (with maps) for the current document without changing
+   * what is displayed, e.g. for design metrics. Null without a crown.
+   */
+  async evaluate(maps: CrownMapName[]): Promise<CrownResult | null> {
+    const ctx = toothContext();
+    if (!ctx?.tooth.crown) return null;
+    const req = request(ctx, true, 'none');
+    if (!req) return null;
+    return analysis.designCrownUnlatched({ ...req, maps });
+  }
+
   /** Current crown mesh (for tests and export). */
   current(): CrownResult | null {
     return this.last;
@@ -142,8 +173,11 @@ class CrownTool {
     if (!req) return null;
     const tools = useToolStore.getState();
     tools.set({ crown: { ...(tools.crown ?? { warnings: [] }), computing: true, error: undefined } });
+    const run = analysis.designCrown(req);
+    const tracked: Promise<CrownResult | null> = run.catch(() => null);
+    this.inflight = tracked;
     try {
-      const result = await analysis.designCrown(req);
+      const result = await run;
       this.last = result;
       this.setMesh(result);
       this.applyMap(map, result);

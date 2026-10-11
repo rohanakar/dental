@@ -1,0 +1,56 @@
+.auto-design {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auto-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.auto-steps > li {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: center;
+  gap: 2px 6px;
+  font-size: 13px;
+}
+
+.auto-steps > li.passed .auto-icon {
+  color: #2fbf71;
+}
+
+.auto-steps > li.failed .auto-icon {
+  color: var(--error-text);
+}
+
+.auto-failures,
+.auto-rationale {
+  grid-column: 2 / -1;
+  margin: 0;
+  padding-left: 14px;
+  font-size: 12px;
+}
+
+.auto-failures {
+  color: var(--error-text);
+}
+
+.auto-rationale {
+  padding-left: 0;
+}
+
+.auto-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+}

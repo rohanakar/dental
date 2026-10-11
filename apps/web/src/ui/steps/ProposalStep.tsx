@@ -4,6 +4,7 @@ import type { CrownMapName } from '../../workers/analysisTypes';
 import { useToolStore } from '../../tools/toolStore';
 import { CrownStatusView } from './CrownStatusView';
 import { NudgePad } from './NudgePad';
+import { AutoDesign } from '../ai/AutoDesign';
 
 export function ProposalStep() {
   const tooth = useDesignStore(selectActiveTooth);
@@ -57,6 +58,7 @@ export function ProposalStep() {
           </div>
         </>
       )}
+      <AutoDesign compact />
       {hasCrown && <NudgePad />}
       <CrownStatusView />
     </div>

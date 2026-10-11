@@ -5,6 +5,7 @@ import { useSceneStore } from '../state/sceneStore';
 import { marginTool } from '../tools/marginTool';
 import { handleNudgeKey } from '../tools/nudge';
 import { useToolStore } from '../tools/toolStore';
+import { AssistantPanel } from './ai/AssistantPanel';
 import { SessionGate } from './session/SessionGate';
 import { StepNav, STEPS } from './StepNav';
 import { AdaptStep } from './steps/AdaptStep';
@@ -89,6 +90,12 @@ function StepPanel() {
       {step === 'proposal' && <ProposalStep />}
       {step === 'adapt' && <AdaptStep />}
       {step === 'finalize' && <FinalizeStep />}
+      {(step === 'proposal' || step === 'adapt') && (
+        <details className="assistant-section" open>
+          <summary>Design assistant</summary>
+          <AssistantPanel />
+        </details>
+      )}
       <ToolStatus />
     </section>
   );

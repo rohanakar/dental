@@ -5,8 +5,11 @@ import {
   CaseSetup,
   CaseSummary,
   DesignVersion,
+  LlmResponse,
   Me,
   type CreateCaseRequest,
+  type LlmRequest,
+  type ProposalEvent,
   type FileKind,
   type SaveVersionRequest,
   type UpdateCaseRequest,
@@ -119,3 +122,10 @@ export async function latestVersion(caseId: string): Promise<DesignVersion | nul
 
 export const saveVersion = (caseId: string, request: SaveVersionRequest): Promise<DesignVersion> =>
   json(DesignVersion, `cases/${encodeURIComponent(caseId)}/versions`, jsonBody('POST', request));
+
+/** LLM proxy: the server picks provider + model for the purpose and holds the keys. */
+export const llm = (request: LlmRequest): Promise<LlmResponse> => json(LlmResponse, 'llm/messages', jsonBody('POST', request));
+
+/** Data flywheel: record a proposal and what the user did with it. */
+export const postProposalEvent = (event: ProposalEvent): Promise<{ id: string }> =>
+  json(z.object({ id: z.string() }), 'proposal-events', jsonBody('POST', event));
