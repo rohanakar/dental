@@ -36,7 +36,9 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: "3000"
-      DATABASE_URL: postgres://${POSTGRES_USER:-dcad}:${POSTGRES_PASSWORD:-}@db:5432/${POSTGRES_DB:-dcad}
+      # $${...} reaches the container unexpanded; the API substitutes it URL-encoded
+      # (POSTGRES_PASSWORD comes from env_file), so passwords may contain @ : / #.
+      DATABASE_URL: postgres://${POSTGRES_USER:-dcad}:$${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-dcad}
       BLOB_FS_ROOT: /data/blobs
       MIGRATIONS_DIR: /app/drizzle
     volumes:

@@ -7,7 +7,7 @@ import { MockLlmProvider } from '../src/adapters/llm/mock';
 import { fromOpenAiCompletion, toOpenAiRequest } from '../src/adapters/llm/openai';
 import { toOpenAiStrictSchema } from '../src/adapters/llm/openai-strict';
 import { MemoryRateLimiter } from '../src/adapters/rate-limit/memory';
-import { loadConfig } from '../src/config';
+import { loadConfig, resolveDatabaseUrl } from '../src/config';
 
 const conversation: LlmMessage[] = [
   {
@@ -273,5 +273,22 @@ describe('MemoryRateLimiter', () => {
     expect(limiter.consume('other').allowed).toBe(true);
     now = 60_000;
     expect(limiter.consume('u').allowed).toBe(true);
+  });
+});
+
+describe('DATABASE_URL resolution', () => {
+  it('expands ${VAR} references with URL encoding', () => {
+    expect(resolveDatabaseUrl({ DATABASE_URL: 'postgres://dcad:${POSTGRES_PASSWORD}@127.0.0.1:5432/dcad', POSTGRES_PASSWORD: 'p@ss:w/rd!' })).toBe(
+      'postgres://dcad:p%40ss%3Aw%2Frd!@127.0.0.1:5432/dcad',
+    );
+    expect(() => resolveDatabaseUrl({ DATABASE_URL: 'postgres://dcad:${NOPE}@h/db' })).toThrow(/NOPE/);
+  });
+
+  it('builds the URL from POSTGRES_* when DATABASE_URL is unset', () => {
+    expect(resolveDatabaseUrl({ POSTGRES_PASSWORD: 'a#b' })).toBe('postgres://dcad:a%23b@127.0.0.1:5432/dcad');
+    expect(resolveDatabaseUrl({ POSTGRES_PASSWORD: 'x', POSTGRES_HOST: 'db', POSTGRES_PORT: '5433', POSTGRES_DB: 'other', POSTGRES_USER: 'me' })).toBe(
+      'postgres://me:x@db:5433/other',
+    );
+    expect(resolveDatabaseUrl({})).toBeUndefined();
   });
 });

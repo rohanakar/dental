@@ -141,9 +141,37 @@ function resolveRoute(
   return { provider, model: model ?? DEFAULT_MODELS[provider]! };
 }
 
+/**
+ * DATABASE_URL for local dev without repeating the password:
+ * - `${NAME}` references in DATABASE_URL are replaced with the URL-encoded
+ *   value of NAME (Node's --env-file does not expand variables; Compose does,
+ *   but encoding is still needed for passwords with @ : / # etc.).
+ * - If DATABASE_URL is missing but POSTGRES_PASSWORD is set, it is built
+ *   from POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_HOST / POSTGRES_PORT /
+ *   POSTGRES_DB (defaults dcad / 127.0.0.1 / 5432 / dcad).
+ */
+export function resolveDatabaseUrl(env: Record<string, string | undefined>): string | undefined {
+  const url = env.DATABASE_URL;
+  if (url) {
+    return url.replace(/\$\{([A-Z0-9_]+)\}/g, (match, name: string) => {
+      const value = env[name];
+      if (value === undefined || value === '') throw new Error(`DATABASE_URL references \${${name}}, which is not set`);
+      return encodeURIComponent(value);
+    });
+  }
+  if (!env.POSTGRES_PASSWORD) return undefined;
+  const user = encodeURIComponent(env.POSTGRES_USER || 'dcad');
+  const db = encodeURIComponent(env.POSTGRES_DB || 'dcad');
+  return `postgres://${user}:${encodeURIComponent(env.POSTGRES_PASSWORD)}@${env.POSTGRES_HOST || '127.0.0.1'}:${env.POSTGRES_PORT || '5432'}/${db}`;
+}
+
 export function loadConfig(source: Record<string, string | undefined> = process.env): Config {
   // Treat empty values (e.g. `OPENAI_API_KEY=` in .env) as unset.
-  const cleaned = Object.fromEntries(Object.entries(source).filter(([, v]) => v !== undefined && v !== ''));
+  const cleaned: Record<string, string | undefined> = Object.fromEntries(
+    Object.entries(source).filter(([, v]) => v !== undefined && v !== ''),
+  );
+  const databaseUrl = resolveDatabaseUrl(cleaned);
+  if (databaseUrl) cleaned.DATABASE_URL = databaseUrl;
   const parsed = Env.safeParse(cleaned);
   if (!parsed.success) {
     const lines = parsed.error.issues.map((i) => `  ${i.path.join('.') || '(root)'}: ${i.message}`);
