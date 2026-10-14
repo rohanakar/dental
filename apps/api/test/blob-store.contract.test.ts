@@ -64,20 +64,6 @@ function blobStoreContract(name: string, make: () => Promise<Harness>, enabled =
       expect(await h.store.head('orgs/o1/missing')).toBeNull();
     });
 
-    it('overwrites existing objects', async () => {
-      await h.store.put('orgs/o1/b', Readable.from([Buffer.from('first version')]), opts);
-      await h.store.put('orgs/o1/b', Readable.from([Buffer.from('v2')]), opts);
-      const obj = await h.store.get('orgs/o1/b');
-      expect((await buffer(obj!.body)).toString()).toBe('v2');
-    });
-
-    it('deletes idempotently', async () => {
-      await h.store.put('orgs/o1/c', Readable.from([Buffer.from('x')]), opts);
-      await h.store.delete('orgs/o1/c');
-      await h.store.delete('orgs/o1/c');
-      expect(await h.store.get('orgs/o1/c')).toBeNull();
-    });
-
     it('rejects a failing upload stream and stores nothing', async () => {
       const before = await h.count();
       await expect(h.store.put('orgs/o1/broken', failingStream(), opts)).rejects.toThrow();

@@ -51,3 +51,25 @@ pnpm --filter @dcad/pipeline-runner run   # headless golden-case run
   workers, the browser and Node tests unchanged.
 - Domain code in the API depends only on ports. Every external system sits behind an adapter selected by env var.
 - Use synthetic or de-identified data only.
+
+## Tests
+
+The suite is deliberately small (96 tests on 2026-10-14; see `specs/2026-10-14-test-cleanup.md`). A test earns its
+place by guarding core behaviour that nothing else covers.
+
+- **What to test:** scan import, tooth frame and FDI handedness, margin, insertion axis, the crown (validity, fit,
+  thickness, adaptation), export; document commands, staleness, undo and transactions; the AI flows; the API (auth,
+  org isolation, upload integrity, versions, LLM adapters).
+- **What not to test:** colours, labels, message or tooltip text, key bindings, file-name heuristics, timing or
+  performance, mocks themselves, and internals that a higher-level test already exercises.
+- **One test per behaviour.** Add an assertion to the existing test for that behaviour instead of a new test. Prefer
+  one test on the synthetic case (crown, pipeline runner) over unit tests of its internals.
+- **Detectors and gates:** one passing and one failing case, so a stub that always answers "none" fails.
+- **Parameters:** don't repeat a test across resolutions or variants. Parameterize only when the variant is the point
+  (36 vs. mirrored 46 for handedness).
+- **Assertions:** check outcomes, not wording. Match an error message only when it proves why something was rejected.
+  No `console.info` or timing output.
+- **Budget:** a feature adds 1–3 tests; a bug fix extends the closest existing test. Keep each file to about 10 tests.
+  Name the tests you will add or extend in the spec's verification plan, and report the test-count change in the
+  implementation summary.
+- **Speed:** build the synthetic case once per `describe`, not once per test.

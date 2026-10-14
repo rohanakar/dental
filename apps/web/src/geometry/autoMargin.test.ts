@@ -8,6 +8,7 @@ import { syntheticArch, syntheticPrepMargin, syntheticPrepSeed } from './synthet
 import { distanceToClosedPolyline, prepareMesh } from './testUtils';
 import { estimateToothFrame } from './toothFrame';
 
+const ALONG = 400;
 const ACROSS = 160;
 
 /** Mirror a mesh in x (and flip winding so normals stay outward): turns the 36 prep into a 46 prep. */
@@ -19,24 +20,16 @@ function mirrorX(mesh: IndexedMesh): IndexedMesh {
   return { positions, indices };
 }
 
-// Two resolutions: at along=600 an early version picked the interdental gum on a diagonal profile.
-describe.each([
-  ['36, along 400', false, 400],
-  ['46 (mirrored), along 400', true, 400],
-  ['36, along 600', false, 600],
-])('automatic margin on the synthetic prep: %s', (_name, mirror, ALONG) => {
+// The pipeline runner test covers 36; this one covers the mirrored quadrant.
+describe('automatic margin on the synthetic prep: 46 (mirrored)', () => {
   it('finds the margin ridge within 0.15 mm (mean) of the analytic margin', () => {
-    const flip = (p: V3): V3 => (mirror ? [-p[0], p[1], p[2]] : p);
-    const mesh = syntheticArch({ jaw: 'lower', along: ALONG, across: ACROSS });
-    const upper = syntheticArch({ jaw: 'upper', along: ALONG, across: ACROSS });
-    const jaw = prepareMesh(mirror ? mirrorX(mesh) : mesh);
-    const antagonist = prepareMesh(mirror ? mirrorX(upper) : upper);
+    const jaw = prepareMesh(mirrorX(syntheticArch({ jaw: 'lower', along: ALONG, across: ACROSS })));
+    const antagonist = prepareMesh(mirrorX(syntheticArch({ jaw: 'upper', along: ALONG, across: ACROSS })));
     const surface = analyzeSurface(jaw);
-    const frame = estimateToothFrame({ jaw, antagonist, seed: flip(syntheticPrepSeed({ along: ALONG })), fdi: mirror ? 46 : 36, ray: jaw.ray });
+    const seed: V3 = syntheticPrepSeed({ along: ALONG });
+    const frame = estimateToothFrame({ jaw, antagonist, seed: [-seed[0], seed[1], seed[2]], fdi: 46, ray: jaw.ray });
 
-    const t0 = performance.now();
     const proposal = proposeMarginAnchors({ positions: jaw.positions, indices: jaw.indices, ray: jaw.ray, frame });
-    const tAnchors = performance.now() - t0;
     expect(proposal.confidence).toBe(1);
 
     const trace = marginFromAnchors({
@@ -48,7 +41,7 @@ describe.each([
       anchors: proposal.anchors,
     });
     const ring = syntheticPrepMargin({ along: ALONG, samples: 720 });
-    if (mirror) for (let i = 0; i < ring.length; i += 3) ring[i] = -ring[i]!;
+    for (let i = 0; i < ring.length; i += 3) ring[i] = -ring[i]!;
     let sum = 0, max = 0;
     const n = trace.points.length / 3;
     for (let i = 0; i < n; i++) {
@@ -56,9 +49,8 @@ describe.each([
       sum += d;
       max = Math.max(max, d);
     }
-    const mean = sum / n;
-    expect({ mean: mean < 0.15, max: max < 0.5 }).toEqual({ mean: true, max: true });
+    expect(sum / n).toBeLessThan(0.15);
+    expect(max).toBeLessThan(0.5);
     expect(trace.lengthMm).toBeGreaterThan(20);
-    expect(tAnchors).toBeLessThan(2000);
   });
 });

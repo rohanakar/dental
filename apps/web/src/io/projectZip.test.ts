@@ -1,8 +1,8 @@
 import type { ScanRef } from '@dcad/shared';
-import { strToU8, unzipSync, zipSync } from 'fflate';
+import { strToU8, unzipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import { LOCAL_CASE_ID, newDocument } from '../design/document';
-import { exportProject, importProject, PROJECT_FORMAT } from './projectZip';
+import { exportProject, importProject } from './projectZip';
 
 async function sha(bytes: Uint8Array): Promise<string> {
   const d = await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>);
@@ -27,7 +27,6 @@ describe('project zip', () => {
     const entries = Object.keys(unzipSync(zip)).sort();
     expect(entries).toEqual(['design.json', 'manifest.json', 'scans/lower.stl', 'scans/upper.bin']);
     const back = await importProject(zip);
-    expect(back.manifest).toMatchObject({ format: PROJECT_FORMAT, appVersion: '0.5.0' });
     expect(back.doc).toEqual({
       ...doc,
       caseId: LOCAL_CASE_ID,
@@ -46,25 +45,5 @@ describe('project zip', () => {
     const { doc, scans } = await fixture();
     const tampered = scans.map((s, i) => (i === 0 ? { ...s, bytes: strToU8('something else') } : s));
     await expect(importProject(exportProject({ doc, scans: tampered, appVersion: 'x' }))).rejects.toThrow(/checksum/);
-  });
-
-  it('rejects a project with a missing scan', async () => {
-    const { doc, scans } = await fixture();
-    await expect(importProject(exportProject({ doc, scans: scans.slice(0, 1), appVersion: 'x' }))).rejects.toThrow(/upper scan .* missing/);
-  });
-
-  it('rejects files that are not projects', async () => {
-    await expect(importProject(strToU8('not a zip'))).rejects.toThrow(/Not a project file/);
-    await expect(importProject(zipSync({ 'readme.txt': strToU8('hi') }))).rejects.toThrow(/missing/);
-    const wrong = zipSync({
-      'manifest.json': strToU8(JSON.stringify({ format: 'other@9', appVersion: '1', createdAt: 'x', scans: [] })),
-      'design.json': strToU8('{}'),
-    });
-    await expect(importProject(wrong)).rejects.toThrow(/Unsupported project format/);
-    const badDoc = zipSync({
-      'manifest.json': strToU8(JSON.stringify({ format: PROJECT_FORMAT, appVersion: '1', createdAt: 'x', scans: [] })),
-      'design.json': strToU8(JSON.stringify({ schemaVersion: 1 })),
-    });
-    await expect(importProject(badDoc)).rejects.toThrow(/design is invalid/);
   });
 });

@@ -212,6 +212,8 @@ Claude writes most code; the developer supplies data, annotates templates, does 
 
 **Day 6: done (2026-10-11).** Design-store transactions, classical proposers incl. automatic margin, QA-gated one-click auto-design (Accept/Reject), LLM agent tool loop with metrics, Rx intake (LLM + classical parser), ProposalEvent logging. Sculpt cut. See [day-06-ai-layer.md](day-06-ai-layer.md).
 
+**2026-10-14: test cleanup.** Cut the suite to core-only tests: 8 files deleted, 32 trimmed, 267 → 96 tests (incl. infra and live-API tests), 4172 → 2459 lines. Part 2 (crown, reducer, QA, RBF, nudge) ran after the crown-move commit 8f34013. Testing conventions added to `CLAUDE.md` so the suite stays small. See [2026-10-14-test-cleanup.md](2026-10-14-test-cleanup.md).
+
 **2026-10-14: crown moves after a proposal.** A move no longer re-adapts silently: adaptation applies only while the
 Adapt step is done, with Re-adapt one click away. Open contacts fail QA. Every move previews instantly and exactly
 (per-vertex move weights from the fit), with no snap-back. Edits accept a pending draft first, so undo works. Focus

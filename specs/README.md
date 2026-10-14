@@ -15,3 +15,4 @@ and progress log.
 | [2026-10-11-database-url-expansion.md](2026-10-11-database-url-expansion.md): `${POSTGRES_PASSWORD}` in DATABASE_URL (expanded + URL-encoded by the API) | done |
 | [day-06-ai-layer.md](day-06-ai-layer.md): proposers + one-click orchestrator with QA gates, LLM agent tool loop, Rx intake, proposal events | done |
 | [2026-10-14-crown-move-after-proposal.md](2026-10-14-crown-move-after-proposal.md): moving a proposed crown re-adapts it, preview/result mismatch, open contacts pass QA, moves inside an unaccepted draft; focus view and a distinct crown colour | done |
+| [2026-10-14-test-cleanup.md](2026-10-14-test-cleanup.md): cut the suite to core-only tests (267 → 96 tests, 42 → 33 files) | done |

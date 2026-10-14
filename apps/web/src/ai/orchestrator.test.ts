@@ -1,4 +1,4 @@
-import { ProposalEvent, ProposalResult, type InsertionAxis, type MarginLine, type ToothFrame } from '@dcad/shared';
+import { ProposalEvent, type InsertionAxis, type MarginLine, type ToothFrame } from '@dcad/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { newDocument } from '../design/document';
 import { useDesignStore } from '../design/store';
@@ -43,12 +43,6 @@ describe('auto-design orchestrator', () => {
     resetOrchestrator();
     useEventLog.setState({ queued: [], sent: 0, lastError: null });
     behaviour.axisPasses = true;
-  });
-
-  it('needs a seed click when there is no frame yet', async () => {
-    await runAutoDesign();
-    expect(useOrchestrator.getState().error).toMatch(/Click the prep/);
-    expect(useDesignStore.getState().transaction).toBeNull();
   });
 
   it('runs every step in one transaction; accept is one undo entry with accepted events', async () => {
@@ -96,11 +90,5 @@ describe('auto-design orchestrator', () => {
     const edited = useEventLog.getState().queued;
     expect(edited.map((e) => [e.step, e.action])).toEqual([['axis', 'edited']]);
     expect(edited[0]!.finalAccepted).toEqual({ kind: 'json', value: { direction: [0, 0.1, 0.995] } });
-  });
-
-  it('proposal results satisfy the shared ProposalResult contract', async () => {
-    const { PROPOSERS } = await import('./proposers');
-    const result = await PROPOSERS[0]!.run({ seed: [0, 0, 0] });
-    expect(ProposalResult.safeParse(result).success).toBe(true);
   });
 });

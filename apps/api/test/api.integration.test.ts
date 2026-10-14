@@ -11,7 +11,6 @@ import {
   type CaseSetup,
   type CaseSummary,
   type DesignDocument,
-  type ProposalEvent,
 } from '@dcad/shared';
 import { authed, buildTestApp, resetDatabase, signIn, signUp, TEST_INFRA, type TestApp } from './helpers';
 
@@ -59,11 +58,6 @@ describe.skipIf(!TEST_INFRA)('API integration (Postgres from infra/docker-compos
   });
   afterAll(async () => {
     await t?.close();
-  });
-
-  it('serves health checks', async () => {
-    expect((await t.app.request('/healthz')).status).toBe(200);
-    expect(await (await t.app.request('/api/healthz')).json()).toEqual({ ok: true });
   });
 
   it('rejects unauthenticated API calls', async () => {
@@ -135,16 +129,6 @@ describe.skipIf(!TEST_INFRA)('API integration (Postgres from infra/docker-compos
     expect(dl.headers.get('etag')).toBe(`"${sha256(original)}"`);
     const stored = Buffer.from(await dl.arrayBuffer());
     expect(gunzipSync(stored).equals(original)).toBe(true);
-  });
-
-  it('uploads identity-encoded files', async () => {
-    const data = Buffer.from('solid crown\nendsolid crown\n');
-    const res = await authed(t, cookieA)(`/api/cases/${caseId}/files?kind=export&name=crown.stl&sha256=${sha256(data)}`, {
-      method: 'POST',
-      body: data,
-    });
-    expect(res.status).toBe(201);
-    expect(((await res.json()) as CaseFile).encoding).toBe('identity');
   });
 
   it('rejects sha256 mismatch, invalid gzip and oversize uploads without leaving blobs', async () => {
@@ -250,65 +234,5 @@ describe.skipIf(!TEST_INFRA)('API integration (Postgres from infra/docker-compos
       body: JSON.stringify({ purpose: 'free-for-all', messages: [] }),
     });
     expect(bad.status).toBe(400);
-  });
-
-  it('records proposal events', async () => {
-    const event: ProposalEvent = {
-      caseId,
-      fdi: 36,
-      step: 'margin',
-      proposerId: 'classical.livewire-margin@1',
-      inputSnapshot: { scanHashes: [sha256(original)], params: MATERIAL_PRESETS.zirconia, appVersion: '0.1.0', docVersion: 2 },
-      proposal: { kind: 'json', value: { anchors: [] } },
-      finalAccepted: { kind: 'json', value: { anchors: [] } },
-      action: 'edited',
-      editsCount: 3,
-      durationMs: 4200,
-    };
-    const res = await authed(t, cookieA)('/api/proposal-events', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(event),
-    });
-    expect(res.status).toBe(201);
-    const otherOrg = await authed(t, cookieB)('/api/proposal-events', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(event),
-    });
-    expect(otherOrg.status).toBe(404);
-  });
-
-  it('answers 501 for server-side proposer jobs', async () => {
-    const res = await authed(t, cookieA)('/api/jobs', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        proposerId: 'ml.margin-unet@0.1.0',
-        input: { caseId, fdi: 36, step: 'margin', docVersion: 2, meshes: {}, params: MATERIAL_PRESETS.zirconia },
-      }),
-    });
-    expect(res.status).toBe(501);
-    expect(await res.json()).toMatchObject({ error: { code: 'not_implemented' } });
-  });
-});
-
-describe.skipIf(!TEST_INFRA)('auth under a sub-path (PUBLIC_URL=http://localhost:8080/dental)', () => {
-  let t: TestApp;
-  beforeAll(async () => {
-    t = await buildTestApp({ publicUrl: 'http://localhost:8080/dental' });
-  });
-  afterAll(async () => {
-    await t?.close();
-  });
-
-  it('accepts proxy-stripped auth requests and scopes cookies to the sub-path', async () => {
-    const { cookie, res } = await signUp(t, 'subpath@lab.test');
-    const setCookie = res.headers.getSetCookie().join('\n');
-    expect(setCookie).toMatch(/Path=\/dental/);
-    const me = await authed(t, cookie)('/api/me');
-    expect(me.status).toBe(200);
-    const signedIn = await signIn(t, 'subpath@lab.test');
-    expect((await authed(t, signedIn.cookie)('/api/me')).status).toBe(200);
   });
 });

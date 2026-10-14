@@ -18,35 +18,18 @@ function asciiStl(soup: Float32Array): Uint8Array {
 }
 
 describe('STL', () => {
-  it('round-trips binary STL', () => {
-    const bytes = writeBinaryStl(cube(2));
+  it('parses binary STL (even with a "solid" header) and ASCII STL', () => {
+    const bytes = writeBinaryStl(cube(2), 'solid but actually binary');
     expect(isBinaryStl(bytes)).toBe(true);
-    const soup = parseStl(bytes);
-    expect(soup.positions.length).toBe(12 * 9);
-    expect(Math.max(...soup.positions)).toBe(2);
-  });
-
-  it('detects binary STL whose header starts with "solid"', () => {
-    const bytes = writeBinaryStl(cube(1), 'solid but actually binary');
-    expect(isBinaryStl(bytes)).toBe(true);
-    expect(parseStl(bytes).positions.length).toBe(12 * 9);
-  });
-
-  it('parses ASCII STL', () => {
-    const binary = parseStl(writeBinaryStl(cube(1.5)));
-    const ascii = parseStl(asciiStl(binary.positions));
-    expect(ascii.positions).toEqual(binary.positions);
+    const binary = parseStl(bytes);
+    expect(binary.positions.length).toBe(12 * 9);
+    expect(Math.max(...binary.positions)).toBe(2);
+    expect(parseStl(asciiStl(binary.positions)).positions).toEqual(binary.positions);
   });
 
   it('welds a cube soup into 8 vertices and 12 faces', () => {
     const mesh = weldSoup(parseStl(writeBinaryStl(cube(1))));
     expect(mesh.positions.length / 3).toBe(8);
     expect(mesh.indices.length / 3).toBe(12);
-  });
-
-  it('treats -0 and +0 as the same vertex', () => {
-    const soup = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, -0, -0, -0, 0, 1, 0, 1, 0, 0]);
-    const mesh = weldSoup({ positions: soup });
-    expect(mesh.positions.length / 3).toBe(3);
   });
 });

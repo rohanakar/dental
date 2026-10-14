@@ -50,13 +50,9 @@ describe('prep region and insertion axis', () => {
     const open = trace.loopVertices.slice(0, trace.loopVertices.length - 20);
     expect(prepRegion({ ...prepared, graph: analysis.graph, loopVertices: open, seedVertex: seed }).closed).toBe(false);
 
-    const t0 = performance.now();
     const axis = searchInsertionAxis({ ...prepared, faceMask: region.faceMask, center: occlusal });
-    const tAxis = performance.now() - t0;
     expect(angleDeg(axis.direction, occlusal)).toBeLessThan(5);
-    const t1 = performance.now();
     const depths = undercutDepths({ ...prepared, vertexMask: region.vertexMask, faceMask: region.faceMask, axis: axis.direction });
-    const tMap = performance.now() - t1;
     let maxDepth = 0;
     let nan = 0;
     for (const d of depths) {
@@ -66,7 +62,6 @@ describe('prep region and insertion axis', () => {
     expect(nan).toBe(depths.length - region.vertexCount);
     expect(maxDepth).toBeLessThan(0.05);
     expect(marginUndercut({ points: trace.points, axis: axis.direction, ray: prepared.ray, faceMask: region.faceMask }).count).toBe(0);
-    console.info(`[axis] ${region.faceCount} prep faces: search ${tAxis.toFixed(0)} ms, undercut map ${tMap.toFixed(0)} ms, angle ${axis.angleFromCenterDeg.toFixed(2)}°`);
   });
 
   it('reports undercut and a margin in undercut for a bulbous prep', () => {

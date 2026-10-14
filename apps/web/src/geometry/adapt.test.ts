@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adaptContacts, adaptOcclusion, findConflict, measureClearances, occlusalSelect, proximalSelect } from './adapt';
+import { adaptContacts, adaptOcclusion, measureClearances, occlusalSelect, proximalSelect } from './adapt';
 import type { IndexedMesh } from './mesh';
 import { computeVertexNormals } from './normals';
 import type { V3 } from './pca';
@@ -86,29 +86,6 @@ describe('occlusal adaptation against a flat antagonist', () => {
     for (let v = 0; v < d.fixed.length; v++) if (d.fixed[v]) expect(disp[v]).toBe(0);
     const after = measureClearances({ ...input, select: occlusalSelect(UP) }, 3);
     for (const c of after) if (!Number.isNaN(c)) expect(c).toBeGreaterThanOrEqual(0.03);
-  });
-
-  it('raises the dome into contact when the antagonist is within 0.5 mm', () => {
-    const d = dome();
-    const target = plane([0, 0, R + 0.3], [0, 0, -1]);
-    const report = adaptOcclusion({ positions: d.mesh.positions, normals: d.normals, shellStart: 0, shellGraph: d.graph, heightFraction: d.heightFraction, fixed: d.fixed, target, direction: UP, targetMm: 0.05 });
-    expect(report.minClearanceBeforeMm).toBeCloseTo(0.3, 2);
-    expect(Math.abs(report.minClearanceMm - 0.05)).toBeLessThan(0.03);
-  });
-
-  it('reports a conflict when something pushes the surface back toward the antagonist', () => {
-    const d = dome();
-    const target = plane([0, 0, R - 0.2], [0, 0, -1]);
-    const input = { positions: d.mesh.positions, normals: d.normals, shellStart: 0, shellGraph: d.graph, heightFraction: d.heightFraction, fixed: d.fixed, target, direction: UP, targetMm: 0.05 };
-    adaptOcclusion(input);
-    expect(findConflict({ ...input, select: occlusalSelect(UP) }, 'insufficient reduction').conflict).toBeUndefined();
-    // Stand-in for thickness enforcement winning: lift the top back up by 0.15 mm.
-    for (let v = 0; v < d.fixed.length; v++) if (d.heightFraction[v]! > 0.8) d.mesh.positions[v * 3 + 2] = d.mesh.positions[v * 3 + 2]! + 0.15;
-    const { conflict } = findConflict({ ...input, select: occlusalSelect(UP) }, 'insufficient reduction');
-    expect(conflict?.kind).toBe('insufficient reduction');
-    expect(conflict!.vertices).toBeGreaterThan(0);
-    expect(conflict!.minClearanceMm).toBeLessThan(0.03);
-    expect(conflict!.at[2]).toBeGreaterThan(R - 1);
   });
 });
 

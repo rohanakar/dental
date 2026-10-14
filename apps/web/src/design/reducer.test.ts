@@ -3,7 +3,7 @@ import { MATERIAL_PRESETS } from '@dcad/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { activeAdapt, adaptationStale, readaptCommands } from './adaptation';
 import { newDocument } from './document';
-import { applyCommand, applyCommands, CommandError } from './reducer';
+import { applyCommand, applyCommands } from './reducer';
 import { useDesignStore } from './store';
 
 const sha = (c: string) => c.repeat(64);
@@ -27,25 +27,12 @@ const margin: MarginLine = {
 const axis: InsertionAxis = { direction: [0, 0, 1], source: 'auto' };
 
 describe('applyCommand', () => {
-  it('marks scans done when the tooth jaw scan arrives', () => {
-    let doc = newDocument();
-    expect(doc.teeth[0]!.steps.setup).toBe('done');
-    expect(doc.teeth[0]!.steps.scans).toBe('pending');
-    doc = applyCommand(doc, { type: 'addScan', scan: scan('upper') });
-    expect(doc.teeth[0]!.steps.scans).toBe('pending'); // 36 is a lower tooth
-    doc = applyCommand(doc, { type: 'addScan', scan: scan('lower') });
-    expect(doc.teeth[0]!.steps.scans).toBe('done');
-    doc = applyCommand(doc, { type: 'removeScan', role: 'lower' });
-    expect(doc.teeth[0]!.steps.scans).toBe('pending');
-  });
-
   it('replaces scans by role and invalidates the frame when a jaw scan changes', () => {
     let doc = applyCommands(newDocument(), [
       { type: 'addScan', scan: scan('lower') },
       { type: 'setFrame', fdi: 36, frame },
       { type: 'setMargin', fdi: 36, margin },
     ]);
-    expect(doc.scans).toHaveLength(1);
     const same = applyCommand(doc, { type: 'addScan', scan: { ...scan('lower'), name: 'renamed.stl' } });
     expect(same.teeth[0]!.steps.frame).toBe('done');
     doc = applyCommand(doc, { type: 'addScan', scan: scan('lower', 'b') });
@@ -92,13 +79,6 @@ describe('applyCommand', () => {
     expect(doc.teeth[0]!.frame).toEqual(frame);
   });
 
-  it('rejects commands for teeth outside the case and unsupported clinical commands', () => {
-    const doc = newDocument();
-    expect(() => applyCommand(doc, { type: 'setFrame', fdi: 46, frame })).toThrow(CommandError);
-    expect(() => applyCommand(doc, { type: 'runStep', fdi: 36, step: 'proposal' })).toThrow(/not supported/);
-    expect(() => applyCommand(doc, { type: 'adaptOcclusion', fdi: 36, clearanceMm: 0.1 })).toThrow(/no crown/);
-  });
-
   it('never mutates its input', () => {
     const doc = newDocument();
     const json = JSON.stringify(doc);
@@ -112,9 +92,9 @@ describe('applyCommand', () => {
 
 describe('design store', () => {
   beforeEach(() => useDesignStore.getState().load(newDocument(), 0));
+  const s = useDesignStore.getState;
 
   it('undoes and redoes a batch as one step', () => {
-    const s = useDesignStore.getState;
     const batch: Command[] = [
       { type: 'addScan', scan: scan('lower') },
       { type: 'setFrame', fdi: 36, frame },
@@ -134,7 +114,6 @@ describe('design store', () => {
   });
 
   it('validates commands and tracks unsaved changes', () => {
-    const s = useDesignStore.getState;
     expect(() => s().dispatch({ type: 'setFrame', fdi: 19, frame } as Command)).toThrow();
     expect(s().doc).toBe(s().savedDoc);
     const doc = s().dispatch({ type: 'addScan', scan: scan('lower') });
@@ -142,6 +121,36 @@ describe('design store', () => {
     s().markSaved(1, doc);
     expect(s().version).toBe(1);
     expect(s().doc).toBe(s().savedDoc);
+  });
+
+  it('applies a transaction live, commits it as one undo entry and records the author', () => {
+    s().dispatch({ type: 'addScan', scan: scan('lower') });
+    s().beginTransaction({ label: 'auto-design', author: 'proposer' });
+    s().dispatch({ type: 'setFrame', fdi: 36, frame });
+    s().dispatch({ type: 'setMargin', fdi: 36, margin });
+    expect(s().doc.teeth[0]!.margin).toEqual(margin);
+    expect(s().past).toHaveLength(1);
+    s().undo(); // blocked while open
+    expect(s().doc.teeth[0]!.margin).toEqual(margin);
+    expect(() => s().beginTransaction({ label: 'x', author: 'agent' })).toThrow();
+    s().commitTransaction();
+    expect(s().past).toHaveLength(2);
+    expect(s().lastAuthor).toBe('proposer');
+    s().undo();
+    expect(s().doc.teeth[0]!.frame).toBeUndefined();
+    expect(s().doc.scans).toHaveLength(1);
+  });
+
+  it('rolls a transaction back to the base document', () => {
+    const before = s().doc;
+    s().beginTransaction({ label: 'agent', author: 'agent' });
+    s().dispatch({ type: 'setFrame', fdi: 36, frame });
+    s().rollbackTransaction();
+    expect(s().doc).toBe(before);
+    expect(s().transaction).toBeNull();
+    expect(s().past).toHaveLength(0);
+    s().dispatch({ type: 'setFrame', fdi: 36, frame });
+    expect(s().lastAuthor).toBe('user');
   });
 });
 
@@ -171,108 +180,43 @@ describe.each([
   ['left-handed frame (36)', 36, leftHanded],
   ['right-handed frame (46)', 46, rightHanded],
 ] as const)('clinical commands, %s', (_name, fdi, f) => {
-  it('moves along frame directions', () => {
+  it('moves, rotates and scales in frame directions', () => {
     const doc = docWithCrown(fdi, f);
     const mesial = poseOf(applyCommand(doc, { type: 'moveCrown', fdi, direction: 'mesial', mm: 0.5 }));
     expect(mesial.position).toEqual([10 + 0.5 * f.mesial[0], 5 + 0.5 * f.mesial[1], 1 + 0.5 * f.mesial[2]]);
     const lingual = poseOf(applyCommand(doc, { type: 'moveCrown', fdi, direction: 'lingual', mm: 0.3 }));
     expect(lingual.position[0]).toBeCloseTo(10 - 0.3 * f.buccal[0], 12);
-    const cervical = poseOf(applyCommand(doc, { type: 'moveCrown', fdi, direction: 'cervical', mm: 0.2 }));
-    expect(cervical.position[2]).toBeCloseTo(0.8, 12);
-  });
 
-  it('rotates about the crown centre and returns after 360° in 2° steps', () => {
-    let doc = docWithCrown(fdi, f);
-    const once = poseOf(applyCommand(doc, { type: 'rotateCrown', fdi, axis: 'mesial-distal', deg: 10 }));
-    expect(once.position).not.toEqual(startPose.position); // centre is above the cervical origin
-    for (let i = 0; i < 180; i++) doc = applyCommand(doc, { type: 'rotateCrown', fdi, axis: 'buccal-lingual', deg: 2 });
-    const back = poseOf(doc);
+    // Rotation is about the crown centre (above the cervical origin) and returns after 360° in 2° steps.
+    expect(poseOf(applyCommand(doc, { type: 'rotateCrown', fdi, axis: 'mesial-distal', deg: 10 })).position).not.toEqual(startPose.position);
+    let spun = doc;
+    for (let i = 0; i < 180; i++) spun = applyCommand(spun, { type: 'rotateCrown', fdi, axis: 'buccal-lingual', deg: 2 });
+    const back = poseOf(spun);
     back.position.forEach((x, i) => expect(x).toBeCloseTo(startPose.position[i]!, 6));
-    // q and −q are the same rotation.
-    const sign = Math.sign(back.quaternion[3]) || 1;
+    const sign = Math.sign(back.quaternion[3]) || 1; // q and −q are the same rotation
     back.quaternion.forEach((x, i) => expect(sign * x).toBeCloseTo(startPose.quaternion[i]!, 6));
-  });
 
-  it('scales per clinical axis, keeping the mirror sign', () => {
-    const doc = docWithCrown(fdi, f);
+    // Scaling keeps the mirror sign.
     expect(poseOf(applyCommand(doc, { type: 'scaleCrown', fdi, axis: 'mesial-distal', pct: 10 })).scale).toEqual([-1.1, 1, 1]);
     expect(poseOf(applyCommand(doc, { type: 'scaleCrown', fdi, axis: 'occlusal', pct: -20 })).scale).toEqual([-1, 1, 0.8]);
-  });
-
-  it('marks the proposal done and later steps stale', () => {
-    let doc = docWithCrown(fdi, f);
-    doc = { ...doc, teeth: [{ ...doc.teeth[0]!, steps: { ...doc.teeth[0]!.steps, adapt: 'done' } }] };
-    const moved = applyCommand(doc, { type: 'moveCrown', fdi, direction: 'occlusal', mm: 0.1 });
-    expect(moved.teeth[0]!.steps).toMatchObject({ proposal: 'done', adapt: 'stale' });
-  });
-});
-
-describe('clinical command preconditions and setParam', () => {
-  it('errors without a frame or a template crown', () => {
-    const noFrame = newDocument();
-    expect(() => applyCommand(noFrame, { type: 'moveCrown', fdi: 36, direction: 'mesial', mm: 0.1 })).toThrow(/tooth frame/);
-    const noCrown = applyCommand(noFrame, { type: 'setFrame', fdi: 36, frame: leftHanded });
-    expect(() => applyCommand(noCrown, { type: 'scaleCrown', fdi: 36, axis: 'occlusal', pct: 5 })).toThrow(/no crown/);
-    const meshCrown = applyCommand(noCrown, {
-      type: 'setCrown',
-      fdi: 36,
-      crown: { kind: 'mesh', mesh: { sha256: 'a'.repeat(64), units: 'mm', frame: 'tooth-local' } },
-    });
-    expect(() => applyCommand(meshCrown, { type: 'rotateCrown', fdi: 36, axis: 'occlusal', deg: 5 })).toThrow(/template/);
-  });
-
-  it('sets one parameter, validates it, and marks params done', () => {
-    const doc = applyCommand(newDocument(), { type: 'setParam', fdi: 36, name: 'cementGapMm', value: 0.06 });
-    expect(doc.teeth[0]!.params.cementGapMm).toBe(0.06);
-    expect(doc.teeth[0]!.steps.params).toBe('done');
-    expect(() => applyCommand(doc, { type: 'setParam', fdi: 36, name: 'minThicknessMm', value: 9 })).toThrow(CommandError);
-  });
-
-  it('undoes a batch of moves as one entry', () => {
-    useDesignStore.getState().load(docWithCrown(36, leftHanded), 0);
-    const s = useDesignStore.getState;
-    s().dispatch([
-      { type: 'moveCrown', fdi: 36, direction: 'mesial', mm: 2 },
-      { type: 'moveCrown', fdi: 36, direction: 'mesial', mm: 0.4 },
-      { type: 'moveCrown', fdi: 36, direction: 'occlusal', mm: 0.1 },
-    ]);
-    expect(poseOf(s().doc).position[1]).toBeCloseTo(7.4, 12);
-    expect(s().past).toHaveLength(1);
-    s().undo();
-    expect(poseOf(s().doc)).toEqual(startPose);
   });
 });
 
 describe('adaptation commands', () => {
-  it('store targets on the crown, mark adapt done, keep them through moves, and reset with setCrown', () => {
-    let doc = docWithCrown(36, leftHanded);
-    doc = applyCommand(doc, { type: 'adaptOcclusion', fdi: 36, clearanceMm: 0.05 });
-    doc = applyCommand(doc, { type: 'setContact', fdi: 36, side: 'mesial', targetMm: 0.02 });
-    doc = applyCommand(doc, { type: 'setContact', fdi: 36, side: 'distal', targetMm: -0.01 });
-    const t = doc.teeth[0]!;
-    expect(t.crown).toMatchObject({ kind: 'template', adapt: { occlusion: { clearanceMm: 0.05 }, mesial: { targetMm: 0.02 }, distal: { targetMm: -0.01 } } });
-    expect(t.steps.adapt).toBe('done');
-    doc = applyCommand(doc, { type: 'moveCrown', fdi: 36, direction: 'mesial', mm: 0.1 });
-    expect(doc.teeth[0]!.crown).toMatchObject({ adapt: { occlusion: { clearanceMm: 0.05 } } });
-    expect(doc.teeth[0]!.steps.adapt).toBe('stale');
-    const { adapt: _a, ...bare } = doc.teeth[0]!.crown as Extract<Crown, { kind: 'template' }>;
-    doc = applyCommand(doc, { type: 'setCrown', fdi: 36, crown: bare });
-    expect((doc.teeth[0]!.crown as { adapt?: unknown }).adapt).toBeUndefined();
-  });
-
-  it('apply only while adapt is done; Re-adapt restores them after a move as one undo entry', () => {
+  it('keep their targets through a move but apply only while adapt is done; Re-adapt restores them in one undo entry', () => {
     let doc = docWithCrown(36, leftHanded);
     expect(activeAdapt(doc.teeth[0]!)).toBeUndefined();
-    expect(adaptationStale(doc.teeth[0]!)).toBe(false);
-    expect(readaptCommands(doc.teeth[0]!)).toEqual([]);
     doc = applyCommands(doc, [
       { type: 'adaptOcclusion', fdi: 36, clearanceMm: 0.05 },
       { type: 'setContact', fdi: 36, side: 'distal', targetMm: -0.01 },
     ]);
     const targets = { occlusion: { clearanceMm: 0.05 }, distal: { targetMm: -0.01 } };
+    expect(doc.teeth[0]!.steps.adapt).toBe('done');
     expect(activeAdapt(doc.teeth[0]!)).toEqual(targets);
+
     doc = applyCommand(doc, { type: 'moveCrown', fdi: 36, direction: 'occlusal', mm: 0.5 });
     const moved = doc.teeth[0]!;
+    expect(moved.crown).toMatchObject({ adapt: targets });
     expect(activeAdapt(moved)).toBeUndefined();
     expect(adaptationStale(moved)).toBe(true);
     const cmds = readaptCommands(moved);
@@ -280,48 +224,13 @@ describe('adaptation commands', () => {
       { type: 'adaptOcclusion', fdi: 36, clearanceMm: 0.05 },
       { type: 'setContact', fdi: 36, side: 'distal', targetMm: -0.01 },
     ]);
+
     const s = useDesignStore.getState;
     s().load(doc, 0);
     s().dispatch(cmds);
     expect(s().past).toHaveLength(1);
-    expect(s().doc.teeth[0]!.steps.adapt).toBe('done');
     expect(activeAdapt(s().doc.teeth[0]!)).toEqual(targets);
     expect(poseOf(s().doc)).toEqual(poseOf(doc));
     expect(adaptationStale(s().doc.teeth[0]!)).toBe(false);
-  });
-});
-
-describe('design store transactions', () => {
-  beforeEach(() => useDesignStore.getState().load(newDocument(), 0));
-  const s = useDesignStore.getState;
-
-  it('applies changes live, commits as one undo entry and records the author', () => {
-    s().dispatch({ type: 'addScan', scan: scan('lower') });
-    s().beginTransaction({ label: 'auto-design', author: 'proposer' });
-    s().dispatch({ type: 'setFrame', fdi: 36, frame });
-    s().dispatch({ type: 'setMargin', fdi: 36, margin });
-    expect(s().doc.teeth[0]!.margin).toEqual(margin);
-    expect(s().past).toHaveLength(1);
-    s().undo(); // blocked while open
-    expect(s().doc.teeth[0]!.margin).toEqual(margin);
-    expect(() => s().beginTransaction({ label: 'x', author: 'agent' })).toThrow(/already open/);
-    s().commitTransaction();
-    expect(s().past).toHaveLength(2);
-    expect(s().lastAuthor).toBe('proposer');
-    s().undo();
-    expect(s().doc.teeth[0]!.frame).toBeUndefined();
-    expect(s().doc.scans).toHaveLength(1);
-  });
-
-  it('rolls back to the base document', () => {
-    const before = s().doc;
-    s().beginTransaction({ label: 'agent', author: 'agent' });
-    s().dispatch({ type: 'setFrame', fdi: 36, frame });
-    s().rollbackTransaction();
-    expect(s().doc).toBe(before);
-    expect(s().transaction).toBeNull();
-    expect(s().past).toHaveLength(0);
-    s().dispatch({ type: 'setFrame', fdi: 36, frame });
-    expect(s().lastAuthor).toBe('user');
   });
 });

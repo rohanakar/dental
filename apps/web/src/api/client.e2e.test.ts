@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { newDocument } from '../design/document';
-import * as auth from './auth';
 import * as api from './client';
 
 /**
@@ -34,21 +33,6 @@ describe.skipIf(!BASE)('api client against a live API', () => {
     });
   });
   afterAll(() => vi.unstubAllGlobals());
-
-  it('signs up, out and in through the Better Auth client', async () => {
-    vi.stubGlobal('window', { location: { origin: ORIGIN } });
-    const email = `e2e-auth-${Date.now()}@example.com`;
-    const user = await auth.signUp(email, 'correct-horse-battery', 'Auth E2E');
-    expect(user.email).toBe(email);
-    expect((await auth.getSession())?.email).toBe(email);
-    await auth.signOut();
-    cookies.clear();
-    expect(await auth.getSession()).toBeNull();
-    await expect(auth.signIn(email, 'wrong-password-123')).rejects.toBeInstanceOf(auth.AuthError);
-    expect((await auth.signIn(email, 'correct-horse-battery')).email).toBe(email);
-    expect((await api.me()).orgId).toBeTruthy();
-    cookies.clear();
-  });
 
   it('signs up, creates a case, uploads, saves, reloads and downloads', async () => {
     await expect(api.me()).rejects.toMatchObject({ status: 401 });

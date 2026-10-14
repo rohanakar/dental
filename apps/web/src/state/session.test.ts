@@ -44,13 +44,6 @@ beforeEach(() => {
 });
 
 describe('session', () => {
-  it('falls back to the sign-in screen with a notice when the API is unreachable', async () => {
-    vi.mocked(api.me).mockRejectedValueOnce(new api.ApiRequestError(0, 'network_error', 'down'));
-    await session.init();
-    expect(session.useSessionStore.getState()).toMatchObject({ status: 'signed-out' });
-    expect(session.useSessionStore.getState().notice).toMatch(/unreachable/);
-  });
-
   it('opens a never-saved case as a new document and routes uploads to it', async () => {
     vi.mocked(api.getCase).mockResolvedValue({ ...record, files: [] });
     vi.mocked(api.latestVersion).mockResolvedValue(null);
@@ -97,36 +90,5 @@ describe('session', () => {
     expect(api.updateCase).toHaveBeenCalledWith('c1', { setup, status: 'in-design' });
     expect(useDesignStore.getState().version).toBe(3);
     expect(useDesignStore.getState().savedDoc).toBe(doc);
-    expect(session.useSessionStore.getState().saveWarning).toMatch(/did not upload/);
-  });
-
-  it('explains a save conflict', async () => {
-    session.useSessionStore.setState({ status: 'editor', currentCase: { ...record, status: 'in-design' } });
-    vi.mocked(api.saveVersion).mockRejectedValue(new api.ApiRequestError(409, 'conflict', 'x', { currentVersion: 7 }));
-    await session.save();
-    expect(session.useSessionStore.getState().saveError).toMatch(/version 7/);
-    expect(session.useSessionStore.getState().saving).toBe(false);
-  });
-
-  it('opens a project file offline, and leaves the workspace alone when the file is bad', async () => {
-    const { exportProject } = await import('../io/projectZip');
-    const bytes = new TextEncoder().encode('solid x\nendsolid x\n');
-    const digest = await crypto.subtle.digest('SHA-256', bytes);
-    const sha = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
-    const ref = { role: 'lower' as const, name: 'l.stl', mesh: { sha256: sha, fileId: 'f1', units: 'mm' as const, frame: 'scan' as const } };
-    const doc = { ...newDocument('c1', setup), scans: [ref] };
-    const zip = exportProject({ doc, scans: [{ ref, bytes }], appVersion: 'test' });
-    await session.openProject(new File([zip as Uint8Array<ArrayBuffer>], 'LAB-1.dcad.zip'));
-    expect(session.useSessionStore.getState()).toMatchObject({ status: 'editor', offline: true, projectError: null });
-    expect(useDesignStore.getState().doc.caseId).toBe('local');
-    expect(useDesignStore.getState().doc.scans[0]!.mesh.fileId).toBeUndefined();
-    expect(vi.mocked(sceneController.loadLocalScans).mock.calls[0]![0][0]!.bytes).toEqual(bytes);
-
-    const before = useDesignStore.getState().doc;
-    vi.mocked(sceneController.clear).mockClear();
-    await session.openProject(new File([new Uint8Array([1, 2, 3])], 'junk.zip'));
-    expect(session.useSessionStore.getState().projectError).toMatch(/Could not open junk.zip/);
-    expect(useDesignStore.getState().doc).toBe(before);
-    expect(sceneController.clear).not.toHaveBeenCalled();
   });
 });
