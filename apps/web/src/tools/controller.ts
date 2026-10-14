@@ -8,6 +8,7 @@ import { axisTool } from './axisTool';
 import { crownTool } from './crownTool';
 import { gizmoTool } from './gizmoTool';
 import { errorText, toothContext } from './context';
+import { focusTool } from './focusTool';
 import { frameInteraction } from './frameTool';
 import { MARGIN_COLOR, marginTool } from './marginTool';
 import { useToolStore } from './toolStore';
@@ -56,6 +57,7 @@ class DesignTools {
     axisTool.attach(viewer);
     crownTool.attach(viewer);
     gizmoTool.attach(viewer);
+    focusTool.attach(viewer);
     this.sync();
   }
 
@@ -66,6 +68,7 @@ class DesignTools {
     axisTool.attach(null);
     crownTool.attach(null);
     gizmoTool.attach(null);
+    focusTool.attach(null);
   }
 
   /** Store changes made while syncing (e.g. hiding the antagonist) re-trigger sync; run them once more instead of recursing. */
@@ -120,6 +123,7 @@ class DesignTools {
     if (step === 'axis') axisTool.sync();
     crownTool.sync(step);
     gizmoTool.sync(step === 'proposal');
+    focusTool.sync();
   }
 
   /** Zoom onto the prep: from occlusal to trace the margin, obliquely from buccal to judge the axis. */

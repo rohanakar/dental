@@ -1,5 +1,6 @@
 import type { StepId } from '@dcad/shared';
 import { BufferAttribute, BufferGeometry } from 'three';
+import { activeAdapt } from '../design/adaptation';
 import { useDesignStore } from '../design/store';
 import type { Viewer } from '../engine/Viewer';
 import { constructionInfo, crownStl, downloadBytes } from '../io/exportCrown';
@@ -15,7 +16,12 @@ export const CROWN_OBJECT_ID = 'crown';
 const SHOW_CROWN: readonly StepId[] = ['params', 'proposal', 'adapt', 'finalize'];
 const APP_VERSION = '0.3.0';
 
-const v3 = (p: readonly number[]): [number, number, number] => [p[0]!, p[1]!, p[2]!];
+type V3 = [number, number, number];
+const v3 = (p: readonly number[]): V3 => [p[0]!, p[1]!, p[2]!];
+const ZERO: V3 = [0, 0, 0];
+const sameArray = (a: readonly number[], b: readonly number[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+/** Vertices with at least this move weight count as cusps (they follow a move fully) for the gizmo anchor. */
+const CUSP_MOVE_WEIGHT = 0.95;
 
 /** How each crown map is shown (range and legend). */
 export const CROWN_MAPS: Record<CrownMapName, LegendSpec> = {
@@ -45,8 +51,14 @@ function request(ctx: ToothContext, withPose: boolean, map: CrownMapName | 'none
     params,
     pose: withPose && crown?.kind === 'template' ? crown.pose : undefined,
     maps: map === 'none' ? undefined : [map],
-    adapt: withPose && crown?.kind === 'template' ? crown.adapt : undefined,
+    adapt: withPose ? activeAdapt(ctx.tooth) : undefined,
   };
+}
+
+/** Everything the derived crown depends on; a change of any entry recomputes it. */
+function inputsOf(ctx: ToothContext | null): unknown[] {
+  const t = ctx?.tooth;
+  return [ctx?.jaw.sha256, ctx?.antagonist?.sha256, t?.frame, t?.margin, t?.axis, t?.params, t?.crown, t?.steps.adapt, useToolStore.getState().crownMap];
 }
 
 /**
@@ -61,6 +73,13 @@ class CrownTool {
   private last: CrownResult | null = null;
   /** The compute currently in flight (for settled()). */
   private inflight: Promise<CrownResult | null> | null = null;
+  /** Translation previewed on top of the document while the gizmo is dragged (world mm). */
+  private dragOffset: V3 = ZERO;
+  /** The displayed positions differ from `last.positions` (a move preview is on screen). */
+  private previewing = false;
+  /** Centroid of the last result's cusps (move weight ≥ CUSP_MOVE_WEIGHT). */
+  private cuspCentre: V3 | null = null;
+  private readonly listeners = new Set<() => void>();
 
   attach(viewer: Viewer | null): void {
     this.viewer = viewer;
@@ -72,14 +91,42 @@ class CrownTool {
   sync(step: StepId): void {
     const ctx = toothContext();
     const crown = ctx?.tooth.crown;
-    const inputs = [ctx?.jaw.sha256, ctx?.antagonist?.sha256, ctx?.tooth.frame, ctx?.tooth.margin, ctx?.tooth.axis, ctx?.tooth.params, crown, useToolStore.getState().crownMap];
+    const inputs = inputsOf(ctx);
     if (!ctx || !crown) {
       this.clear();
     } else if (inputs.some((x, i) => x !== this.inputs[i])) {
       this.inputs = inputs;
       void this.compute(ctx, true);
+      // Until the recompute lands, show the move at once (see applyPreview).
+      this.applyPreview();
     }
     this.applyVisibility(step);
+  }
+
+  /** Called after each newly displayed crown result. Returns an unsubscribe function. */
+  onResult(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  /**
+   * Preview a gizmo drag: show the crown moved by `delta` (world mm) on top of
+   * the document, deformed the way the fit deforms it (the margin stays put,
+   * the cusps follow). null ends the drag preview.
+   */
+  previewDrag(delta: readonly number[] | null): void {
+    this.dragOffset = delta ? v3(delta) : ZERO;
+    this.applyPreview();
+  }
+
+  /**
+   * Where the move gizmo sits: the centroid of the displayed crown's cusps,
+   * plus any move not recomputed yet. Null before the first crown.
+   */
+  gizmoAnchor(): V3 | null {
+    if (!this.cuspCentre) return null;
+    const m = this.pendingMove();
+    return [this.cuspCentre[0] + m[0], this.cuspCentre[1] + m[1], this.cuspCentre[2] + m[2]];
   }
 
   /** Propose a new template pose from the frame, contacts and antagonist (setCrown). */
@@ -94,8 +141,7 @@ class CrownTool {
       crown: { kind: 'template', templateId: result.templateId, pose: result.pose },
     });
     // The mesh on screen already matches the new document state.
-    const after = toothContext();
-    this.inputs = [after?.jaw.sha256, after?.antagonist?.sha256, after?.tooth.frame, after?.tooth.margin, after?.tooth.axis, after?.tooth.params, after?.tooth.crown, useToolStore.getState().crownMap];
+    this.inputs = inputsOf(toothContext());
   }
 
   /** Choose the colour map on the crown (recomputes with the map). */
@@ -179,7 +225,9 @@ class CrownTool {
     try {
       const result = await run;
       this.last = result;
+      this.cuspCentre = cuspCentroid(result);
       this.setMesh(result);
+      this.applyPreview();
       this.applyMap(map, result);
       useToolStore.getState().set({
         crown: {
@@ -195,6 +243,7 @@ class CrownTool {
           ms: result.ms,
         },
       });
+      for (const listener of this.listeners) listener();
       return result;
     } catch (e) {
       if (isStale(e)) return null;
@@ -214,6 +263,49 @@ class CrownTool {
     if (useDesignStore.getState().activeStep !== 'axis') useToolStore.getState().set({ legend: values && spec ? spec : null });
   }
 
+  /** Document pose minus the displayed result's pose, when they differ by a translation only (else zero). */
+  private pendingMove(): V3 {
+    const last = this.last;
+    const crown = toothContext()?.tooth.crown;
+    if (!last || crown?.kind !== 'template' || crown.templateId !== last.templateId) return ZERO;
+    const a = crown.pose;
+    const b = last.pose;
+    if (!sameArray(a.quaternion, b.quaternion) || !sameArray(a.scale, b.scale)) return ZERO;
+    return [a.position[0] - b.position[0], a.position[1] - b.position[1], a.position[2] - b.position[2]];
+  }
+
+  /**
+   * Instant move feedback. The displayed crown is the last computed result;
+   * while the document pose is that result's pose plus a translation (a
+   * move, nudge or undo not recomputed yet), plus any gizmo drag, each vertex
+   * is shifted by its move weight × the offset. The fit is linear in the pose
+   * position, so this is what the recompute shows (up to thickness
+   * enforcement), and the crown never snaps back while it runs.
+   */
+  private applyPreview(): void {
+    const last = this.last;
+    const g = this.geometry;
+    if (!last || !g) return;
+    const m = this.pendingMove();
+    const d: V3 = [m[0] + this.dragOffset[0], m[1] + this.dragOffset[1], m[2] + this.dragOffset[2]];
+    const moving = d[0] !== 0 || d[1] !== 0 || d[2] !== 0;
+    if (!moving && !this.previewing) return;
+    const attr = g.getAttribute('position') as BufferAttribute;
+    const out = attr.array as Float32Array;
+    const base = last.positions;
+    const w = last.moveWeights;
+    for (let v = 0; v < w.length; v++) {
+      const k = w[v]!;
+      out[v * 3] = base[v * 3]! + k * d[0];
+      out[v * 3 + 1] = base[v * 3 + 1]! + k * d[1];
+      out[v * 3 + 2] = base[v * 3 + 2]! + k * d[2];
+    }
+    attr.needsUpdate = true;
+    g.computeBoundingSphere();
+    this.previewing = moving;
+    this.viewer?.requestRender();
+  }
+
   private setMesh(result: CrownResult): void {
     const g = new BufferGeometry();
     g.setAttribute('position', new BufferAttribute(result.positions.slice(), 3));
@@ -223,6 +315,7 @@ class CrownTool {
     g.computeBoundingSphere();
     this.geometry?.dispose();
     this.geometry = g;
+    this.previewing = false;
     this.show();
   }
 
@@ -252,9 +345,25 @@ class CrownTool {
     this.geometry?.dispose();
     this.geometry = null;
     this.last = null;
+    this.cuspCentre = null;
+    this.previewing = false;
     this.inputs = [];
     useToolStore.getState().set({ crown: null });
   }
+}
+
+/** Centroid of the vertices that follow a move fully (the cusps), or null if there are none. */
+function cuspCentroid(result: CrownResult): V3 | null {
+  const c: V3 = [0, 0, 0];
+  let n = 0;
+  for (let v = 0; v < result.moveWeights.length; v++) {
+    if (result.moveWeights[v]! < CUSP_MOVE_WEIGHT) continue;
+    c[0] += result.positions[v * 3]!;
+    c[1] += result.positions[v * 3 + 1]!;
+    c[2] += result.positions[v * 3 + 2]!;
+    n++;
+  }
+  return n > 0 ? [c[0] / n, c[1] / n, c[2] / n] : null;
 }
 
 export const crownTool = new CrownTool();

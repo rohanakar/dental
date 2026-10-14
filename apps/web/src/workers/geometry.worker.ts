@@ -27,6 +27,7 @@ import type {
   AxisRequest,
   CrownRequest,
   CrownResult,
+  FocusFacesRequest,
   FrameEstimate,
   FrameRequest,
   MarginTrace,
@@ -240,7 +241,20 @@ const api = {
     const { mesh, ...rest } = design;
     const result: CrownResult = { ...rest, positions: mesh.positions, indices: mesh.indices, ms: performance.now() - t0 };
     const mapBuffers = Object.values(design.maps ?? {}).map((m) => (m as Float32Array).buffer as ArrayBuffer);
-    return Comlink.transfer(result, [mesh.positions.buffer as ArrayBuffer, mesh.indices.buffer as ArrayBuffer, ...mapBuffers]);
+    return Comlink.transfer(result, [
+      mesh.positions.buffer as ArrayBuffer,
+      mesh.indices.buffer as ArrayBuffer,
+      design.moveWeights.buffer as ArrayBuffer,
+      ...mapBuffers,
+    ]);
+  },
+
+  /** Face ids (BVH order) of the prep region inside the margin, for the focus view. */
+  focusFaces(request: FocusFacesRequest): Uint32Array {
+    const { faceMask, faceCount } = regionFor(registry.get(request.jawSha), request.margin, request.occlusal);
+    const ids = new Uint32Array(faceCount);
+    for (let f = 0, k = 0; f < faceMask.length; f++) if (faceMask[f]) ids[k++] = f;
+    return Comlink.transfer(ids, [ids.buffer as ArrayBuffer]);
   },
 };
 

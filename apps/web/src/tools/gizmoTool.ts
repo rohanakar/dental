@@ -3,10 +3,9 @@ import { create } from 'zustand';
 import { crownCentre, normalize3, templateHeight, type V3 } from '../design/clinical';
 import { useDesignStore } from '../design/store';
 import type { Viewer } from '../engine/Viewer';
-import { useToolStore } from './toolStore';
+import { crownTool } from './crownTool';
+import { userEdit } from './nudge';
 
-/** Viewer object the gizmo previews (the derived crown mesh). */
-const CROWN_OBJECT_ID = 'crown';
 /** Schema limit for one moveCrown command. */
 const MAX_STEP_MM = 2;
 /** Components smaller than this are dropped (sub-micron jitter from the drag). */
@@ -56,10 +55,11 @@ export function movesForDelta(
 }
 
 /**
- * Connects the viewer's translate gizmo to the document: it sits at the
- * crown's mid-height centre with the tooth frame's axes, and a drag becomes
- * ONE batch of moveCrown commands (one undo entry). The derived crown is
- * recomputed from the new pose by crownTool.
+ * Connects the viewer's translate gizmo to the document: it sits on the
+ * crown's cusps with the tooth frame's axes, a drag is previewed by
+ * crownTool (deformed like the fit, margin pinned), and the release becomes
+ * ONE batch of moveCrown commands (one undo entry). The preview stays on
+ * screen until crownTool's recompute replaces it.
  */
 class GizmoTool {
   private viewer: Viewer | null = null;
@@ -69,6 +69,8 @@ class GizmoTool {
 
   constructor() {
     useGizmoStore.subscribe(() => this.sync(this.lastEnabled));
+    // Each new crown result moves the anchor onto the crown actually shown.
+    crownTool.onResult(() => this.sync(this.lastEnabled));
   }
 
   attach(viewer: Viewer | null): void {
@@ -87,7 +89,7 @@ class GizmoTool {
     const frame = tooth?.frame;
     const crown = tooth?.crown;
     const on = enabled && useGizmoStore.getState().enabled && Boolean(frame) && crown?.kind === 'template';
-    const key = on ? [frame, crown, activeFdi] : [];
+    const key = on ? [frame, crown, activeFdi, crownTool.current()] : [];
     if (key.length === this.shown.length && key.every((x, i) => x === this.shown[i])) return;
     this.shown = key;
     if (!on || !frame || crown?.kind !== 'template') {
@@ -96,17 +98,13 @@ class GizmoTool {
     }
     const fdi = tooth!.fdi;
     v.setGizmo({
-      objectId: CROWN_OBJECT_ID,
-      position: crownCentre(crown.pose, templateHeight(fdi)),
+      position: crownTool.gizmoAnchor() ?? crownCentre(crown.pose, templateHeight(fdi)),
       axes: { mesial: [...frame.mesial] as V3, buccal: [...frame.buccal] as V3, occlusal: [...frame.occlusal] as V3 },
+      // The document move (below) takes over from the drag preview without a frame in between.
+      onDrag: (delta) => crownTool.previewDrag(delta),
       onCommit: (delta) => {
         const cmds = movesForDelta(fdi, delta, frame);
-        if (cmds.length === 0) return;
-        try {
-          useDesignStore.getState().dispatch(cmds);
-        } catch (e) {
-          useToolStore.getState().set({ message: { kind: 'error', text: e instanceof Error ? e.message : String(e) } });
-        }
+        if (cmds.length > 0) userEdit(cmds);
       },
     });
   }

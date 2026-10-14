@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { V3 } from './pca';
-import { applyRbf, evaluateRbf, solveRbf } from './rbf';
+import { applyRbf, evaluateRbf, evaluateRbfFields, solveRbf, solveRbfFields } from './rbf';
 
 function randomPoints(n: number, seed = 1): Float64Array {
   let s = seed;
@@ -11,6 +11,23 @@ function randomPoints(n: number, seed = 1): Float64Array {
 }
 
 describe('RBF displacement field', () => {
+  it('solves several fields with one factorization, equal to solving each alone', () => {
+    const centers = randomPoints(60, 5);
+    const a = randomPoints(60, 9).map((x) => x * 0.1);
+    const b = randomPoints(60, 11).map((x) => x * 0.2);
+    const fields = solveRbfFields(centers, [a, b]);
+    const out = new Float64Array(6);
+    for (const p of [[0.3, -1, 2], [4, 4, -4], [0, 0, 0]] as V3[]) {
+      evaluateRbfFields(fields, p, out);
+      const da = evaluateRbf(solveRbf(centers, a), p);
+      const db = evaluateRbf(solveRbf(centers, b), p);
+      for (let k = 0; k < 3; k++) {
+        expect(out[k]).toBeCloseTo(da[k]!, 9);
+        expect(out[3 + k]).toBeCloseTo(db[k]!, 9);
+      }
+    }
+  });
+
   it('interpolates its centres exactly (cubic and linear kernels)', () => {
     const centers = randomPoints(150);
     const values = randomPoints(150, 7).map((x) => x * 0.1);

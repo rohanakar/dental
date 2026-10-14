@@ -9,6 +9,8 @@ const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 export const ADAPT_RAISE_WITHIN_MM = 0.5;
 /** Clearances below target − this after thickness enforcement are conflicts. */
 export const ADAPT_TOLERANCE_MM = 0.02;
+/** Clearances above target + this after adaptation are open (the lift only reaches ADAPT_RAISE_WITHIN_MM). */
+export const ADAPT_OPEN_TOLERANCE_MM = 0.05;
 /** Damped Jacobi passes that carry the displacement from constrained vertices into their surroundings. */
 const FILL_PASSES = 60;
 /** Per-pass damping of the filled displacement, so it fades out over a few millimetres instead of spreading over the shell. */

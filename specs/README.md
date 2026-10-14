@@ -14,3 +14,4 @@ and progress log.
 | [day-05-adapt-and-persist.md](day-05-adapt-and-persist.md): occlusion/contact adaptation, self-intersection, project zip, nightly backups | done |
 | [2026-10-11-database-url-expansion.md](2026-10-11-database-url-expansion.md): `${POSTGRES_PASSWORD}` in DATABASE_URL (expanded + URL-encoded by the API) | done |
 | [day-06-ai-layer.md](day-06-ai-layer.md): proposers + one-click orchestrator with QA gates, LLM agent tool loop, Rx intake, proposal events | done |
+| [2026-10-14-crown-move-after-proposal.md](2026-10-14-crown-move-after-proposal.md): moving a proposed crown re-adapts it, preview/result mismatch, open contacts pass QA, moves inside an unaccepted draft; focus view and a distinct crown colour | done |

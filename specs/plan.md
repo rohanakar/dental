@@ -211,3 +211,9 @@ Claude writes most code; the developer supplies data, annotates templates, does 
 **Day 5: done (2026-10-11).** Occlusion/contact adaptation with conflict reports (stored as targets, crown re-derived), self-intersection check (printable), `.dcad.zip` project files, nightly backup service with a verified restore drill. See [day-05-adapt-and-persist.md](day-05-adapt-and-persist.md).
 
 **Day 6: done (2026-10-11).** Design-store transactions, classical proposers incl. automatic margin, QA-gated one-click auto-design (Accept/Reject), LLM agent tool loop with metrics, Rx intake (LLM + classical parser), ProposalEvent logging. Sculpt cut. See [day-06-ai-layer.md](day-06-ai-layer.md).
+
+**2026-10-14: crown moves after a proposal.** A move no longer re-adapts silently: adaptation applies only while the
+Adapt step is done, with Re-adapt one click away. Open contacts fail QA. Every move previews instantly and exactly
+(per-vertex move weights from the fit), with no snap-back. Edits accept a pending draft first, so undo works. Focus
+view: the prep stays bright, the surroundings are dimmed, and the crown is design blue. See
+[2026-10-14-crown-move-after-proposal.md](2026-10-14-crown-move-after-proposal.md).

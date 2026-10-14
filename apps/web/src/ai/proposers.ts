@@ -1,4 +1,5 @@
 import type { Command, CrownAdapt, ProposalResult, ProposerId, QaCheck, StepId } from '@dcad/shared';
+import { activeAdapt } from '../design/adaptation';
 import { fromMarginPoints, toMarginPoints, toothContext, type ToothContext } from '../tools/context';
 import type { CrownRequest } from '../workers/analysisTypes';
 import { analysis } from '../workers/geometryClient';
@@ -59,7 +60,7 @@ function crownRequest(ctx: ToothContext, opts: { withPose: boolean; adapt?: Crow
     axis: v3(axis.direction),
     params,
     pose: opts.withPose && crown?.kind === 'template' ? crown.pose : undefined,
-    adapt: opts.adapt ?? (opts.withPose && crown?.kind === 'template' ? crown.adapt : undefined),
+    adapt: opts.adapt ?? (opts.withPose ? activeAdapt(ctx.tooth) : undefined),
   };
 }
 

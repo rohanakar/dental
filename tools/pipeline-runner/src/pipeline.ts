@@ -298,11 +298,15 @@ export async function runCase(spec: GoldenCase, baseDir: string, options: RunOpt
   for (const [kind, report] of Object.entries(crown.adapt ?? {})) {
     if (!report) continue;
     const target = targets[kind as keyof typeof targets];
-    const reached = report.minClearanceMm >= target - ADAPT_TOLERANCE_MM;
+    const reached = report.minClearanceMm >= target - ADAPT_TOLERANCE_MM && !report.open;
     check(
       `crown.adapt.${kind}`,
       reached || Boolean(report.conflict),
-      reached ? `Adapted ${kind} clearance reaches the target` : `Adapted ${kind}: target not reached, conflict reported (${report.conflict?.kind})`,
+      reached
+        ? `Adapted ${kind} clearance reaches the target`
+        : report.open
+          ? `Adapted ${kind}: still open after adaptation`
+          : `Adapted ${kind}: target not reached, conflict reported (${report.conflict?.kind})`,
       report.minClearanceMm,
       round(target - ADAPT_TOLERANCE_MM),
     );

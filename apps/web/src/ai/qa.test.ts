@@ -38,6 +38,17 @@ describe('QA gates', () => {
     const conflict = { ...report, conflict: { kind: 'insufficient reduction', vertices: 12, minClearanceMm: -0.1, at: [0, 0, 0] as V3 } };
     expect(passed(adaptGate({ adapt: { occlusion: conflict } }))).toBe(false);
   });
+
+  it('adapt: fails when a contact is left open, with the gap in the message', () => {
+    const open = { movedVertices: 0, maxMoveMm: 0, minClearanceMm: 0.91, targetMm: 0.02, open: { clearanceMm: 0.91 } };
+    const closed = { movedVertices: 40, maxMoveMm: 0.3, minClearanceMm: 0.02, targetMm: 0.02 };
+    const qa = adaptGate({ adapt: { mesial: closed, distal: open } });
+    expect(passed(qa)).toBe(false);
+    expect(qa.find((c) => c.id === 'adapt.mesial')?.passed).toBe(true);
+    expect(qa.find((c) => c.id === 'adapt.distal')).toMatchObject({ passed: false, message: 'distal: contact open (0.91 mm)', value: 0.91, threshold: 0.02 });
+    const far = adaptGate({ adapt: { occlusion: { ...open, minClearanceMm: Infinity, open: { clearanceMm: Infinity } } } });
+    expect(far[0]).toMatchObject({ passed: false, message: 'occlusion: occlusion open (nothing within reach)' });
+  });
 });
 
 describe('sharpestTurnDeg (stride-based)', () => {

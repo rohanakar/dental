@@ -4,8 +4,12 @@ import { DataTexture, LinearFilter, RGBAFormat, SRGBColorSpace, UnsignedByteType
 export const MATCAP_PRESETS = {
   /** Dental stone / plaster for jaw scans. */
   stone: [0.86, 0.82, 0.74],
-  /** Tooth white for restorations. */
-  tooth: [0.96, 0.94, 0.88],
+  /**
+   * Design blue for restorations: clearly apart from the stone-coloured scans
+   * in hue and lightness (ΔE76 ≈ 40; the old tooth white was 11), so the crown
+   * never reads as part of the prep.
+   */
+  restoration: [0.62, 0.76, 0.95],
   /** Neutral, used when showing scanner vertex colors. */
   neutral: [0.95, 0.95, 0.95],
 } as const satisfies Record<string, readonly [number, number, number]>;

@@ -2,6 +2,7 @@ import type { ClinicalAxis, ClinicalDirection } from '@dcad/shared';
 import type { MouseEvent } from 'react';
 import { useGizmoStore } from '../../tools/gizmoTool';
 import { MOVE_MM, moveCrown, nudge, ROTATE_DEG, SCALE_PCT } from '../../tools/nudge';
+import { ReadaptNotice } from './CrownViewControls';
 import './NudgePad.css';
 
 const MOVES: Array<ClinicalDirection | null> = [null, 'buccal', 'occlusal', 'mesial', null, 'distal', null, 'lingual', 'cervical'];
@@ -18,6 +19,8 @@ const cap = (s: string) => s[0]!.toUpperCase() + s.slice(1);
  * = 0.5 mm), rotate about the clinical axes and scale along them. Every
  * button is one undoable command; the keyboard does the same moves
  * (←/→ mesial/distal, ↑/↓ buccal/lingual, PageUp/PageDown occlusal/cervical).
+ * A move shifts the anatomy while the margin stays on the prep, and switches
+ * a stored adaptation off until Re-adapt.
  */
 export function NudgePad() {
   const gizmo = useGizmoStore((s) => s.enabled);
@@ -26,8 +29,9 @@ export function NudgePad() {
 
   return (
     <div className="nudge-pad">
+      <ReadaptNotice />
       <div className="nudge-label">
-        Move {MOVE_MM.small} mm (Shift: {MOVE_MM.large} mm)
+        Move {MOVE_MM.small} mm (Shift: {MOVE_MM.large} mm). The cusps follow; the margin stays on the prep.
       </div>
       <div className="nudge-grid" role="group" aria-label="Move the crown">
         {MOVES.map((d, i) =>
@@ -36,7 +40,7 @@ export function NudgePad() {
               key={d}
               className="btn"
               aria-label={`Move crown ${MOVE_MM.small} mm ${d}`}
-              title={`Move ${d} (Shift: ${MOVE_MM.large} mm)`}
+              title={`Move ${d} (Shift: ${MOVE_MM.large} mm). Moves the anatomy; the margin stays on the prep.`}
               onClick={move(d)}
             >
               {cap(d)}

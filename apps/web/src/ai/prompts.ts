@@ -19,6 +19,8 @@ export function agentSystemPrompt(context: { fdi: number; crownProposed: boolean
     '- Make small steps: at most 0.5 mm per move, a few degrees per rotation, a few percent per scale.',
     `- Never use more than ${MAX_AGENT_ACTIONS} actions in one request. Stop as soon as the request is met.`,
     '- Prefer adapt_occlusion / set_contact for clearance and contact targets over moving the whole crown.',
+    '- Moving, rotating or scaling the crown (or changing a parameter) switches its adaptation off. After such a',
+    '  change, re-apply adapt_occlusion / set_contact with the targets from get_case_summary if they still apply.',
     '- The minimum material thickness always wins; if a conflict is reported, explain it instead of forcing it.',
     '- If a tool returns an error, correct the input or explain why the request cannot be done.',
     '- Do not invent patient data. Do not give clinical advice beyond the design request.',

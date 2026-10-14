@@ -80,15 +80,18 @@ export function crownGate(result: Pick<CrownResult, 'validation' | 'thickness' |
   ];
 }
 
-/** Adapt: every requested target was reached without a conflict. */
+/** Adapt: every requested target was reached, without a conflict and without leaving it open. */
 export function adaptGate(result: Pick<CrownResult, 'adapt'>): QaCheck[] {
   const reports = Object.entries(result.adapt ?? {});
   if (reports.length === 0) return [check('adapt.applied', false, 'No adaptation was applied')];
-  return reports.map(([kind, r]) =>
-    r?.conflict
-      ? check(`adapt.${kind}`, false, `${kind}: ${r.conflict.kind} at ${r.conflict.vertices} vertices`, r.conflict.minClearanceMm)
-      : check(`adapt.${kind}`, true, `${kind}: target reached`, r?.minClearanceMm),
-  );
+  return reports.map(([kind, r]) => {
+    if (r?.conflict) return check(`adapt.${kind}`, false, `${kind}: ${r.conflict.kind} at ${r.conflict.vertices} vertices`, r.conflict.minClearanceMm);
+    if (r?.open) {
+      const gap = Number.isFinite(r.open.clearanceMm) ? `${r.open.clearanceMm.toFixed(2)} mm` : 'nothing within reach';
+      return check(`adapt.${kind}`, false, `${kind}: ${kind === 'occlusion' ? 'occlusion' : 'contact'} open (${gap})`, r.open.clearanceMm, r.targetMm);
+    }
+    return check(`adapt.${kind}`, true, `${kind}: target reached`, r?.minClearanceMm);
+  });
 }
 
 export const passed = (qa: readonly QaCheck[]): boolean => qa.every((c) => c.passed);

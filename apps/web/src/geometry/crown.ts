@@ -1,6 +1,6 @@
 import type { CrownAdapt, DesignParams, Pose } from '@dcad/shared';
 import { Matrix4, Quaternion, Vector3 } from 'three';
-import { adaptContacts, adaptOcclusion, findConflict, type AdaptConflict, type AdaptInput, type AdaptReport } from './adapt';
+import { ADAPT_OPEN_TOLERANCE_MM, adaptContacts, adaptOcclusion, findConflict, type AdaptConflict, type AdaptInput, type AdaptReport } from './adapt';
 import { clearanceMap, thicknessMap, unmillableMap, type CrownMapName } from './crownMaps';
 import { templateForTooth, type CrownTemplate } from './crownTemplate';
 import { buildIntaglio, distanceFromMargin, measureIntaglioGap, offsetPrep, planeBasis, type GapCheck } from './intaglio';
@@ -9,7 +9,7 @@ import { validateClosedMesh, type MeshValidation } from './meshValidate';
 import { countSelfIntersections } from './selfIntersect';
 import { computeVertexNormals } from './normals';
 import { MinHeap } from './livewire';
-import { applyRbf, solveRbf } from './rbf';
+import { evaluateRbfFields, solveRbfFields } from './rbf';
 import { buildVertexAdjacency, type SurfaceGraph } from './surface';
 import { distanceToLoop, enforceThickness, THICKNESS_RAMP_MM, type IntaglioSurface } from './thickness';
 import type { V3 } from './pca';
@@ -194,8 +194,12 @@ export type CrownValidation = MeshValidation & {
   printable: boolean;
 };
 
-/** One adaptation's outcome; `conflict` when thickness won over the clearance target. */
-export type CrownAdaptReport = AdaptReport & { targetMm: number; conflict?: AdaptConflict };
+/**
+ * One adaptation's outcome: `conflict` when thickness won over the clearance
+ * target, `open` when the surface is still farther than the target (the
+ * contact or the occlusion is open; Infinity = nothing within reach).
+ */
+export type CrownAdaptReport = AdaptReport & { targetMm: number; conflict?: AdaptConflict; open?: { clearanceMm: number } };
 
 export interface CrownDesign {
   /** Closed crown: intaglio (rim first), template shell, margin band. */
@@ -211,6 +215,14 @@ export interface CrownDesign {
   intaglioVertices: number;
   /** First outer-shell vertex (= intaglioVertices); shell vertices run to the end of the mesh. */
   shellStart: number;
+  /**
+   * Per crown vertex: how far it follows a translation of the pose (0 =
+   * pinned, 1 = moves with the pose). The fit is linear in the pose position,
+   * so a move by d shifts vertex v by moveWeights[v]·d, up to thickness
+   * enforcement and adaptation. Intaglio vertices are 0, the cervical ring 0,
+   * the cusps 1. Used for instant move previews.
+   */
+  moveWeights: Float32Array;
   thickness: {
     /** Smallest material thickness (closest point to the intaglio) at least 1 mm from the margin. */
     minMm: number;
@@ -408,10 +420,26 @@ export function designCrown(input: CrownInput): CrownDesign {
     values.set(sub(outer[i]!, c), i * 3);
   });
   anchors.forEach((v, k) => centers.set(pointAt(shell, v), (T + k) * 3));
-  const field = solveRbf(centers, values, { kernel: 'cubic' });
-  applyRbf(field, shell);
-  // Ring vertices land exactly on the outer loop.
-  ring.forEach((v, i) => shell.set(outer[i]!, v * 3));
+  // Solved together with the move response: the same fit with a unit displacement on the ring and none on the
+  // anchors. Translating the pose by d changes the ring values by −d and leaves the anchors at 0, so (by linearity) a
+  // vertex moves by (1 − response)·d.
+  const unit = new Float64Array(values.length);
+  for (let i = 0; i < T; i++) unit[i * 3] = 1;
+  const fields = solveRbfFields(centers, [values, unit], { kernel: 'cubic' });
+  const shellMoveWeights = new Float32Array(tv);
+  const out = new Float64Array(6);
+  for (let v = 0; v < tv; v++) {
+    evaluateRbfFields(fields, pointAt(shell, v), out);
+    shell[v * 3] = shell[v * 3]! + out[0]!;
+    shell[v * 3 + 1] = shell[v * 3 + 1]! + out[1]!;
+    shell[v * 3 + 2] = shell[v * 3 + 2]! + out[2]!;
+    shellMoveWeights[v] = 1 - out[3]!;
+  }
+  // Ring vertices land exactly on the outer loop (and are pinned).
+  ring.forEach((v, i) => {
+    shell.set(outer[i]!, v * 3);
+    shellMoveWeights[v] = 0;
+  });
   lap('fit');
 
   // Assemble: intaglio | shell | band.
@@ -419,6 +447,8 @@ export function designCrown(input: CrownInput): CrownDesign {
   const positions = new Float32Array((ni + tv) * 3);
   positions.set(intaglio.mesh.positions, 0);
   positions.set(shell, ni * 3);
+  const moveWeights = new Float32Array(ni + tv);
+  moveWeights.set(shellMoveWeights, ni);
 
   const ti = template.mesh.indices;
   const indices = new Uint32Array(intaglio.mesh.indices.length + ti.length + T * 6);
@@ -502,6 +532,13 @@ export function designCrown(input: CrownInput): CrownDesign {
       const { minClearanceMm, conflict } = findConflict(c.input, c.kind);
       const report = adaptReports[c.key]!;
       report.minClearanceMm = minClearanceMm;
+      if (!conflict && !(minClearanceMm <= report.targetMm + ADAPT_OPEN_TOLERANCE_MM)) {
+        report.open = { clearanceMm: minClearanceMm };
+        const what = c.key === 'occlusion' ? 'Occlusion open' : `${c.key === 'mesial' ? 'Mesial' : 'Distal'} contact open`;
+        const toward = c.key === 'occlusion' ? 'occlusally' : c.key === 'mesial' ? 'mesially' : 'distally';
+        const gap = Number.isFinite(minClearanceMm) ? `${minClearanceMm.toFixed(2)} mm` : 'nothing within 3 mm';
+        warnings.push(`${what}: ${gap} (target ${report.targetMm} mm). Move the crown ${toward} and re-adapt.`);
+      }
       if (conflict) {
         report.conflict = conflict;
         warnings.push(
@@ -588,6 +625,7 @@ export function designCrown(input: CrownInput): CrownDesign {
     gapCheck,
     intaglioVertices: ni,
     shellStart: ni,
+    moveWeights,
     thickness: {
       minMm: minFar,
       minSlackMm: enforced.minSlackAfterMm,

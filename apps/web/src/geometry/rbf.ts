@@ -74,9 +74,22 @@ export function solveRbf(
   values: Float32Array | Float64Array,
   opts: { kernel?: RbfKernel; smoothing?: number } = {},
 ): RbfField {
+  return solveRbfFields(centers, [values], opts)[0]!;
+}
+
+/**
+ * Several fields over the same centres with one matrix factorization: the
+ * same as solveRbf for each entry of `valueSets` (evaluate them together with
+ * evaluateRbfFields).
+ */
+export function solveRbfFields(
+  centers: Float32Array | Float64Array,
+  valueSets: ReadonlyArray<Float32Array | Float64Array>,
+  opts: { kernel?: RbfKernel; smoothing?: number } = {},
+): RbfField[] {
   const kernel = opts.kernel ?? 'cubic';
   const n = centers.length / 3;
-  if (values.length !== centers.length) throw new Error('RBF: one xyz value per centre');
+  for (const values of valueSets) if (values.length !== centers.length) throw new Error('RBF: one xyz value per centre');
   if (n < 4) throw new Error('RBF: need at least 4 centres');
   const shift: V3 = [0, 0, 0];
   for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) shift[k] = shift[k]! + centers[i * 3 + k]! / n;
@@ -89,8 +102,9 @@ export function solveRbf(
   for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) c[i * 3 + k] = (centers[i * 3 + k]! - shift[k]!) / scale;
 
   const m = n + 4;
+  const cols = 3 * valueSets.length;
   const a = new Float64Array(m * m);
-  const b = new Float64Array(m * 3);
+  const b = new Float64Array(m * cols);
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {
       const r = Math.hypot(c[i * 3]! - c[j * 3]!, c[i * 3 + 1]! - c[j * 3 + 1]!, c[i * 3 + 2]! - c[j * 3 + 2]!);
@@ -102,18 +116,48 @@ export function solveRbf(
       a[i * m + n + q] = row[q]!;
       a[(n + q) * m + i] = row[q]!;
     }
-    for (let k = 0; k < 3; k++) b[i * 3 + k] = values[i * 3 + k]!;
+    valueSets.forEach((values, s) => {
+      for (let k = 0; k < 3; k++) b[i * cols + s * 3 + k] = values[i * 3 + k]!;
+    });
   }
-  luSolve(a, m, b, 3);
-  return {
-    kernel,
-    centers: c,
-    weights: b.slice(0, n * 3),
-    // b rows n..n+3 are [a0, ax, ay, az], each with 3 output components.
-    affine: b.slice(n * 3, (n + 4) * 3),
-    shift,
-    scale,
-  };
+  luSolve(a, m, b, cols);
+  return valueSets.map((_, s) => {
+    // Rows 0..n-1 are kernel weights, rows n..n+3 are [a0, ax, ay, az]; field s owns columns 3s..3s+2.
+    const column = (row0: number, rows: number) => {
+      const out = new Float64Array(rows * 3);
+      for (let r = 0; r < rows; r++) for (let k = 0; k < 3; k++) out[r * 3 + k] = b[(row0 + r) * cols + s * 3 + k]!;
+      return out;
+    };
+    return { kernel, centers: c, weights: column(0, n), affine: column(n, 4), shift, scale };
+  });
+}
+
+/**
+ * Evaluate fields from one solveRbfFields call at world point p (one kernel
+ * evaluation per centre for all of them): out[3s..3s+2] = field s at p.
+ */
+export function evaluateRbfFields(fields: readonly RbfField[], p: V3, out: Float64Array): Float64Array {
+  const f0 = fields[0]!;
+  const x = (p[0] - f0.shift[0]) / f0.scale;
+  const y = (p[1] - f0.shift[1]) / f0.scale;
+  const z = (p[2] - f0.shift[2]) / f0.scale;
+  fields.forEach(({ affine }, s) => {
+    out[s * 3] = affine[0]! + affine[3]! * x + affine[6]! * y + affine[9]! * z;
+    out[s * 3 + 1] = affine[1]! + affine[4]! * x + affine[7]! * y + affine[10]! * z;
+    out[s * 3 + 2] = affine[2]! + affine[5]! * x + affine[8]! * y + affine[11]! * z;
+  });
+  const { centers } = f0;
+  const n = centers.length / 3;
+  for (let i = 0; i < n; i++) {
+    const f = phi(f0.kernel, Math.hypot(x - centers[i * 3]!, y - centers[i * 3 + 1]!, z - centers[i * 3 + 2]!));
+    for (let s = 0; s < fields.length; s++) {
+      const w = fields[s]!.weights;
+      out[s * 3] = out[s * 3]! + f * w[i * 3]!;
+      out[s * 3 + 1] = out[s * 3 + 1]! + f * w[i * 3 + 1]!;
+      out[s * 3 + 2] = out[s * 3 + 2]! + f * w[i * 3 + 2]!;
+    }
+  }
+  return out;
 }
 
 /** Displacement at world point p. */

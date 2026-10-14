@@ -35,6 +35,10 @@ function useKeyboardShortcuts() {
         const key = e.key.toLowerCase();
         if (key === 'z' || key === 'y') {
           e.preventDefault();
+          if (design.transaction) {
+            useToolStore.getState().set({ message: { kind: 'warning', text: 'Accept or reject the open draft first; undo works after that.' } });
+            return;
+          }
           if (key === 'y' || e.shiftKey) design.redo();
           else design.undo();
         }

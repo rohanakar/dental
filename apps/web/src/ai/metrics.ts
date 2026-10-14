@@ -1,4 +1,5 @@
 import type { DesignDocument, ToothDesign } from '@dcad/shared';
+import { activeAdapt, adaptationStale } from '../design/adaptation';
 import { crownCentre, templateHeight } from '../design/clinical';
 import { useDesignStore } from '../design/store';
 import { crownTool } from '../tools/crownTool';
@@ -18,8 +19,13 @@ export interface DesignMetrics {
   minThicknessMm: number | null;
   marginLengthMm: number | null;
   printable: boolean | null;
-  /** Adaptation conflicts, e.g. "occlusion: insufficient reduction (421 vertices, 0.31 mm)". */
+  /** Adaptation problems: conflicts ("occlusion: insufficient reduction (421 vertices, 0.31 mm)") and open contacts. */
   conflicts: string[];
+  /**
+   * Stored adaptation: applied, or stale (a later move or edit switched it
+   * off until it is re-applied), or none.
+   */
+  adaptation: 'applied' | 'stale' | 'none';
 }
 
 const round = (x: number | null): number | null => (x === null || !Number.isFinite(x) ? null : Math.round(x * 100) / 100);
@@ -79,6 +85,7 @@ export function metricsFrom(tooth: ToothDesign, result: CrownResult | null): Des
     marginLengthMm,
     printable: null,
     conflicts: [],
+    adaptation: tooth.crown ? (activeAdapt(tooth) ? 'applied' : adaptationStale(tooth) ? 'stale' : 'none') : 'none',
   };
   if (!result || !tooth.frame) return base;
   const shellStart = (result as CrownResult & { shellStart?: number }).shellStart ?? result.intaglioVertices;
@@ -91,9 +98,11 @@ export function metricsFrom(tooth: ToothDesign, result: CrownResult | null): Des
     centre,
     mesial: tooth.frame.mesial,
   });
-  const conflicts = Object.entries(result.adapt ?? {}).flatMap(([kind, r]) =>
-    r?.conflict ? [`${kind}: ${r.conflict.kind} (${r.conflict.vertices} vertices, ${r.conflict.minClearanceMm.toFixed(2)} mm)`] : [],
-  );
+  const conflicts = Object.entries(result.adapt ?? {}).flatMap(([kind, r]) => {
+    if (r?.conflict) return [`${kind}: ${r.conflict.kind} (${r.conflict.vertices} vertices, ${r.conflict.minClearanceMm.toFixed(2)} mm)`];
+    if (r?.open) return [`${kind}: open (${Number.isFinite(r.open.clearanceMm) ? `${r.open.clearanceMm.toFixed(2)} mm` : 'nothing within reach'})`];
+    return [];
+  });
   return {
     ...base,
     ...reduced,

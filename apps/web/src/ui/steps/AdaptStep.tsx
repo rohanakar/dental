@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
+import { adaptationStale } from '../../design/adaptation';
 import { useDesignStore, selectActiveTooth } from '../../design/store';
 import { crownTool } from '../../tools/crownTool';
+import { userEdit } from '../../tools/nudge';
 import { useToolStore } from '../../tools/toolStore';
 import type { AdaptReportView } from '../../workers/analysisTypes';
 import { CrownStatusView } from './CrownStatusView';
+import { FocusControls, ReadaptNotice } from './CrownViewControls';
+import './NudgePad.css';
 
 const SIDES = [
   { key: 'occlusion', label: 'Occlusion', what: 'antagonist' },
@@ -11,8 +15,9 @@ const SIDES = [
   { key: 'distal', label: 'Distal contact', what: 'distal neighbour' },
 ] as const;
 
-function Report({ report }: { report?: AdaptReportView }) {
+function Report({ report, label, what }: { report?: AdaptReportView; label: string; what: string }) {
   if (!report) return null;
+  const open = report.open;
   return (
     <>
       <span className="muted small">
@@ -23,6 +28,13 @@ function Report({ report }: { report?: AdaptReportView }) {
           {report.conflict.kind === 'insufficient reduction'
             ? `Insufficient reduction: ${report.conflict.vertices} vertices stay at ${report.conflict.minClearanceMm.toFixed(2)} mm because the crown cannot get thinner (red marker). Reduce the prep or lower the target.`
             : `Contact too tight: ${report.conflict.vertices} vertices stay at ${report.conflict.minClearanceMm.toFixed(2)} mm (red marker).`}
+        </div>
+      )}
+      {open && (
+        <div className="warning">
+          {label} open: {Number.isFinite(open.clearanceMm) ? `${open.clearanceMm.toFixed(2)} mm` : `no ${what} within reach`}
+          {report.targetMm !== undefined && ` (target ${report.targetMm} mm)`}. Adaptation only closes gaps up to 0.5 mm; move
+          the crown toward the {what} and re-adapt.
         </div>
       )}
     </>
@@ -48,12 +60,12 @@ export function AdaptStep() {
   if (!tooth) return null;
   if (!crown) return <div className="step-body warning">Propose a crown first.</div>;
   const frame = tooth.frame;
-  const dispatch = useDesignStore.getState().dispatch;
+  const stale = adaptationStale(tooth);
 
   const adapt = (key: (typeof SIDES)[number]['key']) => {
     const value = targets[key];
-    if (key === 'occlusion') dispatch({ type: 'adaptOcclusion', fdi: tooth.fdi, clearanceMm: value });
-    else dispatch({ type: 'setContact', fdi: tooth.fdi, side: key, targetMm: value });
+    if (key === 'occlusion') userEdit({ type: 'adaptOcclusion', fdi: tooth.fdi, clearanceMm: value });
+    else userEdit({ type: 'setContact', fdi: tooth.fdi, side: key, targetMm: value });
   };
 
   return (
@@ -62,6 +74,8 @@ export function AdaptStep() {
         Moves the occlusal surface and the proximal walls until the clearance to the antagonist and the neighbours reaches
         the target. Negative targets make intentional contact. The minimum thickness always wins; conflicts are reported.
       </p>
+      <FocusControls />
+      <ReadaptNotice />
       {SIDES.map(({ key, label, what }) => {
         const active = key === 'occlusion' ? crown.adapt?.occlusion : crown.adapt?.[key];
         const noNeighbour = key !== 'occlusion' && !(key === 'mesial' ? frame?.mesialContact : frame?.distalContact);
@@ -70,7 +84,7 @@ export function AdaptStep() {
             <label className="param-field" title={`Target clearance to the ${what} (mm)`}>
               <span>
                 {label}
-                {active && <span className="badge">on</span>}
+                {active && <span className={`badge${stale ? ' stale' : ''}`}>{stale ? 'off' : 'on'}</span>}
               </span>
               <input
                 type="number"
@@ -85,7 +99,7 @@ export function AdaptStep() {
             <button className="btn" disabled={computing || noNeighbour} onClick={() => adapt(key)} title={noNeighbour ? `No ${what} found in the tooth frame` : undefined}>
               Adapt {label.toLowerCase()}
             </button>
-            <Report report={reports?.[key]} />
+            <Report report={reports?.[key]} label={label} what={what} />
           </div>
         );
       })}
@@ -95,7 +109,7 @@ export function AdaptStep() {
           disabled={!crown.adapt}
           onClick={() => {
             const { adapt: _adapt, ...bare } = crown;
-            dispatch({ type: 'setCrown', fdi: tooth.fdi, crown: bare });
+            userEdit({ type: 'setCrown', fdi: tooth.fdi, crown: bare });
           }}
         >
           Reset adaptation

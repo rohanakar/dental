@@ -88,7 +88,10 @@ export interface AdaptReportView {
   movedVertices: number;
   maxMoveMm: number;
   minClearanceMm: number;
+  targetMm?: number;
   conflict?: AdaptConflict;
+  /** Still farther than the target after adaptation (Infinity = nothing within reach). */
+  open?: { clearanceMm: number };
 }
 
 export interface CrownResult {
@@ -100,12 +103,24 @@ export interface CrownResult {
   minAxialThicknessMm: number;
   gapCheck: GapCheck;
   intaglioVertices: number;
+  /** First outer-shell vertex (= intaglioVertices). */
+  shellStart: number;
+  /** Per vertex: how far it follows a translation of the pose (0 = pinned, 1 = moves with it). */
+  moveWeights: Float32Array;
   thickness?: { minMm: number; pushedVertices: number; maxPushMm: number };
   maps?: Partial<Record<CrownMapName, Float32Array>>;
   adapt?: { occlusion?: AdaptReportView; mesial?: AdaptReportView; distal?: AdaptReportView };
   warnings: string[];
   timingsMs: Record<string, number>;
   ms: number;
+}
+
+/** Jaw faces to draw in focus while the crown is adjusted: the prep region inside the margin. */
+export interface FocusFacesRequest {
+  jawSha: string;
+  /** Dense margin, xyz per point. */
+  margin: Float32Array;
+  occlusal: V3;
 }
 
 export interface AutoMarginRequest {

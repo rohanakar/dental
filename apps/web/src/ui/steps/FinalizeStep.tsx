@@ -2,6 +2,8 @@ import { useDesignStore, selectActiveTooth } from '../../design/store';
 import { crownTool } from '../../tools/crownTool';
 import { useToolStore } from '../../tools/toolStore';
 import { CrownStatusView } from './CrownStatusView';
+import { ReadaptNotice } from './CrownViewControls';
+import './NudgePad.css';
 
 export function FinalizeStep() {
   const tooth = useDesignStore(selectActiveTooth);
@@ -14,6 +16,8 @@ export function FinalizeStep() {
   return (
     <div className="step-body">
       <p className="muted">Exports a binary STL (mm) and a construction-info JSON with the margin, axis, parameters and checks.</p>
+      {/* Exported as shown: re-adapt first if a later edit switched the adaptation off. */}
+      <ReadaptNotice />
       <CrownStatusView detailed />
       {ready && !valid && <div className="warning">The mesh did not pass validation. Exporting anyway is possible but it may not mill.</div>}
       {ready && valid && crown?.validation?.printable === false && (

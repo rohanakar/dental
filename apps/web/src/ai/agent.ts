@@ -73,6 +73,7 @@ function metricsSummary(m: Awaited<ReturnType<typeof designMetrics>>): string {
   if (m.distalContactMm !== null) parts.push(`distal ${m.distalContactMm.toFixed(2)} mm`);
   if (m.minThicknessMm !== null) parts.push(`min thickness ${m.minThicknessMm.toFixed(2)} mm`);
   if (m.conflicts.length) parts.push(`conflicts: ${m.conflicts.join('; ')}`);
+  if (m.adaptation === 'stale') parts.push('adaptation off since the last change (re-apply adapt_occlusion / set_contact)');
   return parts.join(', ') || 'no crown metrics';
 }
 

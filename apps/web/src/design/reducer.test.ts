@@ -1,6 +1,7 @@
 import type { Command, Crown, InsertionAxis, MarginLine, Pose, ScanRef, ToothFrame } from '@dcad/shared';
 import { MATERIAL_PRESETS } from '@dcad/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { activeAdapt, adaptationStale, readaptCommands } from './adaptation';
 import { newDocument } from './document';
 import { applyCommand, applyCommands, CommandError } from './reducer';
 import { useDesignStore } from './store';
@@ -257,6 +258,36 @@ describe('adaptation commands', () => {
     const { adapt: _a, ...bare } = doc.teeth[0]!.crown as Extract<Crown, { kind: 'template' }>;
     doc = applyCommand(doc, { type: 'setCrown', fdi: 36, crown: bare });
     expect((doc.teeth[0]!.crown as { adapt?: unknown }).adapt).toBeUndefined();
+  });
+
+  it('apply only while adapt is done; Re-adapt restores them after a move as one undo entry', () => {
+    let doc = docWithCrown(36, leftHanded);
+    expect(activeAdapt(doc.teeth[0]!)).toBeUndefined();
+    expect(adaptationStale(doc.teeth[0]!)).toBe(false);
+    expect(readaptCommands(doc.teeth[0]!)).toEqual([]);
+    doc = applyCommands(doc, [
+      { type: 'adaptOcclusion', fdi: 36, clearanceMm: 0.05 },
+      { type: 'setContact', fdi: 36, side: 'distal', targetMm: -0.01 },
+    ]);
+    const targets = { occlusion: { clearanceMm: 0.05 }, distal: { targetMm: -0.01 } };
+    expect(activeAdapt(doc.teeth[0]!)).toEqual(targets);
+    doc = applyCommand(doc, { type: 'moveCrown', fdi: 36, direction: 'occlusal', mm: 0.5 });
+    const moved = doc.teeth[0]!;
+    expect(activeAdapt(moved)).toBeUndefined();
+    expect(adaptationStale(moved)).toBe(true);
+    const cmds = readaptCommands(moved);
+    expect(cmds).toEqual([
+      { type: 'adaptOcclusion', fdi: 36, clearanceMm: 0.05 },
+      { type: 'setContact', fdi: 36, side: 'distal', targetMm: -0.01 },
+    ]);
+    const s = useDesignStore.getState;
+    s().load(doc, 0);
+    s().dispatch(cmds);
+    expect(s().past).toHaveLength(1);
+    expect(s().doc.teeth[0]!.steps.adapt).toBe('done');
+    expect(activeAdapt(s().doc.teeth[0]!)).toEqual(targets);
+    expect(poseOf(s().doc)).toEqual(poseOf(doc));
+    expect(adaptationStale(s().doc.teeth[0]!)).toBe(false);
   });
 });
 

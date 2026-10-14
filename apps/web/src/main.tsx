@@ -5,6 +5,8 @@ import { exposeForDebug } from './debug';
 import { useDesignStore } from './design/store';
 import { useSceneStore } from './state/sceneStore';
 import { useToolStore } from './tools/toolStore';
+import { crownTool } from './tools/crownTool';
+import { analysis } from './workers/geometryClient';
 import { useOrchestrator } from './ai/orchestrator';
 import { useAssistant } from './ai/agent';
 import { App } from './ui/App';
@@ -14,6 +16,8 @@ exposeForDebug('scene', useSceneStore);
 exposeForDebug('tools', useToolStore);
 exposeForDebug('orchestrator', useOrchestrator);
 exposeForDebug('assistant', useAssistant);
+exposeForDebug('crownTool', crownTool);
+exposeForDebug('analysis', analysis);
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root element missing');

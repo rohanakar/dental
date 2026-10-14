@@ -16,8 +16,8 @@ import {
   Vector2,
   Vector3,
   Vector4,
+  BufferGeometry,
   WebGLRenderer,
-  type BufferGeometry,
   type Intersection,
 } from 'three';
 import { acceleratedRaycast } from 'three-mesh-bvh';
@@ -44,9 +44,72 @@ export interface ViewerHit {
   distance: number;
 }
 
+/**
+ * Focus look for a scan (see Viewer.setObjectFocus): `faces` keep the
+ * object's normal look, everything else is drawn at `contextOpacity` × the
+ * object's opacity and greyed by `desaturate`.
+ */
+export interface FocusLook {
+  /** Face ids (BVH order) shown in focus; null = the whole object is surroundings. */
+  faces: Uint32Array | null;
+  contextOpacity: number;
+  desaturate: number;
+}
+
 interface ViewerObject {
   mesh: Mesh<BufferGeometry, SurfaceMaterial>;
   kind: ObjectKind;
+  /** The object's own opacity (object panel, crown slider). */
+  opacity: number;
+  focus: (FocusLook & { overlay: Mesh<BufferGeometry, SurfaceMaterial> | null }) | null;
+}
+
+/** Shallow copy of some faces of an indexed geometry, with compacted vertices (position, normal, colour). */
+function subsetGeometry(source: BufferGeometry, faces: Uint32Array): BufferGeometry {
+  const index = source.index!.array;
+  const remap = new Map<number, number>();
+  const tri = new Uint32Array(faces.length * 3);
+  const used: number[] = [];
+  for (let i = 0; i < faces.length; i++) {
+    for (let k = 0; k < 3; k++) {
+      const v = index[faces[i]! * 3 + k]!;
+      let j = remap.get(v);
+      if (j === undefined) {
+        j = used.length;
+        remap.set(v, j);
+        used.push(v);
+      }
+      tri[i * 3 + k] = j;
+    }
+  }
+  const g = new BufferGeometry();
+  for (const name of ['position', 'normal', 'color']) {
+    const attr = source.getAttribute(name) as BufferAttribute | undefined;
+    if (!attr) continue;
+    const { itemSize } = attr;
+    const src = attr.array as Float32Array | Uint8Array;
+    const out = new (src.constructor as Float32ArrayConstructor | Uint8ArrayConstructor)(used.length * itemSize);
+    used.forEach((v, j) => out.set(src.subarray(v * itemSize, v * itemSize + itemSize), j * itemSize));
+    g.setAttribute(name, new BufferAttribute(out, itemSize, attr.normalized));
+  }
+  g.setIndex(new BufferAttribute(tri, 1));
+  g.computeBoundingSphere();
+  return g;
+}
+
+/** Polygon offset of a scan's dimmed surroundings in the focus view (the surface default is 1). */
+const SURROUNDINGS_POLYGON_OFFSET = 2;
+
+/** Opacity < 1 renders transparent (no depth writes, back faces untinted so the far side reads as surface). */
+function setMaterialOpacity(m: SurfaceMaterial, opacity: number): void {
+  const transparent = opacity < 0.999;
+  if (m.transparent !== transparent) {
+    m.transparent = transparent;
+    m.depthWrite = !transparent;
+    m.needsUpdate = true;
+  }
+  m.opacity = opacity;
+  m.userData.uniforms.uBackMix.value = transparent ? 0 : 1;
 }
 
 /**
@@ -159,11 +222,11 @@ export class Viewer {
   addObject(id: string, geometry: BufferGeometry, opts: { kind?: ObjectKind; vertexColors?: boolean } = {}): void {
     this.removeObject(id);
     const kind = opts.kind ?? 'jaw';
-    const material = createSurfaceMaterial(this.matcap(kind === 'jaw' ? 'stone' : 'tooth'));
+    const material = createSurfaceMaterial(this.matcap(kind === 'jaw' ? 'stone' : 'restoration'));
     const mesh = new Mesh(geometry, material);
     mesh.name = id;
     mesh.raycast = acceleratedRaycast;
-    this.objects.set(id, { mesh, kind });
+    this.objects.set(id, { mesh, kind, opacity: 1, focus: null });
     this.scene.add(mesh);
     this.setObjectVertexColors(id, Boolean(opts.vertexColors));
     this.requestRender();
@@ -173,6 +236,7 @@ export class Viewer {
   removeObject(id: string): void {
     const obj = this.objects.get(id);
     if (!obj) return;
+    this.disposeOverlay(obj);
     this.scene.remove(obj.mesh);
     obj.mesh.material.dispose();
     this.objects.delete(id);
@@ -199,16 +263,38 @@ export class Viewer {
   setObjectOpacity(id: string, opacity: number): void {
     const obj = this.objects.get(id);
     if (!obj) return;
-    const m = obj.mesh.material;
-    const transparent = opacity < 0.999;
-    if (m.transparent !== transparent) {
-      m.transparent = transparent;
-      m.depthWrite = !transparent;
-      m.needsUpdate = true;
+    obj.opacity = opacity;
+    this.applyLook(obj);
+  }
+
+  /**
+   * Focus view for a scan, or null for its normal look. The focus faces are
+   * a small opaque copy with the usual surface material; the object itself
+   * becomes the dimmed, greyed surroundings and is pushed back in depth
+   * (polygon offset), so its own copy of the focus faces loses the depth
+   * test while the copy meets the crown exactly as the scan did. Picking
+   * still hits the object (the copy is not a raycast target).
+   */
+  setObjectFocus(id: string, look: FocusLook | null): void {
+    const obj = this.objects.get(id);
+    if (!obj) return;
+    if (!look) {
+      this.disposeOverlay(obj);
+      obj.focus = null;
+    } else {
+      let overlay = obj.focus?.faces === look.faces ? obj.focus.overlay : null;
+      if (!overlay) {
+        this.disposeOverlay(obj);
+        if (look.faces && look.faces.length > 0) {
+          overlay = new Mesh(subsetGeometry(obj.mesh.geometry, look.faces), createSurfaceMaterial(obj.mesh.material.matcap!));
+          overlay.name = `${id}:focus`;
+          overlay.raycast = () => undefined;
+          obj.mesh.add(overlay);
+        }
+      }
+      obj.focus = { ...look, overlay };
     }
-    m.opacity = opacity;
-    m.userData.uniforms.uBackMix.value = transparent ? 0 : 1;
-    this.requestRender();
+    this.applyLook(obj);
   }
 
   setObjectVertexColors(id: string, enabled: boolean): void {
@@ -217,9 +303,9 @@ export class Viewer {
     const m = obj.mesh.material;
     const useColors = enabled && Boolean(obj.mesh.geometry.getAttribute('color'));
     m.vertexColors = useColors;
-    m.matcap = this.matcap(useColors ? 'neutral' : obj.kind === 'jaw' ? 'stone' : 'tooth');
+    m.matcap = this.matcap(useColors ? 'neutral' : obj.kind === 'jaw' ? 'stone' : 'restoration');
     m.needsUpdate = true;
-    this.requestRender();
+    this.applyLook(obj);
   }
 
   /**
@@ -331,9 +417,8 @@ export class Viewer {
 
   /**
    * Translate gizmo in the tooth frame (see TranslateGizmo), or null to hide
-   * it. While dragging, the object `objectId` is offset as a preview; on
-   * release `onCommit` gets the world delta and the object snaps back (the
-   * caller turns the delta into commands and recomputes the object).
+   * it. The caller previews the drag from `onDrag` and turns the delta from
+   * `onCommit` into commands.
    */
   setGizmo(options: GizmoOptions | null): void {
     if (!options && !this.gizmo) return;
@@ -342,14 +427,6 @@ export class Viewer {
         requestRender: () => this.requestRender(),
         setCameraEnabled: (enabled) => {
           this.controls.enabled = enabled;
-        },
-        previewOffset: (id, delta) => {
-          const obj = this.objects.get(id);
-          if (!obj) return;
-          if (delta) obj.mesh.position.copy(delta);
-          else obj.mesh.position.set(0, 0, 0);
-          obj.mesh.updateMatrixWorld();
-          this.requestRender();
         },
       });
     }
@@ -445,6 +522,37 @@ export class Viewer {
   }
 
   // ---- internals -------------------------------------------------------------
+
+  /** Material state from the object's opacity and focus look. */
+  private applyLook(obj: ViewerObject): void {
+    const m = obj.mesh.material;
+    const focus = obj.focus;
+    setMaterialOpacity(m, obj.opacity * (focus?.contextOpacity ?? 1));
+    m.userData.uniforms.uDesaturate.value = focus?.desaturate ?? 0;
+    // Surroundings sit behind the focus copy and anything coincident with it (the surface default is 1).
+    m.polygonOffsetFactor = m.polygonOffsetUnits = focus ? SURROUNDINGS_POLYGON_OFFSET : 1;
+    const overlay = focus?.overlay;
+    if (overlay) {
+      const o = overlay.material;
+      const useColors = m.vertexColors && Boolean(overlay.geometry.getAttribute('color'));
+      if (o.matcap !== m.matcap || o.vertexColors !== useColors) {
+        o.matcap = m.matcap;
+        o.vertexColors = useColors;
+        o.needsUpdate = true;
+      }
+      setMaterialOpacity(o, obj.opacity);
+    }
+    this.requestRender();
+  }
+
+  private disposeOverlay(obj: ViewerObject): void {
+    const overlay = obj.focus?.overlay;
+    if (!overlay) return;
+    obj.mesh.remove(overlay);
+    overlay.geometry.dispose();
+    overlay.material.dispose();
+    obj.focus = obj.focus && { ...obj.focus, overlay: null };
+  }
 
   private lut(name: ColorMapName) {
     let t = this.luts.get(name);

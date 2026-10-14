@@ -1,7 +1,20 @@
 import * as Comlink from 'comlink';
 import type { BufferGeometry } from 'three';
 import type { GeometryWorkerApi } from './geometry.worker';
-import type { AutoMarginRequest, AutoMarginResult, AxisAnalysis, AxisRequest, CrownRequest, CrownResult, FrameEstimate, FrameRequest, MarginTrace, SurfaceInfo, V3 } from './analysisTypes';
+import type {
+  AutoMarginRequest,
+  AutoMarginResult,
+  AxisAnalysis,
+  AxisRequest,
+  CrownRequest,
+  CrownResult,
+  FocusFacesRequest,
+  FrameEstimate,
+  FrameRequest,
+  MarginTrace,
+  SurfaceInfo,
+  V3,
+} from './analysisTypes';
 import { LatestWins } from './latestWins';
 import { geometryFromPayload, type ScanPayload } from './scanPayload';
 
@@ -75,4 +88,6 @@ export const analysis = {
   axisUnlatched: (request: AxisRequest): Promise<AxisAnalysis> => geometryWorker().axisAnalysis(request),
   /** Like designCrown but never superseded (independent evaluations, e.g. metrics). */
   designCrownUnlatched: (request: CrownRequest): Promise<CrownResult> => geometryWorker().designCrown(request),
+  /** Prep faces drawn in focus while the crown is adjusted. */
+  focusFaces: (request: FocusFacesRequest): Promise<Uint32Array> => latest.run('focus', () => geometryWorker().focusFaces(request)),
 };

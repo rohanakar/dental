@@ -7,6 +7,8 @@ export interface SurfaceUniforms {
   /** Colour-map LUT (256×1) and the scalar range mapped onto it. */
   uLut: { value: Texture | null };
   uRange: { value: Vector2 };
+  /** 0 = full colour, 1 = grey (the dimmed surroundings of the focus view). */
+  uDesaturate: { value: number };
 }
 
 export interface SurfaceMaterial extends MeshMatcapMaterial {
@@ -30,6 +32,7 @@ export function createSurfaceMaterial(matcap: Texture, backColor = new Color('#b
     uBackMix: { value: 1 },
     uLut: { value: null },
     uRange: { value: new Vector2(0, 1) },
+    uDesaturate: { value: 0 },
   };
   const material = new MeshMatcapMaterial({
     matcap,
@@ -54,6 +57,7 @@ export function createSurfaceMaterial(matcap: Texture, backColor = new Color('#b
           'uniform sampler2D matcap;',
           'uniform vec3 uBackColor;',
           'uniform float uBackMix;',
+          'uniform float uDesaturate;',
           '#ifdef USE_SCALAR_MAP',
           'uniform sampler2D uLut;',
           'uniform vec2 uRange;',
@@ -77,10 +81,11 @@ export function createSurfaceMaterial(matcap: Texture, backColor = new Color('#b
           '  float shade = 0.55 + 0.45 * dot( matcapColor.rgb, vec3( 0.333 ) );',
           '  gl_FragColor.rgb = mix( gl_FragColor.rgb, uBackColor * shade, uBackMix );',
           '}',
+          'gl_FragColor.rgb = mix( gl_FragColor.rgb, vec3( dot( gl_FragColor.rgb, vec3( 0.299, 0.587, 0.114 ) ) ), uDesaturate );',
         ].join('\n'),
       );
   };
-  material.customProgramCacheKey = () => `dcad-surface-v2${material.defines?.USE_SCALAR_MAP ? '-scalar' : ''}`;
+  material.customProgramCacheKey = () => `dcad-surface-v3${material.defines?.USE_SCALAR_MAP ? '-scalar' : ''}`;
   return material;
 }
 

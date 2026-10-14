@@ -4,13 +4,12 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 export type V3 = [number, number, number];
 
 export interface GizmoOptions {
-  /** Viewer object moved as a live preview while dragging (e.g. 'crown'). */
-  objectId: string;
-  /** Where the gizmo sits (e.g. the crown's mid-height centre). */
+  /** Where the gizmo sits (e.g. the centre of the crown's cusps). */
   position: V3;
   /** Tooth frame; the gizmo's handles follow it. */
   axes: { mesial: V3; buccal: V3; occlusal: V3 };
-  onDrag?(deltaWorld: V3): void;
+  /** Live drag translation for the caller's preview; null when the drag ends (just before onCommit). */
+  onDrag?(deltaWorld: V3 | null): void;
   /** Called once on release with the total world translation (not called for a zero move). */
   onCommit(deltaWorld: V3): void;
 }
@@ -18,8 +17,6 @@ export interface GizmoOptions {
 interface GizmoHost {
   requestRender(): void;
   setCameraEnabled(enabled: boolean): void;
-  /** Offset a viewer object for preview, or reset it (null). */
-  previewOffset(objectId: string, delta: Vector3 | null): void;
 }
 
 /**
@@ -56,7 +53,6 @@ export class TranslateGizmo {
     this.controls.addEventListener('objectChange', () => {
       if (!this.dragging || !this.options) return;
       const delta = this.proxy.position.clone().sub(this.start);
-      host.previewOffset(this.options.objectId, delta);
       this.options.onDrag?.(delta.toArray() as V3);
     });
     this.controls.enabled = false;
@@ -124,7 +120,7 @@ export class TranslateGizmo {
     this.proxy.position.copy(this.start);
     this.proxy.updateMatrixWorld();
     if (options) {
-      this.host.previewOffset(options.objectId, null);
+      options.onDrag?.(null);
       if (delta.lengthSq() > 1e-10) options.onCommit(delta.toArray() as V3);
     }
     this.host.requestRender();

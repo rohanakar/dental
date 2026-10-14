@@ -3,6 +3,7 @@ import { CROWN_MAPS, crownTool } from '../../tools/crownTool';
 import type { CrownMapName } from '../../workers/analysisTypes';
 import { useToolStore } from '../../tools/toolStore';
 import { CrownStatusView } from './CrownStatusView';
+import { FocusControls } from './CrownViewControls';
 import { NudgePad } from './NudgePad';
 import { AutoDesign } from '../ai/AutoDesign';
 
@@ -56,6 +57,7 @@ export function ProposalStep() {
               onChange={(e) => crownTool.setOpacity(Number(e.target.value))}
             />
           </div>
+          <FocusControls />
         </>
       )}
       <AutoDesign compact />

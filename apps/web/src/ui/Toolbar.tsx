@@ -16,15 +16,17 @@ export const VIEWS: Array<{ view: StandardView; label: string; key: string }> = 
 export function Toolbar() {
   const hasReady = useSceneStore((s) => s.objects.some((o) => o.phase === 'ready'));
   const projection = useSceneStore((s) => s.projection);
-  const canUndo = useDesignStore((s) => s.past.length > 0);
-  const canRedo = useDesignStore((s) => s.future.length > 0);
+  // Undo/redo wait while a draft (auto-design or assistant) is open for review.
+  const draftOpen = useDesignStore((s) => Boolean(s.transaction));
+  const canUndo = useDesignStore((s) => s.past.length > 0) && !draftOpen;
+  const canRedo = useDesignStore((s) => s.future.length > 0) && !draftOpen;
   const { undo, redo } = useDesignStore.getState();
 
   return (
     <header className="toolbar">
       <span className="brand">Dental CAD</span>
       <div className="group" role="group" aria-label="History">
-        <button className="btn" disabled={!canUndo} title="Undo (Ctrl/⌘+Z)" aria-label="Undo" onClick={undo}>
+        <button className="btn" disabled={!canUndo} title={draftOpen ? 'Accept or reject the open draft first' : 'Undo (Ctrl/⌘+Z)'} aria-label="Undo" onClick={undo}>
           ↶
         </button>
         <button className="btn" disabled={!canRedo} title="Redo (Shift+Ctrl/⌘+Z)" aria-label="Redo" onClick={redo}>

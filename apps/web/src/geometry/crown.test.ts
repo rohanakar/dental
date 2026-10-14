@@ -16,6 +16,8 @@ import { analyzeSurface, smoothVertexNormals } from './surface';
 import { syntheticArch, syntheticPrepMargin, syntheticPrepSeed } from './synthetic';
 import { prepareMesh } from './testUtils';
 import { estimateToothFrame } from './toothFrame';
+import { directionVector, movePose } from '../design/clinical';
+import { adaptGate, passed } from '../ai/qa';
 
 const ALONG = 400;
 
@@ -291,5 +293,71 @@ describe.each([
     expect(adapted.warnings.some((w) => w.startsWith('Insufficient reduction'))).toBe(true);
     expect(adapted.validation.ok).toBe(true);
     note({ case: input.fdi, conflict });
+  });
+});
+
+describe('moving a proposed crown (synthetic 36)', () => {
+  const { design, input } = runSynthetic(false);
+  const hf = templateForTooth(36).heightFraction;
+  const frame = input.frame as { mesial: V3; buccal: V3; occlusal: V3 };
+  const at = (d: CrownDesign, v: number): V3 => [d.mesh.positions[v * 3]!, d.mesh.positions[v * 3 + 1]!, d.mesh.positions[v * 3 + 2]!];
+  /** Mean shell-vertex displacement along `u` between two designs, over vertices whose height fraction passes `band`. */
+  const meanAlong = (a: CrownDesign, b: CrownDesign, u: V3, band: (h: number) => boolean) => {
+    let sum = 0;
+    let n = 0;
+    for (let i = 0; i < hf.length; i++) {
+      if (!band(hf[i]!)) continue;
+      const p = at(a, a.shellStart + i);
+      const q = at(b, b.shellStart + i);
+      sum += (q[0] - p[0]) * u[0] + (q[1] - p[1]) * u[1] + (q[2] - p[2]) * u[2];
+      n++;
+    }
+    return sum / n;
+  };
+
+  it('moves the cusps with the pose while the margin stays on the prep', () => {
+    const up = directionVector(frame, 'occlusal');
+    const moved = designCrown({ ...input, pose: movePose(design.pose, up, 1) });
+    expect(meanAlong(design, moved, up, (h) => h >= 0.7)).toBeCloseTo(1, 1);
+    expect(Math.abs(meanAlong(design, moved, up, (h) => h >= 0.7) - 1)).toBeLessThan(0.02);
+    expect(Math.abs(meanAlong(design, moved, up, (h) => h > 0.3 && h < 0.7) - 0.76)).toBeLessThan(0.05);
+    expect(Math.abs(meanAlong(design, moved, up, (h) => h <= 0.05))).toBeLessThan(0.1);
+    expect(moved.validation.printable).toBe(true);
+  });
+
+  it('predicts a move from the move weights (instant preview = recompute)', () => {
+    const w = design.moveWeights;
+    expect(w.length).toBe(design.mesh.positions.length / 3);
+    for (let v = 0; v < design.intaglioVertices; v++) expect(w[v]).toBe(0);
+    const d = directionVector(frame, 'buccal');
+    const moved = designCrown({ ...input, pose: movePose(design.pose, d, 1) });
+    let sum = 0;
+    let max = 0;
+    for (let v = design.shellStart; v < w.length; v++) {
+      const p = at(design, v);
+      const q = at(moved, v);
+      const err = Math.hypot(p[0] + w[v]! * d[0] - q[0], p[1] + w[v]! * d[1] - q[1], p[2] + w[v]! * d[2] - q[2]);
+      sum += err;
+      max = Math.max(max, err);
+    }
+    const mean = sum / (w.length - design.shellStart);
+    expect(mean).toBeLessThan(0.01);
+    expect(max).toBeLessThan(0.05);
+    note({ case: 36, previewErrorMm: { mean, max }, fitMs: Math.round(design.timingsMs.fit ?? 0) });
+  });
+
+  it('reports a contact left open by adaptation, and the adapt gate fails', () => {
+    const adapt = { occlusion: { clearanceMm: 0.05 }, mesial: { targetMm: 0.02 }, distal: { targetMm: 0.02 } };
+    const adapted = designCrown({ ...input, pose: design.pose, adapt });
+    expect(adapted.adapt!.mesial!.open).toBeUndefined();
+    expect(adapted.adapt!.distal!.open).toBeUndefined();
+    const moved = designCrown({ ...input, pose: movePose(design.pose, directionVector(frame, 'mesial'), 1), adapt });
+    const distal = moved.adapt!.distal!;
+    expect(distal.conflict).toBeUndefined();
+    expect(distal.open!.clearanceMm).toBeGreaterThan(0.5);
+    expect(moved.warnings.some((x) => x.startsWith('Distal contact open'))).toBe(true);
+    expect(passed(adaptGate(moved))).toBe(false);
+    expect(adaptGate(moved).find((c) => c.id === 'adapt.distal')).toMatchObject({ passed: false, message: expect.stringContaining('contact open') });
+    note({ case: 36, openAfterMesial1mm: distal.open });
   });
 });

@@ -33,6 +33,10 @@ export interface ToolState {
   /** Colour map shown on the crown. */
   crownMap: CrownMapName | 'none';
   crownOpacity: number;
+  /** Focus view while adjusting the crown: the prep at full strength, the surroundings dimmed. */
+  focusPrep: boolean;
+  /** Opacity factor for the surroundings (gums, neighbours, antagonist) in the focus view. */
+  surroundings: number;
   busy: string | null;
   message: { kind: 'info' | 'warning' | 'error'; text: string } | null;
   set(patch: Partial<Omit<ToolState, 'set' | 'reset'>>): void;
@@ -84,6 +88,8 @@ const initial = {
   crownVisible: true,
   crownMap: 'none' as CrownMapName | 'none',
   crownOpacity: 1,
+  focusPrep: true,
+  surroundings: 0.4,
   busy: null,
   message: null,
 };
