@@ -1,6 +1,6 @@
 # Implant crowns and bridges (screw-retained on Ti-bases)
 
-Status: **spec, awaiting review** (2026-10-25). No code yet.
+Status: **in progress** (2026-10-25). Phase A has landed: library format, synthetic library, scan-body registration and the Ti-base fitting surface. Phase B (emergence, screw channels, implant bridges, schemas, UI, runner case) is next.
 Depends on:
 - [2026-10-25-bridge-mode.md](2026-10-25-bridge-mode.md) (pontics, connectors, union, anterior teeth)
 - [2026-10-25-framework-bridges.md](2026-10-25-framework-bridges.md) (the titanium and CoCr materials)
@@ -268,4 +268,42 @@ Also:
 
 ## Implementation summary
 
-_To be written after implementation._
+### Phase A (2026-10-25): library format, synthetic library, scan-body registration, Ti-base fitting surface
+- **`apps/web/src/geometry/implantLibrary.ts`:**
+  - The manifest format (`dcad.implant-library`, `library.json` plus STLs), with a fixed frame: platform centre,
+    +z axis, +x flat.
+  - `makeImplantEntry` validates meshes (closed, oriented, positive volume), the shoulder loop (CCW about +z, on the
+    Ti-base) and the scan-body centring.
+  - Loaders: `implantLibraryFromBuffers`, `loadImplantLibrary(read)`.
+  - Pose helpers: `implantToWorld`, `placeAtImplantPose`, `implantPoseToPose`, `compareImplantPoses`.
+  - `implantLibraryNode.ts` (Node directory loader and writer) is kept out of the browser exports.
+- **`syntheticImplant.ts`:**
+  - `syntheticImplantLibrary()` (`synthetic-generic@1`): engaging and non-engaging Ti-bases, channel Ø2.2 mm,
+    ASC 25°, divergence 20°, bonding gap 0.03 mm.
+  - `syntheticImplantScan(...)`: scan bodies merged into a synthetic jaw at known poses, with optional noise.
+  - `tools/fixtures/implant-library.mts` writes the library under `data/implant-libraries/`; with `--scan` it also
+    writes a demo scan with scan bodies.
+- **`scanBody.ts` `registerScanBody`:**
+  - Click, then local PCA, then the top face, then 12 coarse angles (the best 3 refined), then point-to-plane ICP on
+    area-uniform samples.
+  - Gate: RMS ≤ 0.05 mm, inliers ≥ 0.9, coverage ≥ 0.6.
+- **`tiBase.ts` `tiBaseFittingSurface`:** the Ti-base at the pose, offset by the bonding gap, then `buildIntaglio`
+  with the lifted shoulder loop as the rim. `measureTiBaseGap` checks the gap.
+- **Verified with scratch scripts:**
+  - Registration error against the true poses:
+    - no noise: ≤ 0.0003 mm and ≤ 0.004°
+    - σ 0.02 mm noise, worst of 48 runs: 0.011 mm, 0.089° axis, 0.21° rotation
+    - All runs pass the gate, including clicks 1 mm off-centre.
+  - Clicks on teeth or the ridge fail the gate.
+  - Ti-base gap error: mean 0.0025 mm, max 0.016 mm. No penetration, including on a 4.5° common path.
+  - A Ø2.2 channel cut with `differenceMeshes` leaves one closed component.
+- **Deviations:**
+  - ICP runs on area-uniform samples, not on vertices.
+  - Normal-consistency rejection keeps neighbouring teeth from pulling the fit.
+  - The gate gains a coverage criterion.
+  - Manifest additions: `ascPivotZMm`, `scanRegionHeightMm`, `notice`.
+  - The intaglio rim is the shoulder lifted by the gap.
+- **Open:**
+  - Vendor Ti-bases with open screw holes need capping, unless the channel is at least as wide as the hole.
+  - The gingival-opening loop and the emergence loft are phase B. They need a `crown.ts` hook that passes the
+    fitting side in, instead of building it from a prep.
