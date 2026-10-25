@@ -28,8 +28,12 @@ export type QueryToolName = keyof typeof QUERY_TOOLS;
 export const toolNameForCommand = (commandType: string): string =>
   commandType.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 
+/**
+ * The schema of what the model sends (io: 'input'). A tuple's output schema uses `prefixItems`, which OpenAI strict
+ * mode rejects; FdiPair's input side is a plain two-item array.
+ */
 function toJsonSchema(schema: z.ZodType): Record<string, unknown> {
-  const { $schema: _ignored, ...rest } = z.toJSONSchema(schema) as Record<string, unknown>;
+  const { $schema: _ignored, ...rest } = z.toJSONSchema(schema, { io: 'input' }) as Record<string, unknown>;
   return rest;
 }
 

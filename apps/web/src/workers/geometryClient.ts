@@ -88,6 +88,8 @@ export const analysis = {
   axisUnlatched: (request: AxisRequest): Promise<AxisAnalysis> => geometryWorker().axisAnalysis(request),
   /** Like designCrown but never superseded (independent evaluations, e.g. metrics). */
   designCrownUnlatched: (request: CrownRequest): Promise<CrownResult> => geometryWorker().designCrown(request),
+  /** Load the mesh-boolean engine in the worker (once). */
+  initBooleans: (): Promise<{ ms: number }> => geometryWorker().initBooleans(),
   /** Prep faces drawn in focus while the crown is adjusted. */
   focusFaces: (request: FocusFacesRequest): Promise<Uint32Array> => latest.run('focus', () => geometryWorker().focusFaces(request)),
 };

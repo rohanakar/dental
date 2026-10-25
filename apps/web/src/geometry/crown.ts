@@ -44,7 +44,7 @@ export interface CrownFrame {
 
 /**
  * Template-local → world: x → mesial, y → buccal, z → occlusal. `epsilon`
- * is −1 when (mesial, buccal, occlusal) is left-handed (quadrants 1 and 3);
+ * is −1 when (mesial, buccal, occlusal) is left-handed (quadrants 2 and 4);
  * the rotation stays proper and the mirror goes into scale.x.
  */
 export interface CrownAxes {

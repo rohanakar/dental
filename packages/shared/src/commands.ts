@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { CaseSetup, DesignParams, Fdi } from './case';
-import { Crown, InsertionAxis, MarginLine, ScanRef, ScanRole, StepId, ToothFrame } from './design';
+import { CaseSetup, DesignParams, Fdi, FdiPair } from './case';
+import { ConnectorArea, ConnectorOffset, Crown, InsertionAxis, MarginLine, ScanRef, ScanRole, StepId, ToothFrame } from './design';
 
 /**
  * Every mutation of a DesignDocument is one of these commands. The UI,
@@ -100,6 +100,16 @@ export const AdaptOcclusion = z
   })
   .describe('Reduce or raise the occlusal surface so clearance to the antagonist reaches the target.');
 
+export const SetConnector = z
+  .object({
+    type: z.literal('setConnector'),
+    between: FdiPair.describe('The two connected bridge units, e.g. [35, 36]'),
+    areaMm2: ConnectorArea.optional().describe('Connector cross-section in mm²; never below the material minimum'),
+    buccalMm: ConnectorOffset.optional().describe('Move the connector buccally from its automatic position (negative = lingual)'),
+    occlusalMm: ConnectorOffset.optional().describe('Move the connector occlusally from its automatic position (negative = cervical)'),
+  })
+  .describe('Change the connector between two connected bridge units: its cross-section area and position. Omitted fields keep their value.');
+
 export const SetParam = z
   .object({
     type: z.literal('setParam'),
@@ -118,7 +128,7 @@ export const RunStep = z
   .describe('Run the automatic proposer for one design step.');
 
 export const DOCUMENT_COMMANDS = [SetCaseSetup, AddScan, RemoveScan, SetFrame, SetMargin, SetAxis, SetParams, SetCrown] as const;
-export const CLINICAL_COMMANDS = [MoveCrown, RotateCrown, ScaleCrown, SetContact, AdaptOcclusion, SetParam, RunStep] as const;
+export const CLINICAL_COMMANDS = [MoveCrown, RotateCrown, ScaleCrown, SetContact, AdaptOcclusion, SetConnector, SetParam, RunStep] as const;
 
 export const Command = z.discriminatedUnion('type', [...DOCUMENT_COMMANDS, ...CLINICAL_COMMANDS]);
 export type Command = z.infer<typeof Command>;

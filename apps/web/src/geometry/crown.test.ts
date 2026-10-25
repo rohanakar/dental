@@ -116,7 +116,7 @@ describe.each([
       printable: true,
     });
     expect(design.validation.signedVolumeMm3).toBeGreaterThan(50);
-    expect(design.pose.scale[0] < 0).toBe(!mirror); // quadrant 3 frames are left-handed → mirrored template
+    expect(design.pose.scale[0] < 0).toBe(mirror); // quadrant 4 frames are left-handed → mirrored template
   });
 
   it('seats on the prep: ring on the margin, intended cement gap, no undercut in the intaglio', () => {

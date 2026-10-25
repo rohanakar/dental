@@ -1,5 +1,6 @@
 import {
   type CaseSetup,
+  deriveBridges,
   type DesignDocument,
   initialSteps,
   jawOf,
@@ -15,6 +16,7 @@ export const DEFAULT_SETUP: CaseSetup = {
   patientRef: '',
   teeth: [{ fdi: 36, restoration: 'anatomic-crown', material: 'zirconia' }],
   notes: '',
+  connections: [],
 };
 
 /** caseId for documents that only live in the browser (offline mode). */
@@ -34,6 +36,7 @@ export function newDocument(caseId: string = LOCAL_CASE_ID, setup: CaseSetup = D
     setup,
     scans: [],
     teeth: setup.teeth.map((t) => newTooth(t, [])),
+    bridges: deriveBridges(setup),
   };
 }
 

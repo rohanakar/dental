@@ -33,8 +33,8 @@ export function agentSystemPrompt(context: { fdi: number; crownProposed: boolean
 /** System prompt for prescription (Rx) intake: structured extraction only. */
 export const RX_SYSTEM_PROMPT = [
   'You extract a dental lab prescription into a structured case setup by calling submit_case_setup exactly once.',
-  'Teeth are FDI numbers (11-48). Only posterior teeth (premolars and molars, positions 4-8) are supported; leave',
-  'anterior teeth out and mention them in notes. Restoration is always "anatomic-crown".',
+  'Teeth are FDI numbers (11-48); every tooth is supported, anterior and posterior. Restoration is always',
+  '"anatomic-crown".',
   'Materials: zirconia, lithium-disilicate (e.max), pmma (temporary). Shade uses VITA classical (e.g. A2, A3.5).',
   'patientRef is a pseudonymous case reference only if the text gives one (e.g. "Ref: LAB-123"); never put a',
   'patient name there, and leave it empty otherwise. Put remaining instructions in notes. Do not invent values.',

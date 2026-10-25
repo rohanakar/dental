@@ -24,8 +24,8 @@ interface GizmoHost {
  * oriented to the tooth frame. The proxy basis is (buccal × occlusal,
  * buccal, occlusal), always a proper rotation: the Y handle points buccal
  * and the Z handle occlusal for every quadrant, while the X handle points
- * mesial in right-handed frames (quadrants 2, 4) and distal in left-handed
- * ones (1, 3). Commits are decomposed in world space, so the labels on the
+ * mesial in right-handed frames (quadrants 1, 3) and distal in left-handed
+ * ones (2, 4). Commits are decomposed in world space, so the labels on the
  * handles never matter for the resulting commands.
  */
 export class TranslateGizmo {

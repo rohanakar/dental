@@ -14,11 +14,11 @@ const at = (p: Float32Array, i: number): V3 => [p[i * 3]!, p[i * 3 + 1]!, p[i * 
 describe('tooth frame', () => {
   it('follows FDI quadrant handedness', () => {
     const z: V3 = [0, 0, 1];
-    // Patient frame: +x = patient's left, +y = anterior, +z = up.
-    expect(mesialFromBuccal(36, z, [1, 0, 0])).toEqual([0, 1, 0]); // lower left: buccal = left
-    expect(mesialFromBuccal(46, z, [-1, 0, 0])[1]).toBeCloseTo(1); // lower right
-    expect(mesialFromBuccal(26, [0, 0, -1], [1, 0, 0])[1]).toBeCloseTo(1); // upper left
-    expect(mesialFromBuccal(16, [0, 0, -1], [-1, 0, 0])[1]).toBeCloseTo(1); // upper right
+    // Right-handed patient frame: +x = patient's right, +y = anterior, +z = up. Mesial of a posterior tooth = anterior.
+    expect(mesialFromBuccal(36, z, [-1, 0, 0])[1]).toBeCloseTo(1); // lower left: buccal = −x
+    expect(mesialFromBuccal(46, z, [1, 0, 0])[1]).toBeCloseTo(1); // lower right
+    expect(mesialFromBuccal(26, [0, 0, -1], [-1, 0, 0])[1]).toBeCloseTo(1); // upper left
+    expect(mesialFromBuccal(16, [0, 0, -1], [1, 0, 0])[1]).toBeCloseTo(1); // upper right
   });
 
   it('estimates occlusal, mesial, buccal and both contacts on the synthetic prep', () => {

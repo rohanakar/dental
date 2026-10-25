@@ -45,7 +45,7 @@ describe.skipIf(!BASE)('api client against a live API', () => {
     const who = await api.me();
     expect(who.orgId).toBeTruthy();
 
-    const setup = { patientRef: 'E2E-1', teeth: [{ fdi: 36, restoration: 'anatomic-crown' as const, material: 'zirconia' as const }], notes: '' };
+    const setup = { patientRef: 'E2E-1', teeth: [{ fdi: 36, restoration: 'anatomic-crown' as const, material: 'zirconia' as const }], notes: '', connections: [] };
     const created = await api.createCase(setup);
     expect((await api.listCases()).map((c) => c.id)).toContain(created.id);
     expect(await api.latestVersion(created.id)).toBeNull();

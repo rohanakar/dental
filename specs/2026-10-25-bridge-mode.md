@@ -1,6 +1,6 @@
 # Bridge mode
 
-Status: **spec, awaiting review** (2026-10-25). No code yet.
+Status: **in progress** (2026-10-25). Wave 1 of 4 has landed (schemas, reducer, anterior teeth, geometry building blocks).
 
 ## Goal
 
@@ -488,4 +488,58 @@ Commands and measurements:
 
 ## Implementation summary
 
-_To be written after implementation._
+Built by parallel agents in git worktrees, integrated in waves. Each green wave is one commit on main.
+
+### Wave 1 (2026-10-25): shared schemas, reducer, anterior teeth, geometry building blocks
+- **Shared** (`packages/shared/src/{case,design,commands,tools}.ts`):
+  - `FdiPair`, `RestorationType` with `'pontic'`, `UnitKind`, `RESTORATION_ROLE`, and `BRIDGE_PRESETS` with
+    `minConnectorAreaMm2`.
+  - `CaseSetup.connections`, `DesignParams.ponticRidgeGapMm`.
+  - Tooth-numbering helpers: `archIndex`, `archOrder`, `chartAdjacent`, `facingSide`, `normalizeConnections`.
+  - `unitKind`, `bridgesOf`, `validateBridges` (machine-readable codes).
+  - `ConnectorDesign`, `BridgeDesign`, `DesignDocument.bridges`, `deriveBridges`, `bridgeOf`, `connectedSides`,
+    `stepsFor`.
+  - The `SetConnector` command (agent tool `set_connector`).
+- **Reducer** (`apps/web/src/design/reducer.ts`): the rules in "Reducer rules", plus:
+  - **Re-forming a bridge:** when a bridge is formed, merged, split or changes kind, every abutment whose bridge has
+    a new set of abutments gets its axis marked stale. Code review found this gap.
+  - **Removing a tooth:** connections to teeth that leave the case are dropped instead of refused.
+- **API** (`apps/api/src/domain/cases.ts`): case create and update run `validateBridges` and return 400
+  (`validation_error`) on errors.
+- **All tooth positions:**
+  - procedural central, lateral and canine templates (`crownTemplate.ts`); the posterior templates are
+    byte-identical
+  - `templateTypeOf`, and `templateForTooth` for positions 1–8
+  - the posterior-only checks are removed from `ToothChart`, the new-case form, Rx (classical and LLM) and the Rx
+    prompt
+- **Synthetic arch:** `syntheticArch({ preps, missing })` on either jaw, `syntheticTooth(fdi)`, and
+  `syntheticPrepMargin`/`Seed({ fdi })`.
+- **Geometry building blocks:**
+  - `meshBoolean.ts`: manifold-3d `unionMeshes` and `differenceMeshes`, initialized in Node or in the worker
+    (`analysis.initBooleans()`).
+  - `meshTopology`.
+  - `sectionArea.ts`: `sectionMesh` and `scanSections`, with a `within` filter.
+  - `arch.ts`: `fitArchCurve`. The parabola only seeds the fit; the curve is a local-linear radius-versus-angle
+    regression, because a plain parabola gave 14–25° tangent error at the molars.
+- **Bug found and fixed:** the FDI handedness rule and the synthetic arch were both mirrored; see
+  [2026-10-25-fdi-handedness-fix.md](2026-10-25-fdi-handedness-fix.md).
+
+**Wave 1 deviations from the spec:**
+- Tool schemas are generated in zod's `io: 'input'` mode, so the tuple survives OpenAI strict mode.
+- `RestorationRole.connectsTo` is optional, for Maryland wings.
+- The indication warnings are data-driven.
+- There is an extra `unknown-tooth` error code.
+- `setConnector` marks `adapt` stale on both units as specified. This is under review: it hides the adaptation while
+  connectors are edited in the Adapt step.
+
+**Wave 1 verification:**
+- `pnpm typecheck` and `pnpm test` pass, 96 → 100 tests:
+  - +2 bridge tests (shared "validates bridge setups", reducer "bridge: derives units…")
+  - +2 from the parallel UI-polish session
+- An old version-1 document parses with the defaults. Every tool schema passes OpenAI strict normalization.
+- Anterior single crowns (31–43, 11–23) on synthetic preps: all closed and printable, gap error ≤ 0.006 mm.
+- Booleans: sphere union volume within 0.014%; a 4-crown union in 0.78 s. Sections within 0.03% of analytic.
+- Arch tangent error ≤ 2.8° for teeth 1–6.
+- Build: manifold-3d is a 44 kB lazy chunk plus 541 kB of WASM, referenced only from the worker.
+
+Waves 2–4 (pontics, connectors and checks with the runner; app; AI) follow.

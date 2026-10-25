@@ -18,7 +18,11 @@ export function adaptationStale(tooth: ToothDesign): boolean {
   return tooth.crown?.kind === 'template' && hasTargets(tooth.crown.adapt) && tooth.steps.adapt !== 'done';
 }
 
-/** Commands that re-apply the stored targets (dispatch as one batch: one undo entry, marks adapt done). */
+/**
+ * Commands that re-apply the stored targets (dispatch as one batch: one undo entry, marks adapt done). Contact
+ * targets exist only on free sides: the reducer refuses a contact toward a connected unit and drops a target when its
+ * side gets a connector.
+ */
 export function readaptCommands(tooth: ToothDesign): Command[] {
   const adapt = tooth.crown?.kind === 'template' ? tooth.crown.adapt : undefined;
   if (!hasTargets(adapt)) return [];

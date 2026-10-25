@@ -48,7 +48,7 @@ export function SetupStep() {
   return (
     <div className="step-body">
       <RxIntake />
-      <p className="muted">Select the teeth to restore. Anatomic crowns on premolars and molars only.</p>
+      <p className="muted">Select the teeth to restore with anatomic crowns.</p>
       <ToothChart selected={setup.teeth.map((t) => t.fdi)} active={active?.fdi} onToggle={toggle} />
       {error && <div className="error">{error}</div>}
       {active && (

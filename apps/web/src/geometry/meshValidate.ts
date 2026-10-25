@@ -128,3 +128,74 @@ export function boundaryLoops(mesh: Pick<IndexedMesh, 'positions' | 'indices'>):
   }
   return loops;
 }
+
+export interface MeshTopology {
+  /** Connected components (triangles linked through shared vertices). */
+  components: number;
+  /** Triangles per component, largest first. */
+  componentTriangles: number[];
+  /** χ = V − E + F over referenced vertices and unique undirected edges. */
+  euler: number;
+  /**
+   * Total genus (handles) of a closed, oriented mesh: (2·components − χ) / 2.
+   * Only meaningful when validateClosedMesh(mesh).closed; one solid with no
+   * through-holes is components = 1, euler = 2, genus = 0.
+   */
+  genus: number;
+}
+
+/**
+ * Connected components and Euler characteristic of a mesh, so a merged
+ * solid can be checked to be "one connected component of genus 0".
+ */
+export function meshTopology(mesh: Pick<IndexedMesh, 'positions' | 'indices'>): MeshTopology {
+  const idx = mesh.indices;
+  const nv = mesh.positions.length / 3;
+  const nf = idx.length / 3;
+
+  // Union-find over vertices (path halving).
+  const parent = new Int32Array(nv);
+  for (let v = 0; v < nv; v++) parent[v] = v;
+  const find = (v: number): number => {
+    while (parent[v] !== v) {
+      parent[v] = parent[parent[v]!]!;
+      v = parent[v]!;
+    }
+    return v;
+  };
+  const unite = (a: number, b: number) => {
+    const ra = find(a), rb = find(b);
+    if (ra !== rb) parent[ra < rb ? rb : ra] = ra < rb ? ra : rb;
+  };
+  const used = new Uint8Array(nv);
+  for (let f = 0; f < idx.length; f += 3) {
+    const a = idx[f]!, b = idx[f + 1]!, c = idx[f + 2]!;
+    used[a] = used[b] = used[c] = 1;
+    unite(a, b);
+    unite(b, c);
+  }
+  let vertices = 0;
+  for (let v = 0; v < nv; v++) if (used[v]) vertices++;
+
+  // Unique undirected edges: sort the packed keys (collapsed edges of degenerate triangles are skipped as -1).
+  const keys = new Float64Array(idx.length);
+  for (let f = 0; f < idx.length; f += 3) {
+    for (let k = 0; k < 3; k++) {
+      const a = idx[f + k]!, b = idx[f + ((k + 1) % 3)]!;
+      keys[f + k] = a === b ? -1 : a < b ? a * nv + b : b * nv + a;
+    }
+  }
+  keys.sort();
+  let edges = 0;
+  for (let i = 0; i < keys.length; i++) if (keys[i]! >= 0 && (i === 0 || keys[i] !== keys[i - 1])) edges++;
+
+  const perRoot = new Map<number, number>();
+  for (let f = 0; f < idx.length; f += 3) {
+    const r = find(idx[f]!);
+    perRoot.set(r, (perRoot.get(r) ?? 0) + 1);
+  }
+  const componentTriangles = [...perRoot.values()].sort((a, b) => b - a);
+  const components = componentTriangles.length;
+  const euler = vertices - edges + nf;
+  return { components, componentTriangles, euler, genus: (2 * components - euler) / 2 };
+}

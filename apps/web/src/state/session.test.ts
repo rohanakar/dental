@@ -34,7 +34,7 @@ const session = await import('./session');
 
 const SHA = 'b'.repeat(64);
 const NOW = '2026-10-11T10:00:00.000Z';
-const setup = { patientRef: 'LAB-1', teeth: [{ fdi: 36, restoration: 'anatomic-crown' as const, material: 'zirconia' as const }], notes: '' };
+const setup = { patientRef: 'LAB-1', teeth: [{ fdi: 36, restoration: 'anatomic-crown' as const, material: 'zirconia' as const }], notes: '', connections: [] };
 const record = { id: 'c1', patientRef: 'LAB-1', teeth: [36], status: 'draft' as const, currentVersion: 0, createdAt: NOW, updatedAt: NOW, setup };
 
 beforeEach(() => {

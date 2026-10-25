@@ -37,6 +37,7 @@ export function RxIntake() {
       patientRef: setup.patientRef || current.patientRef,
       teeth: setup.teeth,
       notes: setup.notes || current.notes,
+      connections: setup.connections,
     };
     useDesignStore.getState().dispatch({ type: 'setCaseSetup', setup: next });
     useDesignStore.getState().setActiveFdi(next.teeth[0]!.fdi);
@@ -86,7 +87,7 @@ export function RxIntake() {
               )}
             </dl>
           ) : (
-            <div className="warning">No supported tooth (premolar or molar) found.</div>
+            <div className="warning">No tooth number found.</div>
           )}
           {result.differences.length > 0 && (
             <div className="warning">

@@ -20,6 +20,7 @@ const setup: CaseSetup = {
   patientRef: 'P-0001',
   teeth: [{ fdi: 36, restoration: 'anatomic-crown', material: 'zirconia', shade: 'A2' }],
   notes: '',
+  connections: [],
 };
 
 function designDoc(caseId: string): DesignDocument {
@@ -35,6 +36,7 @@ function designDoc(caseId: string): DesignDocument {
         steps: Object.fromEntries(STEP_ORDER.map((s) => [s, s === 'setup' ? 'done' : 'pending'])) as DesignDocument['teeth'][number]['steps'],
       },
     ],
+    bridges: [],
   };
 }
 

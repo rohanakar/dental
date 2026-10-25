@@ -1,18 +1,30 @@
 import {
+  bridgeOf,
   type Command,
+  connectedSides,
   type CrownAdapt,
+  deriveBridges,
   DesignParams,
   type Pose,
+  type ProximalSide,
   type ToothFrame,
   type CommandOf,
   type DesignDocument,
   downstreamSteps,
   jawOf,
   MATERIAL_PRESETS,
+  minConnectorAreaMm2,
+  normalizeConnections,
+  pairKey,
+  RESTORATION_ROLE,
   type ScanRef,
+  sortedPair,
   type StepId,
   type StepStatus,
   type ToothDesign,
+  unitKind,
+  type UnitKind,
+  validateBridges,
 } from '@dcad/shared';
 import { axisVector, crownCentre, directionVector, movePose, rotatePose, scaleIndex, scalePose, templateHeight } from './clinical';
 import { newTooth } from './document';
@@ -41,11 +53,67 @@ function markStaleFrom(steps: Steps, step: StepId): Steps {
 }
 
 function updateTooth(doc: DesignDocument, fdi: number, update: (t: ToothDesign) => ToothDesign): DesignDocument {
-  const i = doc.teeth.findIndex((t) => t.fdi === fdi);
-  if (i < 0) throw new CommandError(`Tooth ${fdi} is not part of this case`);
+  return updateTeeth(doc, [fdi], update);
+}
+
+function updateTeeth(doc: DesignDocument, fdis: readonly number[], update: (t: ToothDesign) => ToothDesign): DesignDocument {
   const teeth = doc.teeth.slice();
-  teeth[i] = update(teeth[i]!);
+  for (const fdi of fdis) {
+    const i = teeth.findIndex((t) => t.fdi === fdi);
+    if (i < 0) throw new CommandError(`Tooth ${fdi} is not part of this case`);
+    teeth[i] = update(teeth[i]!);
+  }
   return { ...doc, teeth };
+}
+
+// ---- Bridges ------------------------------------------------------------------
+
+/** Pontics have no prep: no margin and no insertion axis. */
+function requireAbutment(doc: DesignDocument, fdi: number, type: string): void {
+  if (unitKind(doc.setup, fdi) === 'pontic') throw new CommandError(`${type}: ${fdi} is a pontic; it has no margin or insertion axis`);
+}
+
+/** The bridge units other than `fdi`, by kind (empty for a single crown). */
+function otherUnits(doc: DesignDocument, fdi: number, kind: UnitKind): number[] {
+  return (bridgeOf(doc, fdi)?.teeth ?? []).filter((u) => u !== fdi && unitKind(doc.setup, u) === kind);
+}
+
+/** Mark `step` and downstream stale on the given units; untouched units keep their identity. */
+function staleOn(doc: DesignDocument, fdis: readonly number[], step: StepId): DesignDocument {
+  return fdis.length ? updateTeeth(doc, fdis, (t) => ({ ...t, steps: markStaleFrom(t.steps, step) })) : doc;
+}
+
+/**
+ * An abutment's frame or margin changed: the common axis was computed from the old one, so every other abutment's
+ * axis is stale. A frame change also invalidates the pontic frames, which are derived from the neighbouring units.
+ */
+function invalidateBridge(doc: DesignDocument, fdi: number, changed: 'frame' | 'margin'): DesignDocument {
+  if (unitKind(doc.setup, fdi) !== 'abutment') return doc;
+  const next = staleOn(doc, otherUnits(doc, fdi, 'abutment'), 'axis');
+  return changed === 'frame' ? staleOn(next, otherUnits(doc, fdi, 'pontic'), 'frame') : next;
+}
+
+/** A tooth switched between abutment and pontic: its frame is re-derived, and a pontic drops margin and axis. */
+function changeKind(tooth: ToothDesign, kind: UnitKind): ToothDesign {
+  const steps = markStaleFrom(tooth.steps, 'frame');
+  if (kind === 'abutment') return { ...tooth, steps };
+  const { margin: _margin, axis: _axis, ...rest } = tooth;
+  return { ...rest, steps: { ...steps, margin: 'pending', axis: 'pending' } };
+}
+
+/**
+ * The unit's connected sides changed: a side with a connector has no contact, so its adaptation target goes, and the
+ * adaptation is stale (connector and contact geometry changed).
+ */
+function syncConnectedSides(tooth: ToothDesign, before: readonly ProximalSide[], after: readonly ProximalSide[]): ToothDesign {
+  if (before.length === after.length && before.every((s) => after.includes(s))) return tooth;
+  const steps = markStaleFrom(tooth.steps, 'adapt');
+  const crown = tooth.crown;
+  const adapt = crown?.kind === 'template' ? crown.adapt : undefined;
+  if (crown?.kind !== 'template' || !adapt || !after.some((s) => adapt[s])) return { ...tooth, steps };
+  const free = { ...adapt };
+  for (const side of after) delete free[side];
+  return { ...tooth, crown: { ...crown, adapt: free }, steps };
 }
 
 const isJawRole = (role: ScanRef['role']) => role === 'upper' || role === 'lower';
@@ -84,17 +152,85 @@ function updateCrownAdapt(doc: DesignDocument, fdi: number, type: string, edit: 
   });
 }
 
+/**
+ * Sync the teeth with a new setup. Bridge setups with validation errors are refused (warnings pass); the bridges are
+ * re-derived from the connections, keeping the settings of connectors that still exist.
+ */
+/**
+ * Abutments whose bridge changed its set of abutments (formed, merged, split, a unit joined or switched kind): the
+ * common axis must be searched again over the new set, so their axis is stale. Unchanged bridges keep theirs.
+ */
+function abutmentsWithNewAxisSet(doc: DesignDocument, setup: DesignDocument['setup'], bridges: DesignDocument['bridges']): Set<number> {
+  const key = (teeth: readonly number[], s: Pick<DesignDocument['setup'], 'teeth'>) =>
+    teeth
+      .filter((f) => unitKind(s, f) === 'abutment')
+      .sort((x, y) => x - y)
+      .join(',');
+  const before = (fdi: number) => {
+    const bridge = bridgeOf(doc, fdi);
+    return bridge ? key(bridge.teeth, doc.setup) : String(fdi);
+  };
+  const stale = new Set<number>();
+  for (const bridge of bridges) {
+    const now = key(bridge.teeth, setup);
+    const abutments = bridge.teeth.filter((f) => unitKind(setup, f) === 'abutment');
+    if (abutments.some((f) => before(f) !== now)) abutments.forEach((f) => stale.add(f));
+  }
+  return stale;
+}
+
 function setCaseSetup(doc: DesignDocument, cmd: CommandOf<'setCaseSetup'>): DesignDocument {
-  const teeth = cmd.setup.teeth.map((order) => {
+  // Connections to teeth that left the case go with them (removing a bridged tooth must not be refused).
+  const inCase = new Set(cmd.setup.teeth.map((t) => t.fdi));
+  const connections = normalizeConnections(cmd.setup.connections.filter(([a, b]) => inCase.has(a) && inCase.has(b)));
+  const setup = { ...cmd.setup, connections };
+  const { errors } = validateBridges(setup);
+  if (errors.length) throw new CommandError(`Invalid bridge setup: ${errors.map((e) => e.message).join('; ')}`);
+  const bridges = deriveBridges(setup, doc.bridges);
+  const axisStale = abutmentsWithNewAxisSet(doc, setup, bridges);
+  const teeth = setup.teeth.map((order) => {
     const existing = doc.teeth.find((t) => t.fdi === order.fdi);
     if (!existing) return newTooth(order, doc.scans);
+    let tooth = existing;
     const before = doc.setup.teeth.find((o) => o.fdi === order.fdi);
     if (before && before.material !== order.material) {
-      return { ...existing, params: { ...MATERIAL_PRESETS[order.material] }, steps: markStaleFrom(existing.steps, 'params') };
+      tooth = { ...tooth, params: { ...MATERIAL_PRESETS[order.material] }, steps: markStaleFrom(tooth.steps, 'params') };
     }
-    return existing;
+    const kind = RESTORATION_ROLE[order.restoration].role;
+    if (before && RESTORATION_ROLE[before.restoration].role !== kind) tooth = changeKind(tooth, kind);
+    if (axisStale.has(order.fdi)) tooth = { ...tooth, steps: markStaleFrom(tooth.steps, 'axis') };
+    return syncConnectedSides(tooth, connectedSides(doc, order.fdi), connectedSides({ bridges }, order.fdi));
   });
-  return { ...doc, setup: cmd.setup, teeth };
+  return { ...doc, setup, teeth, bridges };
+}
+
+/** Edit one connector. The area never goes below the material minimum; both units' adaptation becomes stale. */
+function setConnector(doc: DesignDocument, cmd: CommandOf<'setConnector'>): DesignDocument {
+  const [a, b] = sortedPair(...cmd.between);
+  const key = pairKey([a, b]);
+  const i = doc.bridges.findIndex((br) => br.connectors.some((c) => pairKey(c.between) === key));
+  if (i < 0) throw new CommandError(`${cmd.type}: ${a} and ${b} are not connected`);
+  const material = doc.setup.teeth.find((t) => t.fdi === a)!.material;
+  const min = minConnectorAreaMm2(material, a, b);
+  if (cmd.areaMm2 !== undefined && cmd.areaMm2 < min) {
+    throw new CommandError(`${cmd.type}: ${cmd.areaMm2} mm² is below the ${material} minimum of ${min} mm² for ${a}–${b}`);
+  }
+  const bridges = doc.bridges.slice();
+  const bridge = bridges[i]!;
+  bridges[i] = {
+    ...bridge,
+    connectors: bridge.connectors.map((c) =>
+      pairKey(c.between) !== key
+        ? c
+        : {
+            ...c,
+            areaMm2: cmd.areaMm2 ?? c.areaMm2,
+            buccalMm: cmd.buccalMm ?? c.buccalMm,
+            occlusalMm: cmd.occlusalMm ?? c.occlusalMm,
+          },
+    ),
+  };
+  return staleOn({ ...doc, bridges }, [a, b], 'adapt');
 }
 
 function addScan(doc: DesignDocument, cmd: CommandOf<'addScan'>): DesignDocument {
@@ -123,12 +259,23 @@ export function applyCommand(doc: DesignDocument, cmd: Command): DesignDocument 
       return addScan(doc, cmd);
     case 'removeScan':
       return removeScan(doc, cmd);
-    case 'setFrame':
-      return updateTooth(doc, cmd.fdi, (t) => ({ ...t, frame: cmd.frame, steps: markDone(t.steps, 'frame') }));
-    case 'setMargin':
-      return updateTooth(doc, cmd.fdi, (t) => ({ ...t, margin: cmd.margin, steps: markDone(t.steps, 'margin') }));
+    case 'setFrame': {
+      const next = updateTooth(doc, cmd.fdi, (t) => ({ ...t, frame: cmd.frame, steps: markDone(t.steps, 'frame') }));
+      return invalidateBridge(next, cmd.fdi, 'frame');
+    }
+    case 'setMargin': {
+      requireAbutment(doc, cmd.fdi, cmd.type);
+      const next = updateTooth(doc, cmd.fdi, (t) => ({ ...t, margin: cmd.margin, steps: markDone(t.steps, 'margin') }));
+      return invalidateBridge(next, cmd.fdi, 'margin');
+    }
     case 'setAxis':
-      return updateTooth(doc, cmd.fdi, (t) => ({ ...t, axis: cmd.axis, steps: markDone(t.steps, 'axis') }));
+      // One common insertion axis: the bridge seats as one piece.
+      requireAbutment(doc, cmd.fdi, cmd.type);
+      return updateTeeth(doc, [cmd.fdi, ...otherUnits(doc, cmd.fdi, 'abutment')], (t) => ({
+        ...t,
+        axis: cmd.axis,
+        steps: markDone(t.steps, 'axis'),
+      }));
     case 'setParams':
       return updateTooth(doc, cmd.fdi, (t) => ({ ...t, params: cmd.params, steps: markDone(t.steps, 'params') }));
     case 'setCrown':
@@ -150,7 +297,12 @@ export function applyCommand(doc: DesignDocument, cmd: Command): DesignDocument 
     case 'adaptOcclusion':
       return updateCrownAdapt(doc, cmd.fdi, cmd.type, (a) => ({ ...a, occlusion: { clearanceMm: cmd.clearanceMm } }));
     case 'setContact':
+      if (connectedSides(doc, cmd.fdi).includes(cmd.side)) {
+        throw new CommandError(`${cmd.type}: the ${cmd.side} side of ${cmd.fdi} has a connector, not a contact`);
+      }
       return updateCrownAdapt(doc, cmd.fdi, cmd.type, (a) => ({ ...a, [cmd.side]: { targetMm: cmd.targetMm } }));
+    case 'setConnector':
+      return setConnector(doc, cmd);
     case 'runStep':
       throw new CommandError(`Command "${cmd.type}" is not supported yet`);
   }

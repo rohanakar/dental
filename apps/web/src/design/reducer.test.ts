@@ -3,7 +3,7 @@ import { MATERIAL_PRESETS } from '@dcad/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { activeAdapt, adaptationStale, readaptCommands } from './adaptation';
 import { newDocument } from './document';
-import { applyCommand, applyCommands } from './reducer';
+import { applyCommand, applyCommands, CommandError } from './reducer';
 import { useDesignStore } from './store';
 
 const sha = (c: string) => c.repeat(64);
@@ -61,6 +61,7 @@ describe('applyCommand', () => {
       setup: {
         patientRef: 'P-1',
         notes: '',
+        connections: [],
         teeth: [
           { fdi: 36, restoration: 'anatomic-crown', material: 'zirconia' },
           { fdi: 46, restoration: 'anatomic-crown', material: 'lithium-disilicate' },
@@ -72,11 +73,67 @@ describe('applyCommand', () => {
     expect(doc.teeth[1]!.params).toEqual(MATERIAL_PRESETS['lithium-disilicate']);
     doc = applyCommand(doc, {
       type: 'setCaseSetup',
-      setup: { patientRef: 'P-1', notes: '', teeth: [{ fdi: 36, restoration: 'anatomic-crown', material: 'pmma' }] },
+      setup: { patientRef: 'P-1', notes: '', connections: [], teeth: [{ fdi: 36, restoration: 'anatomic-crown', material: 'pmma' }] },
     });
     expect(doc.teeth.map((t) => t.fdi)).toEqual([36]);
     expect(doc.teeth[0]!.params).toEqual(MATERIAL_PRESETS.pmma);
     expect(doc.teeth[0]!.frame).toEqual(frame);
+  });
+
+  it('bridge: derives units, keeps one common axis, invalidates across units', () => {
+    // 36 starts as a single crown with a margin and axis, then becomes the pontic of 35–[36]–37.
+    let doc = applyCommands(newDocument(), [
+      { type: 'setFrame', fdi: 36, frame },
+      { type: 'setMargin', fdi: 36, margin },
+      { type: 'setAxis', fdi: 36, axis },
+    ]);
+    const order = (fdi: number, restoration: 'anatomic-crown' | 'pontic') => ({ fdi, restoration, material: 'zirconia' as const });
+    const teeth = [order(35, 'anatomic-crown'), order(36, 'pontic'), order(37, 'anatomic-crown')];
+    doc = applyCommand(doc, { type: 'setCaseSetup', setup: { patientRef: '', notes: '', teeth, connections: [[37, 36], [35, 36]] } });
+    const offsets = { buccalMm: 0, occlusalMm: 0 };
+    expect(doc.bridges).toEqual([
+      { teeth: [35, 36, 37], connectors: [{ between: [35, 36], areaMm2: 9, ...offsets }, { between: [36, 37], areaMm2: 9, ...offsets }] },
+    ]);
+    const tooth = (fdi: number) => doc.teeth.find((t) => t.fdi === fdi)!;
+    expect(tooth(36)).not.toHaveProperty('margin');
+    expect(tooth(36)).not.toHaveProperty('axis');
+    expect(tooth(36).steps).toMatchObject({ margin: 'pending', axis: 'pending' });
+    expect(() => applyCommand(doc, { type: 'setAxis', fdi: 36, axis })).toThrow(CommandError);
+
+    // One common axis: setAxis on 35 sets 37 too.
+    doc = applyCommands(doc, [
+      ...[35, 37].flatMap((fdi): Command[] => [
+        { type: 'setFrame', fdi, frame },
+        { type: 'setMargin', fdi, margin },
+      ]),
+      { type: 'setFrame', fdi: 36, frame },
+    ]);
+    const tilted: InsertionAxis = { direction: [0, 0.1, 0.995], source: 'auto' };
+    doc = applyCommand(doc, { type: 'setAxis', fdi: 35, axis: tilted });
+    expect(tooth(37).axis).toEqual(tilted);
+    expect([tooth(35).steps.axis, tooth(37).steps.axis]).toEqual(['done', 'done']);
+
+    // A new margin on 37 invalidates the common axis on 35; a new abutment frame also invalidates the pontic frame.
+    doc = applyCommand(doc, { type: 'setMargin', fdi: 37, margin: { ...margin, source: 'agent' } });
+    expect(tooth(35).steps.axis).toBe('stale');
+    expect(tooth(36).steps.frame).toBe('done');
+    doc = applyCommand(doc, { type: 'setFrame', fdi: 35, frame });
+    expect(tooth(36).steps.frame).toBe('stale');
+
+    // A connected side has a connector, not a contact; a connector never goes below the material minimum.
+    doc = applyCommand(doc, { type: 'setCrown', fdi: 35, crown });
+    expect(() => applyCommand(doc, { type: 'setContact', fdi: 35, side: 'distal', targetMm: 0 })).toThrow(CommandError);
+    expect(applyCommand(doc, { type: 'setContact', fdi: 35, side: 'mesial', targetMm: 0 }).teeth[0]!.steps.adapt).toBe('done');
+    expect(() => applyCommand(doc, { type: 'setConnector', between: [36, 35], areaMm2: 8 })).toThrow(CommandError);
+    doc = applyCommand(doc, { type: 'setConnector', between: [36, 35], areaMm2: 12 });
+    expect(doc.bridges[0]!.connectors[0]).toEqual({ between: [35, 36], areaMm2: 12, ...offsets });
+
+    // Removing a bridged tooth drops its connections (35–[36] remains, a cantilever, with its connector settings);
+    // the remaining abutment's common axis was searched with 37 and becomes stale.
+    doc = applyCommand(doc, { type: 'setAxis', fdi: 35, axis: tilted });
+    doc = applyCommand(doc, { type: 'setCaseSetup', setup: { ...doc.setup, teeth: doc.setup.teeth.filter((t) => t.fdi !== 37) } });
+    expect(doc.bridges).toEqual([{ teeth: [35, 36], connectors: [{ between: [35, 36], areaMm2: 12, ...offsets }] }]);
+    expect(tooth(35).steps.axis).toBe('stale');
   });
 
   it('never mutates its input', () => {
@@ -156,15 +213,15 @@ describe('design store', () => {
 
 // ---- clinical commands ------------------------------------------------------
 
-/** Quadrant 3 (36): mesial = occlusal × buccal → left-handed (mesial × buccal = −occlusal). */
-const leftHanded: ToothFrame = { origin: [0, 0, 0], occlusal: [0, 0, 1], mesial: [0, 1, 0], buccal: [1, 0, 0], source: 'auto' };
-/** Quadrant 4 (46): right-handed (mesial × buccal = occlusal). */
+/** Quadrant 3 (36): mesial = buccal × occlusal → right-handed (mesial × buccal = occlusal). */
 const rightHanded: ToothFrame = { origin: [0, 0, 0], occlusal: [0, 0, 1], mesial: [0, 1, 0], buccal: [-1, 0, 0], source: 'auto' };
+/** Quadrant 4 (46): left-handed (mesial × buccal = −occlusal). */
+const leftHanded: ToothFrame = { origin: [0, 0, 0], occlusal: [0, 0, 1], mesial: [0, 1, 0], buccal: [1, 0, 0], source: 'auto' };
 const startPose: Pose = { position: [10, 5, 1], quaternion: [0, 0, 0, 1], scale: [-1, 1, 1] };
 const crown: Crown = { kind: 'template', templateId: 'synthetic.lower-molar@1', pose: startPose };
 
 function docWithCrown(fdi: number, f: ToothFrame) {
-  const setup = { patientRef: '', notes: '', teeth: [{ fdi, restoration: 'anatomic-crown' as const, material: 'zirconia' as const }] };
+  const setup = { patientRef: '', notes: '', connections: [], teeth: [{ fdi, restoration: 'anatomic-crown' as const, material: 'zirconia' as const }] };
   return applyCommands(newDocument('c', setup), [
     { type: 'setFrame', fdi, frame: f },
     { type: 'setCrown', fdi, crown },
@@ -177,8 +234,8 @@ const poseOf = (doc: ReturnType<typeof newDocument>) => {
 };
 
 describe.each([
-  ['left-handed frame (36)', 36, leftHanded],
-  ['right-handed frame (46)', 46, rightHanded],
+  ['right-handed frame (36)', 36, rightHanded],
+  ['left-handed frame (46)', 46, leftHanded],
 ] as const)('clinical commands, %s', (_name, fdi, f) => {
   it('moves, rotates and scales in frame directions', () => {
     const doc = docWithCrown(fdi, f);

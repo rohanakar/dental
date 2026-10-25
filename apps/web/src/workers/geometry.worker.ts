@@ -1,5 +1,7 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
+// Vite emits manifold.wasm as a separate asset; the boolean engine (manifold-3d) itself is a lazy chunk.
+import manifoldWasmUrl from 'manifold-3d/manifold.wasm?url';
 import { searchInsertionAxis, marginUndercut, undercutDepths } from '../geometry/axis';
 import {
   dijkstraTree,
@@ -18,6 +20,7 @@ import { bvhRayCaster, type RayCaster } from '../geometry/raycast';
 import { analyzeSurface, smoothVertexNormals, type SurfaceAnalysis } from '../geometry/surface';
 import { proposeMarginAnchors } from '../geometry/autoMargin';
 import { designCrown } from '../geometry/crown';
+import { initMeshBoolean } from '../geometry/meshBoolean';
 import { syntheticArch } from '../geometry/synthetic';
 import { estimateToothFrame } from '../geometry/toothFrame';
 import type {
@@ -102,6 +105,17 @@ const api = {
     const source = bytes.slice();
     const { payload, transfer } = importPayload(await processScan(bytes, `demo-${jaw}.ply`));
     return Comlink.transfer({ payload, source }, [...transfer, source.buffer as ArrayBuffer]);
+  },
+
+  /**
+   * Load the mesh-boolean engine once (fetches the manifold-3d chunk and its
+   * WASM). Worker code that merges solids awaits this before calling
+   * unionMeshes/differenceMeshes; calling it early hides the load time.
+   */
+  async initBooleans(): Promise<{ ms: number }> {
+    const t0 = performance.now();
+    await initMeshBoolean({ wasmUrl: manifoldWasmUrl });
+    return { ms: performance.now() - t0 };
   },
 
   releaseScan(sha256: string): void {

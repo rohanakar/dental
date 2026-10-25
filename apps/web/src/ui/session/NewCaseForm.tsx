@@ -2,8 +2,8 @@ import { Material, type CaseSetup } from '@dcad/shared';
 import { useState } from 'react';
 import { createCase, useSessionStore } from '../../state/session';
 
-/** Posterior teeth only (MVP scope): positions 4-8 in every quadrant. */
-const POSTERIOR_FDI = [1, 2, 3, 4].flatMap((q) => [4, 5, 6, 7, 8].map((p) => q * 10 + p));
+/** Every tooth: positions 1-8 in every quadrant. */
+const ALL_FDI = [1, 2, 3, 4].flatMap((q) => [1, 2, 3, 4, 5, 6, 7, 8].map((p) => q * 10 + p));
 
 const MATERIAL_LABEL: Record<Material, string> = {
   zirconia: 'Zirconia',
@@ -26,6 +26,7 @@ export function NewCaseForm() {
           patientRef: patientRef.trim(),
           teeth: [{ fdi, restoration: 'anatomic-crown', material }],
           notes: '',
+          connections: [],
         };
         void createCase(setup);
       }}
@@ -44,7 +45,7 @@ export function NewCaseForm() {
       <div className="field">
         <label htmlFor="case-fdi">Tooth (FDI)</label>
         <select id="case-fdi" value={fdi} onChange={(e) => setFdi(Number(e.target.value))}>
-          {POSTERIOR_FDI.map((n) => (
+          {ALL_FDI.map((n) => (
             <option key={n} value={n}>
               {n}
             </option>

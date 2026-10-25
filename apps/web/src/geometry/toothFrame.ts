@@ -36,11 +36,14 @@ export interface NeighbourContact {
 
 /**
  * FDI quadrant handedness (scans are never mirrored): in quadrants 1 and 3
- * mesial = occlusal × buccal, in quadrants 2 and 4 mesial = buccal × occlusal.
+ * mesial = buccal × occlusal, in quadrants 2 and 4 mesial = occlusal × buccal.
+ * Derivation in a right-handed frame (x = patient's right, y = anterior,
+ * z = up): lower left 36 has buccal −x, occlusal +z, and (−x) × z = +y, which
+ * is mesial. See specs/2026-10-25-fdi-handedness-fix.md.
  */
 export function mesialFromBuccal(fdi: number, occlusal: V3, buccal: V3): V3 {
   const q = Math.floor(fdi / 10);
-  return normalize(q === 1 || q === 3 ? cross(occlusal, buccal) : cross(buccal, occlusal));
+  return normalize(q === 1 || q === 3 ? cross(buccal, occlusal) : cross(occlusal, buccal));
 }
 
 const COS_25 = Math.cos((25 * Math.PI) / 180);

@@ -1,4 +1,4 @@
-import { CaseSetup, isPosterior, type LlmRequest, type LlmResponse, type Material, type ToothOrder } from '@dcad/shared';
+import { CaseSetup, type LlmRequest, type LlmResponse, type Material, type ToothOrder } from '@dcad/shared';
 import { z } from 'zod';
 import * as api from '../api/client';
 import { RX_SYSTEM_PROMPT } from './prompts';
@@ -59,11 +59,7 @@ export function parseRxClassical(text: string): RxParse {
       onLine.length > 0 || REF.test(line) || SHADE_LABELLED.test(line) || MATERIAL_PATTERNS.some(([, re]) => re.test(line));
     if (!recognized && line.trim()) restLines.push(line.trim());
   }
-  const posterior = teeth.filter((fdi) => isPosterior(fdi));
-  for (const fdi of teeth.filter((t) => !isPosterior(t))) {
-    notes.push(`Tooth ${fdi} is an anterior tooth; only premolars and molars are supported, so it was left out.`);
-  }
-  if (posterior.length === 0) notes.push('No supported tooth number found.');
+  if (teeth.length === 0) notes.push('No supported tooth number found.');
 
   const materials = MATERIAL_PATTERNS.map(([m, re]) => [m, text.search(re)] as const)
     .filter(([, i]) => i >= 0)
@@ -80,12 +76,12 @@ export function parseRxClassical(text: string): RxParse {
   if (shadeRaw && !shade) notes.push(`Shade "${shadeRaw}" is not a VITA classical shade; left empty.`);
 
   const patientRef = REF.exec(text)?.[1] ?? '';
-  const orders: ToothOrder[] = posterior.map((fdi) => ({ fdi, restoration: 'anatomic-crown', material, ...(shade ? { shade } : {}) }));
+  const orders: ToothOrder[] = teeth.map((fdi) => ({ fdi, restoration: 'anatomic-crown', material, ...(shade ? { shade } : {}) }));
   const confidence =
-    (posterior.length ? 0.4 : 0) + (materials.length === 1 ? 0.3 : materials.length > 1 ? 0.15 : 0) + (shade ? 0.15 : 0) + (notes.length === 0 ? 0.15 : 0);
+    (teeth.length ? 0.4 : 0) + (materials.length === 1 ? 0.3 : materials.length > 1 ? 0.15 : 0) + (shade ? 0.15 : 0) + (notes.length === 0 ? 0.15 : 0);
   return {
-    setup: { patientRef, teeth: orders, notes: restLines.join('\n').slice(0, 4000) },
-    valid: posterior.length > 0,
+    setup: { patientRef, teeth: orders, notes: restLines.join('\n').slice(0, 4000), connections: [] },
+    valid: teeth.length > 0,
     confidence: Math.round(confidence * 100) / 100,
     notes,
   };
@@ -164,12 +160,6 @@ export async function extractRxWithLlm(text: string, llm: (r: LlmRequest) => Pro
   if (!call || call.type !== 'tool_call') return fallback('The AI reader returned no case setup; used the rule-based reader.');
   const parsed = CaseSetup.safeParse(call.input);
   if (!parsed.success) return fallback('The AI reader returned an invalid case setup; used the rule-based reader.');
-  const notes: string[] = [];
-  const teeth = parsed.data.teeth.filter((t) => {
-    if (isPosterior(t.fdi)) return true;
-    notes.push(`Tooth ${t.fdi} is an anterior tooth; only premolars and molars are supported, so it was left out.`);
-    return false;
-  });
-  const setup: CaseSetup = { ...parsed.data, teeth };
-  return { setup, valid: teeth.length > 0, source: 'llm', notes, classical, differences: compareRx(setup, classical.setup) };
+  const setup: CaseSetup = parsed.data;
+  return { setup, valid: setup.teeth.length > 0, source: 'llm', notes: [], classical, differences: compareRx(setup, classical.setup) };
 }
