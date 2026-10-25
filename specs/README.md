@@ -22,4 +22,5 @@ and progress log.
 | [2026-10-25-inlay-bridges.md](2026-10-25-inlay-bridges.md): inlay and onlay retainers and single restorations, outer surface from the pre-op scan or the library tooth (snap and subtract) | spec, awaiting review |
 | [2026-10-25-implant-bridges.md](2026-10-25-implant-bridges.md): screw-retained implant crowns and bridges on Ti-bases: scan-body registration, emergence profile, straight and angled screw channels | spec, awaiting review |
 | [2026-10-25-impeccable-setup.md](2026-10-25-impeccable-setup.md): impeccable design skill installed for Claude Code, root `PRODUCT.md`, detector hook on, code-first build path | done |
+| [2026-10-25-landing-and-journey.md](2026-10-25-landing-and-journey.md): landing page at `/` (category standard, real renders, working sign-up), editor moved to `/app/`, demo entry, first-run case list, wizard Back/Next, resume at the first unfinished step | done |
 | [2026-10-25-ux-critique-polish.md](2026-10-25-ux-critique-polish.md): impeccable critique (24/40) and polish: contact-centred colour maps, ready-to-mill Finalize with a soft export gate, AI draft review, sharper instrument styling | done |

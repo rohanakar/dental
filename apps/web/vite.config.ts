@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
 
@@ -48,6 +49,13 @@ export default defineConfig(({ mode }) => {
       sourcemap: true,
       // three.js alone is ~700 kB minified; one vendor-heavy chunk is expected.
       chunkSizeWarningLimit: 1200,
+      rolldownOptions: {
+        // The landing page at the root stays light; the editor lives at app/.
+        input: {
+          landing: fileURLToPath(new URL('./index.html', import.meta.url)),
+          app: fileURLToPath(new URL('./app/index.html', import.meta.url)),
+        },
+      },
     },
   };
 });

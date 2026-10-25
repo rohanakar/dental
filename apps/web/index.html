@@ -3,12 +3,344 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="light dark" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta
+      name="description"
+      content="Design single posterior crowns in the browser with the step-by-step workflow labs know. AI proposes each step, and five measured checks gate every proposal."
+    />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%232f6fde' d='M9 3c-3.5 0-6 2.8-6 6.5 0 4 1.6 6.4 2.6 9.8C6.8 23.6 7.4 29 10 29c2.4 0 2.6-4.6 3.4-7 .5-1.4 1.5-2 2.6-2s2.1.6 2.6 2c.8 2.4 1 7 3.4 7 2.6 0 3.2-5.4 4.4-9.7 1-3.4 2.6-5.8 2.6-9.8C29 5.8 26.5 3 23 3c-2.6 0-4.4 1.6-7 1.6S11.6 3 9 3z'/%3E%3C/svg%3E" />
-    <title>Dental CAD</title>
+    <title>[Product name]: crown design in the browser</title>
+    <link rel="stylesheet" href="/src/landing/landing.css" />
+    <script type="module" src="/src/landing/landing.ts"></script>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="nav">
+      <div class="wrap nav-row">
+        <!-- Placeholder until the product name is chosen (PRODUCT.md: the name is open). -->
+        <a class="wordmark" href="./" aria-label="[Product name], home">[Product name]</a>
+        <nav class="nav-links" aria-label="Sections">
+          <a href="#workflow">Workflow</a>
+          <a href="#checks">Checks</a>
+          <a href="#ai">AI assist</a>
+        </nav>
+        <div class="nav-actions" data-session="signed-out">
+          <a class="nav-signin" href="app/">Sign in</a>
+          <a class="button button-primary button-small" href="#signup" data-focus-signup
+            ><span class="label-long">Create lab account</span><span class="label-short">Create account</span></a
+          >
+        </div>
+        <div class="nav-actions" data-session="signed-in" hidden>
+          <a class="button button-primary button-small" href="app/">Open your cases</a>
+        </div>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero wrap" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <h1 id="hero-title">
+            Crown design in a browser tab.
+            <span class="hero-accent">The checks come built in.</span>
+          </h1>
+          <p class="lede">
+            The step-by-step crown workflow labs know from desktop CAD. AI proposes each step, you accept or revert, and
+            nothing reaches you until it passes five measured checks.
+          </p>
+
+          <form id="signup" class="signup" novalidate data-session="signed-out" aria-describedby="signup-note">
+            <div class="field">
+              <label for="signup-name">Your name</label>
+              <input id="signup-name" name="name" type="text" autocomplete="name" required />
+            </div>
+            <div class="field">
+              <label for="signup-email">Work email</label>
+              <input id="signup-email" name="email" type="email" autocomplete="email" placeholder="you@yourlab.com" required />
+            </div>
+            <div class="field">
+              <label for="signup-password">Password <span class="label-hint">(10+ characters)</span></label>
+              <input id="signup-password" name="password" type="password" autocomplete="new-password" minlength="10" required />
+            </div>
+            <div class="field field-submit">
+              <button class="button button-primary" type="submit">Create lab account</button>
+            </div>
+            <p class="form-error" role="alert" hidden></p>
+            <p id="signup-note" class="form-note">
+              Your account comes with a lab workspace; cases stay inside it.
+              <a href="app/?demo">Or open the demo case first: no account, synthetic scans.</a>
+            </p>
+          </form>
+
+          <div class="signed-in" data-session="signed-in" hidden>
+            <p>You're signed in<span data-user-email></span>.</p>
+            <a class="button button-primary" href="app/">Open your cases</a>
+          </div>
+        </div>
+
+        <figure class="hero-shot">
+          <div class="shot">
+            <img
+              src="/src/landing/assets/hero-crown.webp"
+              width="1400"
+              height="1326"
+              fetchpriority="high"
+              alt="The auto-design draft in the editor: the proposed crown on the prepared lower molar 36, between its neighbours, with the occlusal clearance map on its biting surface."
+            />
+            <img
+              class="shot-draft"
+              src="/src/landing/assets/draft-banner.webp"
+              width="630"
+              height="224"
+              alt="The editor's draft review: Draft ready, every check passed, with Accept and Reject."
+            />
+          </div>
+          <figcaption class="checks" aria-label="Checks on this crown">
+            <div class="checks-head">
+              <strong>Checks</strong>
+              <span class="checks-count"><span data-passed>5</span> of 5 passed</span>
+              <span class="checks-case">Synthetic case · tooth 36 · zirconia</span>
+            </div>
+            <ol class="checks-list">
+              <li data-check>
+                <span>Closed margin</span>
+                <span class="checks-value"><span data-value data-from="8" data-to="28.1" data-decimals="1">28.1</span> mm</span>
+                <svg class="tick" viewBox="0 0 16 16" aria-label="passed" role="img"><circle cx="8" cy="8" r="8" /><path d="M4.5 8.3l2.2 2.2 4.8-4.9" /></svg>
+              </li>
+              <li data-check>
+                <span>Undercut at margin</span>
+                <span class="checks-value"><span data-value data-from="0" data-to="0">0</span> points</span>
+                <svg class="tick" viewBox="0 0 16 16" aria-label="passed" role="img"><circle cx="8" cy="8" r="8" /><path d="M4.5 8.3l2.2 2.2 4.8-4.9" /></svg>
+              </li>
+              <li data-check>
+                <span>Minimum thickness</span>
+                <span class="checks-value"><span data-value data-from="0.5" data-to="1.01" data-decimals="2">1.01</span> mm <small>min 0.50</small></span>
+                <svg class="tick" viewBox="0 0 16 16" aria-label="passed" role="img"><circle cx="8" cy="8" r="8" /><path d="M4.5 8.3l2.2 2.2 4.8-4.9" /></svg>
+              </li>
+              <li data-check>
+                <span>Occlusal clearance</span>
+                <span class="checks-value"><span data-value data-from="0.5" data-to="0.05" data-decimals="2">0.05</span> mm</span>
+                <svg class="tick" viewBox="0 0 16 16" aria-label="passed" role="img"><circle cx="8" cy="8" r="8" /><path d="M4.5 8.3l2.2 2.2 4.8-4.9" /></svg>
+              </li>
+              <li data-check>
+                <span>Self-intersections</span>
+                <span class="checks-value"><span data-value data-from="0" data-to="0">0</span></span>
+                <svg class="tick" viewBox="0 0 16 16" aria-label="passed" role="img"><circle cx="8" cy="8" r="8" /><path d="M4.5 8.3l2.2 2.2 4.8-4.9" /></svg>
+              </li>
+            </ol>
+          </figcaption>
+        </figure>
+      </section>
+
+      <section id="workflow" class="section" aria-labelledby="workflow-title">
+        <div class="wrap">
+          <div class="section-intro">
+            <h2 id="workflow-title">The wizard you already know, in the browser.</h2>
+            <p>
+              Nine steps in the order desktop CAD taught you. Each step says what it needs and shows what it measured,
+              Back and Next move between them, and nothing needs installing: open a tab, import the scans, design.
+            </p>
+          </div>
+          <div class="workflow">
+            <figure class="shot shot-wide">
+              <picture>
+                <source media="(max-width: 760px)" srcset="/src/landing/assets/editor-panel.webp" width="680" height="1420" />
+                <img
+                  src="/src/landing/assets/editor-finalize.webp"
+                  width="2000"
+                  height="1194"
+                  loading="lazy"
+                  alt="The editor at the Finalize step: the nine-step rail, a Ready to mill list (margin closed at 28.1 mm, 0 of 158 margin points in undercut, watertight, thinnest 1.01 mm against a 0.50 mm minimum, occlusion and contacts adapted) and the crown between its neighbours."
+                />
+              </picture>
+            </figure>
+            <ol class="steps">
+              <li><b>Case setup</b><span>Tooth, material and prescription. Paste an Rx to fill it in.</span></li>
+              <li><b>Scans</b><span>Upper and lower jaw as STL or PLY, already in occlusion.</span></li>
+              <li><b>Tooth frame</b><span>Occlusal, mesial and buccal directions; neighbour contacts found for you.</span></li>
+              <li><b>Margin</b><span>Live-wire tracing that follows the margin ridge, or automatic.</span></li>
+              <li><b>Insertion axis</b><span>Least undercut, with the undercut map and blockout.</span></li>
+              <li><b>Parameters</b><span>Cement gap, spacer and thicknesses, preset per material.</span></li>
+              <li><b>Crown proposal</b><span>A library crown fitted to the margin, moved in clinical directions.</span></li>
+              <li><b>Adapt</b><span>To the antagonist and both neighbours, with conflicts reported.</span></li>
+              <li><b>Finalize</b><span>A validated binary STL and a construction-info JSON for CAM.</span></li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <section id="checks" class="section section-tinted" aria-labelledby="checks-title">
+        <div class="wrap">
+          <div class="section-intro">
+            <h2 id="checks-title">Judge the crown on numbers, not on looks.</h2>
+            <p>
+              Every proposal, from the AI or from your own edits, runs the same deterministic checks. A failed check stops
+              the draft and says why, in plain terms: insufficient reduction, an open contact, a margin in undercut.
+            </p>
+          </div>
+          <div class="table-wrap">
+            <table class="gates">
+              <caption>The five checks, with the synthetic case 36 from the images above</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Check</th>
+                  <th scope="col">What it measures</th>
+                  <th scope="col" class="num">Synthetic case 36</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">Closed margin</th>
+                  <td>The margin is one loop on the prep, and the prep region stops at it.</td>
+                  <td class="num">closed, 28.1 mm</td>
+                </tr>
+                <tr>
+                  <th scope="row">No undercut at the margin</th>
+                  <td>Every margin point can be reached along the insertion axis, so the crown seats.</td>
+                  <td class="num">0 points</td>
+                </tr>
+                <tr>
+                  <th scope="row">Minimum thickness</th>
+                  <td>Material stays above the minimum for the chosen material away from the margin.</td>
+                  <td class="num">1.01 mm, min 0.50</td>
+                </tr>
+                <tr>
+                  <th scope="row">Occlusal clearance</th>
+                  <td>After adaptation, the gap to the antagonist reaches its target; contacts reach theirs.</td>
+                  <td class="num">0.05 mm, target 0.05</td>
+                </tr>
+                <tr>
+                  <th scope="row">No self-intersection</th>
+                  <td>The crown is a closed, consistently oriented solid that never crosses itself.</td>
+                  <td class="num">0 triangle pairs</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="maps">
+            <figure>
+              <div class="shot">
+                <img
+                  src="/src/landing/assets/map-occlusion.webp"
+                  width="1200"
+                  height="937"
+                  loading="lazy"
+                  alt="Occlusal clearance colour map on the crown's biting surface, with the editor's legend: 0.2 mm penetration to a 0.5 mm gap, contact and the 0.05 mm target marked."
+                />
+              </div>
+              <figcaption>
+                <b>Occlusal clearance.</b> The gap to the opposing teeth after adaptation.
+                <span class="scale scale-occlusion" role="img" aria-label="Scale from 0.2 mm penetration to a gap of 0.5 mm or more; contact at 0 mm, target 0.05 mm.">
+                  <span class="scale-bar"><i class="scale-tick" style="--at: 28.57%"></i><i class="scale-tick is-dashed" style="--at: 35.71%"></i></span>
+                  <span class="scale-ends"><span>−0.2 mm penetration</span><span>≥ 0.5 mm gap</span></span>
+                  <span class="scale-keys"><span><i class="key"></i>0 mm contact</span><span><i class="key is-dashed"></i>0.05 mm target</span></span>
+                </span>
+              </figcaption>
+            </figure>
+            <figure>
+              <div class="shot">
+                <img
+                  src="/src/landing/assets/map-thickness.webp"
+                  width="1200"
+                  height="937"
+                  loading="lazy"
+                  alt="Material thickness colour map on the crown, thin only along the margin band, with the editor's legend from 0 to 2 mm and the 0.5 mm minimum marked."
+                />
+              </div>
+              <figcaption>
+                <b>Material thickness.</b> Thin only along the margin band, by design; the minimum applies away from it.
+                <span class="scale scale-thickness" role="img" aria-label="Scale from 0 to 2 mm or more; below the 0.5 mm zirconia minimum is shown as a warning.">
+                  <span class="scale-bar"><i class="scale-tick" style="--at: 25%"></i></span>
+                  <span class="scale-ends"><span>0 mm thin</span><span>≥ 2 mm thick</span></span>
+                  <span class="scale-keys"><span><i class="key"></i>0.5 mm minimum, margin band exempt</span></span>
+                </span>
+              </figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section id="ai" class="section" aria-labelledby="ai-title">
+        <div class="wrap ai">
+          <div class="ai-copy">
+            <h2 id="ai-title">AI proposes. You decide.</h2>
+            <p>
+              Click the prepared tooth once and auto-design proposes the tooth frame, margin, insertion axis, crown and
+              adaptation, each one gated by its checks. The result is a draft: accept it, or reject it and nothing has
+              changed.
+            </p>
+            <p>
+              The design assistant takes plain instructions such as <q>move the crown 0.2 mm mesial</q> and applies them
+              through the same validated commands as the toolbar, as one draft with Accept and Revert. Undo always works.
+            </p>
+            <p class="ai-rule">
+              Language models orchestrate and explain. They never produce the geometry: margins, axes and surfaces come from
+              deterministic algorithms whose results you can measure.
+            </p>
+          </div>
+          <figure class="ai-shot">
+            <div class="shot shot-panel">
+              <img
+                src="/src/landing/assets/auto-design.webp"
+                width="630"
+                height="574"
+                loading="lazy"
+                alt="The draft review's first two steps with their checks: tooth frame axes orthonormal and both neighbour contacts found; margin closes the prep region, 28.1 mm long, no kinks (42.79° against a 120° limit), ridge found on all radial profiles."
+              />
+            </div>
+            <figcaption>From the draft review on the synthetic case: each step's checks with their values. The first two of five steps are shown.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="section section-tinted" aria-labelledby="scope-title">
+        <div class="wrap">
+          <div class="section-intro">
+            <h2 id="scope-title">What it does today, and what it doesn't.</h2>
+          </div>
+          <div class="scope">
+            <div>
+              <h3>Today</h3>
+              <ul class="list-yes">
+                <li>Single anatomic crowns on premolars and molars.</li>
+                <li>Intraoral scans in STL or PLY: upper jaw, lower jaw, already in occlusion.</li>
+                <li>A binary STL plus a construction-info JSON for CAM, and a <code>.dcad.zip</code> project file.</li>
+                <li>Cases and design versions stored for your lab. Nothing to install.</li>
+                <li>Prescription intake: paste the Rx and confirm the case it fills in.</li>
+              </ul>
+            </div>
+            <div>
+              <h3>Not yet</h3>
+              <ul class="list-no">
+                <li>Bridges are next, anterior teeth included. Specs for framework, Maryland, inlay- and onlay-retained and implant bridges are in review.</li>
+                <li>No veneers, virtual articulator or automatic bite alignment.</li>
+                <li>Not a medical device. Use synthetic or de-identified data only, never real patient data.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="closing wrap" aria-labelledby="closing-title">
+        <h2 id="closing-title">Design your first crown today.</h2>
+        <p>Create a lab account, or open the demo case and click the prep.</p>
+        <div class="closing-actions">
+          <a class="button button-primary" href="#signup" data-focus-signup data-session="signed-out">Create lab account</a>
+          <a class="button button-primary" href="app/" data-session="signed-in" hidden>Open your cases</a>
+          <a class="button button-secondary" href="app/?demo">Open the demo case</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap footer-row">
+        <span class="wordmark wordmark-quiet">[Product name]</span>
+        <nav aria-label="Footer">
+          <a href="app/">Sign in</a>
+          <a href="app/?demo">Demo case</a>
+        </nav>
+        <p>Not a medical device. Synthetic or de-identified data only. All images show the synthetic case 36.</p>
+      </div>
+    </footer>
   </body>
 </html>

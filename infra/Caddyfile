@@ -29,12 +29,21 @@
 			}
 		}
 
+		# The editor lives at /app/; the landing page is the site root.
+		redir /app {$BASE_PATH}/app/ 308
+
 		handle {
 			root * /srv
 			@assets path /assets/*
 			header @assets Cache-Control "public, max-age=31536000, immutable"
 			@html not path /assets/*
 			header @html Cache-Control "no-cache"
+			# Unknown paths under /app/ belong to the editor, everything else to the landing page.
+			@editor {
+				path /app/*
+				not file
+			}
+			rewrite @editor /app/index.html
 			try_files {path} /index.html
 			file_server
 		}

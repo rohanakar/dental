@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { goOffline, signIn, signUp, useSessionStore } from '../../state/session';
+import { BASE_URL } from '../../io/urls';
+import { goOffline, signIn, signUp, startDemo, useSessionStore } from '../../state/session';
 
 export function AuthForm() {
-  const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
+  const [mode, setMode] = useState(() => useSessionStore.getState().authMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -58,12 +59,18 @@ export function AuthForm() {
         </form>
         <hr className="divider" />
         <div className="actions">
-          <button className="btn" type="button" onClick={goOffline}>
+          <button className="btn" type="button" onClick={() => void startDemo()}>
+            Open the demo case
+          </button>
+          <button className="btn ghost" type="button" onClick={goOffline}>
             Continue offline
           </button>
-          <span className="muted">Nothing is saved</span>
         </div>
+        <span className="muted">Both work without an account. Nothing is saved.</span>
       </div>
+      <a className="session-back" href={BASE_URL}>
+        What is this? See the product page
+      </a>
     </div>
   );
 }

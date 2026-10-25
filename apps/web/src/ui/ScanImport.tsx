@@ -1,5 +1,6 @@
-import type { ScanRole } from '@dcad/shared';
+import { jawOf, type ScanRole } from '@dcad/shared';
 import { useRef, useState } from 'react';
+import { useDesignStore } from '../design/store';
 import { sceneController } from '../state/sceneController';
 import { ACCEPTED_EXTENSIONS, assignRoles, isScanFile } from './files';
 
@@ -10,13 +11,14 @@ export function importFiles(files: File[], preferred: ScanRole): void {
 }
 
 export function ScanImport() {
-  const [role, setRole] = useState<ScanRole>('lower');
+  // The prep's jaw is the scan every case needs, so files without a jaw in their name default to it.
+  const [role, setRole] = useState<ScanRole>(() => jawOf(useDesignStore.getState().activeFdi));
   const [over, setOver] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
   return (
     <section>
-      <h2>Scans</h2>
+      <h3>Import</h3>
       <div className="field">
         <label htmlFor="role">Import as</label>
         <select id="role" value={role} onChange={(e) => setRole(e.target.value as ScanRole)}>

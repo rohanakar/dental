@@ -1,5 +1,5 @@
 import type { CaseSummary } from '@dcad/shared';
-import { goOffline, openCase, refreshCases, signOut, useSessionStore } from '../../state/session';
+import { goOffline, openCase, refreshCases, signOut, startDemo, useSessionStore } from '../../state/session';
 import { NewCaseForm } from './NewCaseForm';
 
 const STATUS_LABEL: Record<CaseSummary['status'], string> = {
@@ -50,7 +50,24 @@ export function CaseList() {
             <span className="spinner" /> Loading cases…
           </div>
         )}
-        {!loading && !error && cases.length === 0 && <div className="muted">No cases yet. Create one above.</div>}
+        {!loading && !error && cases.length === 0 && (
+          <div className="first-run">
+            <p>
+              <strong>No cases yet.</strong> A case is one order: the tooth, the material and the scans. Create it above,
+              then import the scans.
+            </p>
+            <p className="muted">
+              You need the upper and lower jaw scans as STL or PLY, already in occlusion, with the prep in its jaw scan. Use
+              a lab reference, never a patient name.
+            </p>
+            <div className="actions">
+              <button className="btn" type="button" onClick={() => void startDemo()}>
+                Try the demo case first
+              </button>
+              <span className="muted">Synthetic scans of tooth 36. Nothing is saved.</span>
+            </div>
+          </div>
+        )}
         {cases.length > 0 && (
           <div className="case-table-wrap">
             <table className="case-table">

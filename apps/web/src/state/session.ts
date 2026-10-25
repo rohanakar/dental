@@ -1,4 +1,4 @@
-import type { CaseSetup, CaseSummary } from '@dcad/shared';
+import { jawOf, stepsFor, unitKind, type CaseSetup, type CaseSummary } from '@dcad/shared';
 import { create } from 'zustand';
 import * as auth from '../api/auth';
 import * as api from '../api/client';
@@ -10,7 +10,9 @@ import { exportProject, importProject, type ProjectScan } from '../io/projectZip
 import { flushProposalEvents } from '../ai/events';
 import { recordEditsOnSave } from '../ai/orchestrator';
 import { useToolStore } from '../tools/toolStore';
+import { resumeStep } from '../ui/stepGuide';
 import { sceneController } from './sceneController';
+import { useSceneStore } from './sceneStore';
 
 export type SessionStatus = 'checking' | 'signed-out' | 'cases' | 'editor';
 
@@ -19,6 +21,10 @@ export interface SessionState {
   user: auth.AuthUser | null;
   /** Working without the backend: nothing is persisted. */
   offline: boolean;
+  /** The offline workspace holds the demo case (synthetic scans). */
+  demo: boolean;
+  /** Which form the sign-in screen opens on (`?signup` links open sign-up). */
+  authMode: 'sign-in' | 'sign-up';
   /** Shown on the sign-in screen, e.g. when the server is unreachable. */
   notice: string | null;
   authBusy: boolean;
@@ -49,6 +55,8 @@ export const useSessionStore = create<SessionState>()(() => ({
   status: 'checking',
   user: null,
   offline: false,
+  demo: false,
+  authMode: 'sign-in',
   notice: null,
   authBusy: false,
   authError: null,
@@ -74,7 +82,8 @@ function resetWorkspace(): void {
   sceneController.setPersistence(null);
   useToolStore.getState().reset();
   useDesignStore.getState().load(newDocument(), 0);
-  set({ currentCase: null, offline: false, saveError: null, saveWarning: null, openError: null });
+  useDesignStore.getState().setActiveStep('scans');
+  set({ currentCase: null, offline: false, demo: false, saveError: null, saveWarning: null, openError: null });
 }
 
 /** Ask before discarding unsaved work. Offline documents are never saved, so they count as unsaved once edited. */
@@ -102,6 +111,33 @@ export async function init(): Promise<void> {
     else if (!(e instanceof ApiRequestError && e.status === 401)) notice = errorMessage(e);
     set({ status: 'signed-out', user: null, notice });
   }
+}
+
+type Entry = 'demo' | 'signup' | null;
+
+/** `?demo` or `?signup` from a landing-page link, removed from the address bar once read. */
+function readEntry(): Entry {
+  if (typeof window === 'undefined') return null;
+  const url = new URL(window.location.href);
+  const entry: Entry = url.searchParams.has('demo') ? 'demo' : url.searchParams.has('signup') ? 'signup' : null;
+  if (entry) {
+    url.searchParams.delete('demo');
+    url.searchParams.delete('signup');
+    window.history.replaceState(null, '', url);
+  }
+  return entry;
+}
+
+let entered = false;
+
+/** First load of the app: follow the entry link once (StrictMode mounts twice), then check the session. */
+export function enter(): Promise<void> {
+  if (entered) return Promise.resolve();
+  entered = true;
+  const entry = readEntry();
+  if (entry === 'demo') return startDemo();
+  if (entry === 'signup') set({ authMode: 'sign-up' });
+  return init();
 }
 
 async function authenticate(run: () => Promise<auth.AuthUser>): Promise<void> {
@@ -163,7 +199,10 @@ export async function openCase(id: string): Promise<void> {
     const [detail, latest] = await Promise.all([api.getCase(id), api.latestVersion(id)]);
     resetWorkspace();
     const doc = latest ? latest.doc : newDocument(detail.id, detail.setup);
-    useDesignStore.getState().load(doc, latest?.version ?? 0);
+    const design = useDesignStore.getState();
+    design.load(doc, latest?.version ?? 0);
+    const fdi = useDesignStore.getState().activeFdi;
+    design.setActiveStep(resumeStep(doc.teeth.find((t) => t.fdi === fdi)?.steps, stepsFor(unitKind(doc.setup, fdi))));
     sceneController.setPersistence({
       upload: async ({ role, name, sha256, blob }) => (await api.uploadFile(detail.id, { kind: role, name, sha256, blob })).id,
     });
@@ -193,15 +232,35 @@ export function goOffline(): void {
   set({ offline: true, status: 'editor' });
 }
 
+/**
+ * The demo case: offline, synthetic scans for tooth 36, then Tooth frame with
+ * one-click crown armed, so the first click on the prep proposes a whole crown.
+ */
+export async function startDemo(): Promise<void> {
+  if (!confirmDiscard()) return;
+  resetWorkspace();
+  set({ offline: true, demo: true, status: 'editor' });
+  await sceneController.loadDemo();
+  const jaw = jawOf(useDesignStore.getState().activeFdi);
+  const jawReady = useSceneStore.getState().objects.some((o) => o.role === jaw && o.phase === 'ready');
+  // Leave the user where they are if the import failed or they already moved on.
+  if (!jawReady || !get().demo || useDesignStore.getState().activeStep !== 'scans') return;
+  useToolStore.getState().set({ autoArmed: true, framePick: 'seed' });
+  useDesignStore.getState().setActiveStep('frame');
+}
+
 /** Back to the case list (or the sign-in screen when offline without a session). */
 export function backToCases(): void {
   if (!confirmDiscard()) return;
+  // Someone leaving the demo without a session most likely wants an account.
+  if (get().demo && !get().user) set({ authMode: 'sign-up' });
   resetWorkspace();
   if (get().user) {
     set({ status: 'cases' });
     void refreshCases();
   } else {
-    set({ status: 'signed-out' });
+    // The demo skips the session check, so a signed-in visitor may still have a session.
+    void init();
   }
 }
 

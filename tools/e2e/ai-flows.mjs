@@ -8,7 +8,7 @@ import { mkdirSync } from 'node:fs';
 
 const OUT = new URL('../../out/e2e/', import.meta.url).pathname;
 mkdirSync(OUT, { recursive: true });
-const APP_URL = process.env.APP_URL ?? 'http://localhost:5173/';
+const APP_URL = process.env.APP_URL ?? 'http://localhost:5173/app/';
 const log = (...a) => console.log('[ai]', ...a);
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });

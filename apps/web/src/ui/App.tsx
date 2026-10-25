@@ -2,11 +2,13 @@ import { useEffect } from 'react';
 import { useDesignStore } from '../design/store';
 import { sceneController } from '../state/sceneController';
 import { useSceneStore } from '../state/sceneStore';
+import { useSessionStore } from '../state/session';
 import { marginTool } from '../tools/marginTool';
 import { handleNudgeKey } from '../tools/nudge';
 import { useToolStore } from '../tools/toolStore';
 import { AssistantPanel } from './ai/AssistantPanel';
 import { SessionGate } from './session/SessionGate';
+import { StepFooter } from './StepFooter';
 import { StepNav, STEPS } from './StepNav';
 import { AdaptStep } from './steps/AdaptStep';
 import { AxisStep } from './steps/AxisStep';
@@ -81,6 +83,8 @@ function useKeyboardShortcuts() {
 
 function StepPanel() {
   const step = useDesignStore((s) => s.activeStep);
+  // The assistant needs the server; offline it only says so, so start it closed.
+  const offline = useSessionStore((s) => s.offline);
   const label = STEPS.find((s) => s.id === step)?.label ?? step;
   return (
     <section className="step-panel">
@@ -95,7 +99,7 @@ function StepPanel() {
       {step === 'adapt' && <AdaptStep />}
       {step === 'finalize' && <FinalizeStep />}
       {(step === 'proposal' || step === 'adapt') && (
-        <details className="assistant-section" open>
+        <details className="assistant-section" open={!offline}>
           <summary>Design assistant</summary>
           <AssistantPanel />
         </details>
@@ -114,6 +118,7 @@ export function App() {
         <aside className="panel">
           <StepNav />
           <StepPanel />
+          <StepFooter />
         </aside>
         <Viewport />
       </div>

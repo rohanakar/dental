@@ -1,0 +1,34 @@
+/* Sticks to the bottom of the side panel so Back / Next stay in reach on long steps. */
+.step-footer {
+  position: sticky;
+  bottom: -12px;
+  margin: auto -12px -12px;
+  padding: 10px 12px 12px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.step-footer-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.step-footer-nav .step-next {
+  margin-left: auto;
+}
+
+.step-missing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--fs-small);
+  color: var(--warn-text);
+  background: var(--warn-bg);
+  border-radius: var(--radius-sm);
+  padding: 6px 6px 6px 8px;
+}

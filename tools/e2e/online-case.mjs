@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 
 const OUT = new URL('../../out/e2e/', import.meta.url).pathname;
 mkdirSync(OUT, { recursive: true });
-const APP_URL = process.env.APP_URL ?? 'http://localhost:5173/';
+const APP_URL = process.env.APP_URL ?? 'http://localhost:5173/app/';
 const log = (...a) => console.log('[online]', ...a);
 // Headless Chrome with software WebGL (SwiftShader); slow for 1.3M triangles, hence settle().
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
@@ -27,20 +27,21 @@ const settle = async () => {
 const clickWorld = async (p) => { const s = await page.evaluate((p) => window.__dcad.viewer.project(p), p); await page.mouse.click(s.x, s.y); };
 const step = (label) => page.getByRole('button', { name: label }).first().click();
 
-await page.goto(APP_URL);
-// Sign up.
-await page.getByRole('button', { name: 'Create an account' }).click();
-await page.getByLabel('Name').fill('E2E Tech');
-await page.getByLabel('Email').fill(`e2e-${Date.now()}@example.com`);
-await page.getByLabel('Password').fill('correct-horse-battery');
-await page.getByRole('button', { name: 'Create account' }).click();
+// Sign up on the landing page (the site root, one level above the editor).
+await page.goto(new URL('../', APP_URL).href);
+const signup = page.locator('form#signup');
+await signup.getByLabel('Your name').fill('E2E Tech');
+await signup.getByLabel('Work email').fill(`e2e-${Date.now()}@example.com`);
+await signup.getByLabel(/Password/).fill('correct-horse-battery');
+await signup.getByRole('button', { name: 'Create lab account' }).click();
 await page.getByText("Your lab's cases").waitFor();
-log('signed up');
-// New case (default 36 zirconia).
+await page.getByText('No cases yet.').waitFor();
+log('signed up on the landing page; first-run case list shown');
+// New case (default 36 zirconia): it opens on Scans, the first unfinished step.
 await page.getByLabel(/Case reference/).fill('E2E-0001');
 await page.getByRole('button', { name: 'New case' }).click();
 await page.getByRole('button', { name: 'Save' }).waitFor();
-log('case opened; doc caseId', await state(() => window.__dcad.design.getState().doc.caseId));
+log('case opened; doc caseId', await state(() => window.__dcad.design.getState().doc.caseId), 'step', await state(() => window.__dcad.design.getState().activeStep));
 // Demo scans → uploaded.
 await page.getByRole('button', { name: /load demo scans/i }).first().click();
 await waitFor(() => window.__dcad.design.getState().doc.scans.length === 2 && window.__dcad.design.getState().doc.scans.every((s) => s.mesh.fileId));

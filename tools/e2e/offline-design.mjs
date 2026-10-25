@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 
 const OUT = new URL('../../out/e2e/', import.meta.url).pathname;
 mkdirSync(OUT, { recursive: true });
-const APP_URL = process.env.APP_URL ?? 'http://localhost:5173/';
+const APP_URL = process.env.APP_URL ?? 'http://localhost:5173/app/';
 const log = (...a) => console.log('[e2e]', ...a);
 
 // Headless Chrome with software WebGL (SwiftShader); slow for 1.3M triangles, hence settle().
@@ -227,7 +227,13 @@ await page.waitForTimeout(500);
 await waitFor(() => !window.__dcad.tools.getState().crown.computing);
 log('after cement gap 0.08', JSON.stringify(await state(() => { const c = window.__dcad.tools.getState().crown; return { ok: c.validation.ok, gap: c.gapCheck, steps: window.__dcad.design.getState().doc.teeth[0].steps }; })));
 await step('Finalize');
-const [stl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export STL' }).click()]);
+// Finalize asks once more when a check is open ("Export STL anyway…"); this run has a stale adaptation on purpose.
+const exportStl = async () => {
+  await page.getByRole('button', { name: /^Export STL/ }).click();
+  const anyway = page.getByRole('button', { name: 'Export STL anyway', exact: true });
+  if (await anyway.waitFor({ timeout: 2000 }).then(() => true, () => false)) await anyway.click();
+};
+const [stl] = await Promise.all([page.waitForEvent('download'), exportStl()]);
 await stl.saveAs(`${OUT}${stl.suggestedFilename()}`);
 const [json] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Construction info' }).click()]);
 await json.saveAs(`${OUT}${json.suggestedFilename()}`);
