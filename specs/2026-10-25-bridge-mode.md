@@ -542,4 +542,31 @@ Built by parallel agents in git worktrees, integrated in waves. Each green wave 
 - Arch tangent error ≤ 2.8° for teeth 1–6.
 - Build: manifold-3d is a 44 kB lazy chunk plus 541 kB of WASM, referenced only from the worker.
 
-Waves 2–4 (pontics, connectors and checks with the runner; app; AI) follow.
+### Wave 2a (2026-10-25): bridge setup UI, step list per unit kind, Rx bridges
+- **Tooth chart** (`apps/web/src/ui/ToothChart.tsx`, `ui/bridge.css`):
+  - Quadrant rows run from the midline outward (11–18 over 21–28, 41–48 over 31–38), so every chart neighbour,
+    including 11–21 and 31–41, sits next to its partner.
+  - Targets are 32×30 px for teeth and 36×24 px for connectors (WCAG 2.5.8).
+  - A connector toggle sits between in-case neighbours; across different materials it is shown unavailable, with the
+    reason. Bridges are grouped by brackets.
+- **Setup step:**
+  - Restorations are grouped by bridge, with a Crown/Pontic switch per unit and one material per bridge.
+  - A new pontic connects to its neighbours of the same material.
+  - Changes are checked with `validateBridges` before dispatch, and refusals are shown inline.
+- **Step list:** follows `stepsFor`; a pontic has no Margin or Axis. The tooth selector shows each unit's kind and
+  its bridge. The axis step says it is common to the abutments.
+- **Readiness:** `readinessNeeds(kind)` feeds Finalize.
+- **Rx:**
+  - The rule-based reader handles "bridge 35-37", "35–37 bridge", "13x23", "pontic 22" and cantilevers.
+  - The LLM path drops dangling connections and validates.
+  - `RxIntake` shows issues and keeps Apply disabled while there are errors.
+- **Adapt proposer:** skips connected sides.
+- **Verification:**
+  - 100 tests. The Rx and readiness tests were extended; two Rx cases were merged into one to stay within the budget.
+  - Playwright in Chrome, light and dark: 22 of 23 checks pass. The one miss is an unrelated 401 from another
+    session's API.
+- **Open:**
+  - Finalize readiness still counts a connected side's frame contact as a neighbour (wave 3).
+  - The chart layout is not the standard dentist's-view row; to be confirmed with the user.
+
+Waves 2b–4 (pontics, connectors and checks with the runner; app; AI) follow.

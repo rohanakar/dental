@@ -33,8 +33,15 @@ export function agentSystemPrompt(context: { fdi: number; crownProposed: boolean
 /** System prompt for prescription (Rx) intake: structured extraction only. */
 export const RX_SYSTEM_PROMPT = [
   'You extract a dental lab prescription into a structured case setup by calling submit_case_setup exactly once.',
-  'Teeth are FDI numbers (11-48); every tooth is supported, anterior and posterior. Restoration is always',
-  '"anatomic-crown".',
+  'Teeth are FDI numbers (11-48); every tooth is supported, anterior and posterior.',
+  'restoration is "anatomic-crown" for a crown on a prepared tooth (also a bridge retainer) and "pontic" for a missing',
+  'tooth that a bridge replaces.',
+  'connections lists the connected neighbours of each bridge as pairs [a, b] of teeth that are neighbours in the tooth',
+  'chart: the same quadrant with positions differing by 1, or 11-21 and 31-41 across the midline. A bridge 35-37 is',
+  'teeth 35, 36 (pontic) and 37 with connections [35, 36] and [36, 37]; "13x23" is a bridge from 13 to 23. The ends of',
+  'a span are retainers and the teeth between are pontics unless the text says otherwise. A cantilever pontic is',
+  'connected on one side only. Every pontic must be connected, every bridge needs at least one retainer, and all units',
+  'of a bridge have the same material. Single crowns have no connections.',
   'Materials: zirconia, lithium-disilicate (e.max), pmma (temporary). Shade uses VITA classical (e.g. A2, A3.5).',
   'patientRef is a pseudonymous case reference only if the text gives one (e.g. "Ref: LAB-123"); never put a',
   'patient name there, and leave it empty otherwise. Put remaining instructions in notes. Do not invent values.',

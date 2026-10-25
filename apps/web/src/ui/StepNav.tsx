@@ -1,6 +1,8 @@
-import type { StepId, StepStatus } from '@dcad/shared';
+import { bridgeOf, STEP_ORDER, stepsFor, unitKind, type StepId, type StepStatus } from '@dcad/shared';
+import { useEffect } from 'react';
 import { useOrchestrator } from '../ai/orchestrator';
 import { useDesignStore } from '../design/store';
+import './bridge.css';
 
 export const STEPS: Array<{ id: StepId; label: string; available: boolean }> = [
   { id: 'setup', label: 'Case setup', available: true },
@@ -26,28 +28,49 @@ const STATUS_TEXT: Record<NavStatus, string> = {
 export function StepNav() {
   const activeStep = useDesignStore((s) => s.activeStep);
   const steps = useDesignStore((s) => s.doc.teeth.find((t) => t.fdi === s.activeFdi)?.steps);
-  const teeth = useDesignStore((s) => s.doc.setup.teeth);
+  const setup = useDesignStore((s) => s.doc.setup);
+  const bridges = useDesignStore((s) => s.doc.bridges);
   const activeFdi = useDesignStore((s) => s.activeFdi);
   // Steps an auto-design draft changed are not done until the draft is accepted.
   const drafted = useOrchestrator((s) => (s.pendingReview ? s.steps : null));
   const { setActiveStep, setActiveFdi } = useDesignStore.getState();
 
+  // The step list follows the unit: a pontic has no prep, so no margin and no insertion axis.
+  const kind = unitKind(setup, activeFdi);
+  const visible = stepsFor(kind);
+  const bridge = bridgeOf({ bridges }, activeFdi);
+  const commonAxis = kind === 'abutment' && bridge ? bridge.teeth.filter((fdi) => unitKind(setup, fdi) === 'abutment') : [];
+
+  // Switching to a pontic while on a step it does not have goes back to the closest step it has.
+  useEffect(() => {
+    const has = stepsFor(kind);
+    if (has.includes(activeStep)) return;
+    const earlier = STEP_ORDER.slice(0, STEP_ORDER.indexOf(activeStep)).filter((s) => has.includes(s));
+    setActiveStep(earlier.at(-1) ?? has[0]!);
+  }, [activeStep, kind, setActiveStep]);
+
+  const unitLabel = (fdi: number) => {
+    const b = bridgeOf({ bridges }, fdi);
+    return `${fdi} · ${unitKind(setup, fdi) === 'pontic' ? 'pontic' : 'crown'}${b ? ` (${b.teeth[0]}–${b.teeth.at(-1)})` : ''}`;
+  };
+
   return (
     <nav className="steps" aria-label="Design steps">
-      {teeth.length > 1 && (
+      {setup.teeth.length > 1 && (
         <div className="field">
           <label htmlFor="active-tooth">Tooth</label>
           <select id="active-tooth" value={activeFdi} onChange={(e) => setActiveFdi(Number(e.target.value))}>
-            {teeth.map((t) => (
+            {setup.teeth.map((t) => (
               <option key={t.fdi} value={t.fdi}>
-                {t.fdi}
+                {unitLabel(t.fdi)}
               </option>
             ))}
           </select>
         </div>
       )}
-      <ol>
-        {STEPS.map(({ id, label, available }) => {
+      {/* Remounted per unit kind: Chrome keeps stale CSS step counters (1, 2, 3, 6…) when items are removed in place. */}
+      <ol key={kind}>
+        {STEPS.filter(({ id }) => visible.includes(id)).map(({ id, label, available }) => {
           const inDraft = drafted?.some((r) => r.step === id && (r.status === 'passed' || r.status === 'failed'));
           const status: NavStatus = inDraft ? 'draft' : (steps?.[id] ?? 'pending');
           return (
@@ -59,7 +82,10 @@ export function StepNav() {
                 aria-current={id === activeStep ? 'step' : undefined}
                 onClick={() => setActiveStep(id)}
               >
-                <span className="step-label">{label}</span>
+                <span className="step-label">
+                  {label}
+                  {id === 'axis' && commonAxis.length > 1 && <span className="step-note"> · common for {commonAxis.join(', ')}</span>}
+                </span>
                 {status === 'stale' && <span className="badge stale">stale</span>}
                 {status === 'draft' && <span className="badge draft">draft</span>}
                 <span className="step-icon" aria-hidden />

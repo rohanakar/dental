@@ -1,4 +1,4 @@
-import type { LlmRequest, LlmResponse } from '@dcad/shared';
+import { type LlmRequest, type LlmResponse, validateBridges } from '@dcad/shared';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../api/client', () => ({ llm: vi.fn() }));
@@ -6,6 +6,7 @@ vi.mock('../api/client', () => ({ llm: vi.fn() }));
 const { extractRxWithLlm, parseRxClassical } = await import('./rx');
 
 const crown = (fdi: number, material: string, shade?: string) => ({ fdi, restoration: 'anatomic-crown', material, ...(shade ? { shade } : {}) });
+const pontic = (fdi: number, material: string) => ({ fdi, restoration: 'pontic', material });
 
 /** Synthetic prescriptions (no patient data) with the exact setups the rule-based reader must produce. */
 const CASES: Array<{ name: string; text: string; setup: object }> = [
@@ -15,14 +16,31 @@ const CASES: Array<{ name: string; text: string; setup: object }> = [
     setup: { patientRef: 'LAB-2026-0142', teeth: [crown(36, 'zirconia', 'A2')], notes: '', connections: [] },
   },
   {
-    name: 'Palmer shorthand, an anterior tooth and bare shade',
-    text: 'UR7 and UL2 crowns, zirconia, B1',
-    setup: { patientRef: '', teeth: [crown(17, 'zirconia', 'B1'), crown(22, 'zirconia', 'B1')], notes: '', connections: [] },
+    name: 'Palmer shorthand, words for quadrants, an anterior tooth and bare shade',
+    text: 'UR7 and UL2 crowns, zirconia, B1\nLower left 6 and lower right 5 as well',
+    setup: {
+      patientRef: '',
+      teeth: [crown(17, 'zirconia', 'B1'), crown(22, 'zirconia', 'B1'), crown(36, 'zirconia', 'B1'), crown(45, 'zirconia', 'B1')],
+      notes: '',
+      connections: [],
+    },
   },
   {
-    name: 'words for quadrants',
-    text: 'Lower left 6 and lower right 5: monolithic zirconia, shade A3',
-    setup: { patientRef: '', teeth: [crown(36, 'zirconia', 'A3'), crown(45, 'zirconia', 'A3')], notes: '', connections: [] },
+    // A span's ends are abutments and the teeth between pontics; named pontics join the run of teeth around them.
+    name: 'a posterior bridge and an anterior bridge with two cantilevers across the midline',
+    text: 'Bridge 35-37, zirconia\n11, 21 crowns, 12 and 22 cantilever pontics',
+    setup: {
+      patientRef: '',
+      teeth: [crown(35, 'zirconia'), pontic(36, 'zirconia'), crown(37, 'zirconia'), crown(11, 'zirconia'), crown(21, 'zirconia'), pontic(12, 'zirconia'), pontic(22, 'zirconia')],
+      notes: '',
+      connections: [
+        [11, 12],
+        [11, 21],
+        [21, 22],
+        [35, 36],
+        [36, 37],
+      ],
+    },
   },
 ];
 
@@ -31,6 +49,7 @@ describe('rule-based Rx reader', () => {
     const result = parseRxClassical(text);
     expect(result.setup).toEqual(setup);
     expect(result.valid).toBe(true);
+    expect(validateBridges(result.setup).errors).toEqual([]);
   });
 });
 
@@ -50,13 +69,16 @@ describe('LLM Rx extraction', () => {
           type: 'tool_call',
           id: 'c1',
           name: 'submit_case_setup',
-          input: { patientRef: 'LAB-1', notes: '', teeth: [crown(36, 'lithium-disilicate', 'A2'), crown(21, 'zirconia')] },
+          // 37 is not in the case: its connection is dropped, not refused.
+          input: { patientRef: 'LAB-1', notes: '', teeth: [crown(36, 'lithium-disilicate', 'A2'), crown(21, 'zirconia')], connections: [[36, 37]] },
         },
       ]),
     );
     const out = await extractRxWithLlm('Ref: LAB-1\nTooth 36 crown, zirconia, shade A2', llm);
     expect(out.source).toBe('llm');
     expect(out.setup.teeth.map((t) => t.fdi)).toEqual([36, 21]);
+    expect(out.setup.connections).toEqual([]);
+    expect(out.issues.errors).toEqual([]);
     expect(out.differences).toEqual([
       { field: 'teeth', llm: '21, 36', classical: '36' },
       { field: '36 material', llm: 'lithium-disilicate', classical: 'zirconia' },

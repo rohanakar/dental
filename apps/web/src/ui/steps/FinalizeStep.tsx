@@ -1,3 +1,4 @@
+import { unitKind } from '@dcad/shared';
 import { useEffect, useState } from 'react';
 import { adaptationStale } from '../../design/adaptation';
 import { useDesignStore, selectActiveTooth } from '../../design/store';
@@ -7,7 +8,7 @@ import { useToolStore, type AxisReport } from '../../tools/toolStore';
 import { AlertIcon, CheckIcon, FailIcon, UnknownIcon } from '../icons';
 import { CrownStatusView } from './CrownStatusView';
 import { MapSelect, ReadaptNotice } from './CrownViewControls';
-import { isReady, millReadiness, type ReadinessItem, type ReadinessStatus } from './readiness';
+import { isReady, millReadiness, type ReadinessItem, type ReadinessStatus, readinessNeeds } from './readiness';
 import { MATERIAL_LABEL } from './SetupStep';
 import './NudgePad.css';
 
@@ -45,6 +46,7 @@ function ReadinessList({ items }: { items: ReadinessItem[] }) {
 export function FinalizeStep() {
   const tooth = useDesignStore(selectActiveTooth);
   const material = useDesignStore((s) => s.doc.setup.teeth.find((t) => t.fdi === s.activeFdi)?.material);
+  const kind = useDesignStore((s) => unitKind(s.doc.setup, s.activeFdi));
   const crown = useToolStore((s) => s.crown);
   const [axis, setAxis] = useState<AxisReport | null>(null);
   const [measuring, setMeasuring] = useState(true);
@@ -79,6 +81,7 @@ export function FinalizeStep() {
     material: material ? MATERIAL_LABEL[material] : 'Material',
     adaptationStale: adaptationStale(tooth),
     neighbours: { mesial: Boolean(tooth.frame?.mesialContact), distal: Boolean(tooth.frame?.distalContact) },
+    needs: readinessNeeds(kind),
   });
   const items = measuring ? checks.map((i) => (i.id === 'axis' ? { ...i, detail: 'Measuring…' } : i)) : checks;
   const ready = isReady(items);

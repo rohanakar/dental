@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AxisReport, CrownStatus } from '../../tools/toolStore';
-import { isReady, millReadiness, type ReadinessInput } from './readiness';
+import { isReady, millReadiness, type ReadinessInput, readinessNeeds } from './readiness';
 
 // A smooth 4 mm-radius margin loop, a seated axis and an adapted crown that is thick enough.
 const margin = Array.from({ length: 120 }, (_, i) => {
@@ -44,5 +44,10 @@ describe('mill readiness', () => {
     const unmeasured = millReadiness({ ...ready, axis: null });
     expect(unmeasured.find((i) => i.id === 'axis')?.status).toBe('unknown');
     expect(isReady(unmeasured)).toBe(false);
+
+    // A pontic has no margin or axis: those rows are left out, so it is ready without them.
+    const pontic = millReadiness({ ...ready, margin: null, axis: null, needs: readinessNeeds('pontic') });
+    expect(pontic.map((i) => i.id)).toEqual(['solid', 'thickness', 'occlusion', 'mesial']);
+    expect(isReady(pontic)).toBe(true);
   });
 });

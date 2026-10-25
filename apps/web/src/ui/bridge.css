@@ -1,0 +1,312 @@
+/* ---- bridge setup: FDI chart with connectors ------------------------------
+ * Each jaw is two quadrant rows from the midline (left) to the back teeth. The grid has two half-columns per tooth,
+ * so a connector spans from one tooth centre to the next. Targets: teeth 32 x 30 px, connectors 36 x 24 px.
+ */
+
+.fdi-chart {
+  --half: 18px;
+  --tooth-h: 30px;
+  --link-h: 24px;
+  --link-w: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* A narrower panel scrolls the chart instead of shrinking its targets. */
+  overflow-x: auto;
+}
+
+/* Between the jaw's two quadrant rows, right of the midline connector. */
+.fdi-jaw-label {
+  align-self: center;
+  padding-left: 4px;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.fdi-grid {
+  display: grid;
+  grid-template-columns: repeat(16, var(--half));
+  grid-template-rows: var(--link-h) var(--tooth-h) var(--link-h) var(--tooth-h) var(--link-h);
+}
+
+.fdi-tooth {
+  margin: 0 2px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  font-size: var(--fs-small);
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.fdi-tooth:hover {
+  border-color: var(--accent);
+}
+
+/* In the case: a crown is filled, a pontic (no prep, a replaced tooth) is tinted with a dashed outline. */
+.fdi-tooth.abutment {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.fdi-tooth.pontic {
+  background: var(--accent-tint);
+  border: 1.5px dashed var(--accent-strong);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+.fdi-tooth.abutment:hover {
+  background: color-mix(in srgb, var(--accent) 86%, #000);
+}
+
+.fdi-tooth.active {
+  box-shadow: inset 0 0 0 2px var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.fdi-tooth.pontic.active {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.fdi-link {
+  position: relative;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
+
+.fdi-link-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 1.5px solid var(--field-border);
+  border-radius: 50%;
+  background: var(--panel);
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.fdi-link-bar {
+  position: absolute;
+  display: none;
+  border: var(--link-w) solid var(--accent);
+}
+
+/* Above a row: a bracket from tooth centre to tooth centre, open toward the teeth. Below a row: the mirror. */
+.fdi-link.down .fdi-link-bar {
+  top: 50%;
+  bottom: 0;
+  left: calc(var(--link-w) / -2);
+  right: calc(var(--link-w) / -2);
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+}
+
+.fdi-link.up .fdi-link-bar {
+  top: 0;
+  bottom: 50%;
+  left: calc(var(--link-w) / -2);
+  right: calc(var(--link-w) / -2);
+  border-top: 0;
+  border-radius: 0 0 4px 4px;
+}
+
+/* Across the midline (11–21, 41–31): straight down from one central incisor to the other. */
+.fdi-link.vertical .fdi-link-bar {
+  top: 0;
+  bottom: 0;
+  left: calc(50% - var(--link-w) / 2);
+  border-width: 0 0 0 var(--link-w);
+}
+
+.fdi-link.connected .fdi-link-bar {
+  display: block;
+}
+
+.fdi-link.connected .fdi-link-dot {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.fdi-link.open:hover .fdi-link-dot {
+  border-color: var(--accent);
+}
+
+.fdi-link.open:hover .fdi-link-bar {
+  display: block;
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.fdi-link.connected:hover .fdi-link-bar {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* Different materials: no connector possible (exocad's rule). */
+.fdi-link.unavailable {
+  cursor: not-allowed;
+}
+
+.fdi-link.unavailable .fdi-link-dot {
+  border: 1.5px dashed var(--text-muted);
+  background: linear-gradient(135deg, transparent 44%, var(--text-muted) 44% 56%, transparent 56%);
+}
+
+.fdi-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+}
+
+.fdi-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.fdi-legend .swatch {
+  width: 14px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.fdi-legend .swatch.crown {
+  background: var(--accent);
+}
+
+.fdi-legend .swatch.pontic {
+  background: var(--accent-tint);
+  border: 1.5px dashed var(--accent-strong);
+}
+
+.fdi-legend .swatch.link {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--field-border);
+  border-radius: 50%;
+}
+
+.fdi-legend .swatch.link.connected {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* A refused change: what was not applied and why. */
+.setup-problem {
+  font-size: var(--fs-small);
+  color: var(--error-text);
+  border: 1px solid color-mix(in srgb, var(--error-text) 45%, var(--border));
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+}
+
+.setup-problem ul {
+  margin: 2px 0 0;
+  padding-left: 16px;
+}
+
+/* ---- restorations list: one group per bridge, one row per single unit ---- */
+
+.units {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.unit-groups,
+.unit-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.unit-group.bridge {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+}
+
+/* The bridge's units hang off one rail, like the connector brackets in the chart. */
+.unit-group.bridge ul {
+  margin-top: 6px;
+  padding-left: 8px;
+  border-left: var(--link-w, 3px) solid var(--accent);
+  gap: 4px;
+}
+
+.unit-head,
+.unit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.unit-group-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.unit-fdi {
+  min-width: 34px;
+  min-height: 26px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.unit-fdi:hover {
+  background: var(--panel-2);
+  border-color: var(--border);
+}
+
+.unit-fdi[aria-current='true'] {
+  background: var(--accent-tint);
+  color: var(--accent-strong);
+}
+
+.unit-material {
+  flex: 1;
+  min-width: 0;
+}
+
+.unit-head .unit-material {
+  flex: 0 1 auto;
+}
+
+/* ---- step list ------------------------------------------------------------- */
+
+.step-note {
+  font-size: var(--fs-micro);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.step.active .step-note {
+  color: inherit;
+}

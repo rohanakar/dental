@@ -1,4 +1,4 @@
-import type { DesignParams } from '@dcad/shared';
+import { type DesignParams, stepsFor, type UnitKind } from '@dcad/shared';
 import { adaptGate, axisGate, crownGate, marginGate } from '../../ai/qa';
 import type { AxisReport, CrownStatus } from '../../tools/toolStore';
 
@@ -29,6 +29,12 @@ export interface ReadinessInput {
   neighbours: { mesial: boolean; distal: boolean };
   /** Steps this unit has (a pontic has no margin or axis); rows it does not need are left out. */
   needs?: { margin: boolean; axis: boolean };
+}
+
+/** The rows a unit needs, from its design steps: a pontic has no margin or insertion axis. */
+export function readinessNeeds(kind: UnitKind): NonNullable<ReadinessInput['needs']> {
+  const steps = stepsFor(kind);
+  return { margin: steps.includes('margin'), axis: steps.includes('axis') };
 }
 
 const loopLength = (points: ReadonlyArray<V3>) =>

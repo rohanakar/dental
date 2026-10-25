@@ -1,5 +1,6 @@
-import type { Command, CrownAdapt, ProposalResult, ProposerId, QaCheck, StepId } from '@dcad/shared';
+import { type Command, connectedSides, type CrownAdapt, type ProposalResult, type ProposerId, type QaCheck, type StepId } from '@dcad/shared';
 import { activeAdapt } from '../design/adaptation';
+import { useDesignStore } from '../design/store';
 import { fromMarginPoints, toMarginPoints, toothContext, type ToothContext } from '../tools/context';
 import type { CrownRequest } from '../workers/analysisTypes';
 import { analysis } from '../workers/geometryClient';
@@ -158,10 +159,12 @@ export const adaptProposer: Proposer = {
   async run() {
     const ctx = requireContext();
     const { params, frame } = ctx.tooth;
+    // A side facing a connected bridge unit has a connector, not a contact.
+    const connected = connectedSides(useDesignStore.getState().doc, ctx.fdi);
     const adapt: CrownAdapt = {
       ...(ctx.antagonist ? { occlusion: { clearanceMm: params.occlusalClearanceMm } } : {}),
-      ...(frame?.mesialContact ? { mesial: { targetMm: params.proximalContactMm } } : {}),
-      ...(frame?.distalContact ? { distal: { targetMm: params.proximalContactMm } } : {}),
+      ...(frame?.mesialContact && !connected.includes('mesial') ? { mesial: { targetMm: params.proximalContactMm } } : {}),
+      ...(frame?.distalContact && !connected.includes('distal') ? { distal: { targetMm: params.proximalContactMm } } : {}),
     };
     const commands: Command[] = [];
     if (adapt.occlusion) commands.push({ type: 'adaptOcclusion', fdi: ctx.fdi, clearanceMm: adapt.occlusion.clearanceMm });
