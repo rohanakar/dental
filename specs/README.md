@@ -16,3 +16,9 @@ and progress log.
 | [day-06-ai-layer.md](day-06-ai-layer.md): proposers + one-click orchestrator with QA gates, LLM agent tool loop, Rx intake, proposal events | done |
 | [2026-10-14-crown-move-after-proposal.md](2026-10-14-crown-move-after-proposal.md): moving a proposed crown re-adapts it, preview/result mismatch, open contacts pass QA, moves inside an unaccepted draft; focus view and a distinct crown colour | done |
 | [2026-10-14-test-cleanup.md](2026-10-14-test-cleanup.md): cut the suite to core-only tests (267 → 96 tests, 42 → 33 files) | done |
+| [2026-10-25-bridge-mode.md](2026-10-25-bridge-mode.md): bridges as exocad allows them (any teeth incl. anterior, cantilevers, midline, full arch): retainers, ridge-contact pontics, connectors, common insertion axis, one-solid union and export | spec, awaiting review |
+| [2026-10-25-framework-bridges.md](2026-10-25-framework-bridges.md): reduced crowns and pontics (cutback for layering), overpress and pressed pontics, CoCr/titanium; after bridge mode | spec, awaiting review |
+| [2026-10-25-maryland-bridges.md](2026-10-25-maryland-bridges.md): resin-bonded wing retainers (single-retainer cantilever and two-wing), surface-patch retainer geometry | spec, awaiting review |
+| [2026-10-25-inlay-bridges.md](2026-10-25-inlay-bridges.md): inlay and onlay retainers and single restorations, outer surface from the pre-op scan or the library tooth (snap and subtract) | spec, awaiting review |
+| [2026-10-25-implant-bridges.md](2026-10-25-implant-bridges.md): screw-retained implant crowns and bridges on Ti-bases: scan-body registration, emergence profile, straight and angled screw channels | spec, awaiting review |
+| [2026-10-25-impeccable-setup.md](2026-10-25-impeccable-setup.md): impeccable design skill installed for Claude Code, root `PRODUCT.md`, detector hook on, code-first build path | done |
