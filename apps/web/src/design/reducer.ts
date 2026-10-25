@@ -204,7 +204,10 @@ function setCaseSetup(doc: DesignDocument, cmd: CommandOf<'setCaseSetup'>): Desi
   return { ...doc, setup, teeth, bridges };
 }
 
-/** Edit one connector. The area never goes below the material minimum; both units' adaptation becomes stale. */
+/**
+ * Edit one connector. The area never goes below the material minimum. A connector is derived on top of the adapted
+ * units and does not change their surfaces, so editing it (in the Adapt step) leaves their adaptation on.
+ */
 function setConnector(doc: DesignDocument, cmd: CommandOf<'setConnector'>): DesignDocument {
   const [a, b] = sortedPair(...cmd.between);
   const key = pairKey([a, b]);
@@ -230,7 +233,7 @@ function setConnector(doc: DesignDocument, cmd: CommandOf<'setConnector'>): Desi
           },
     ),
   };
-  return staleOn({ ...doc, bridges }, [a, b], 'adapt');
+  return { ...doc, bridges };
 }
 
 function addScan(doc: DesignDocument, cmd: CommandOf<'addScan'>): DesignDocument {

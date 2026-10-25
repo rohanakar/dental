@@ -1,6 +1,6 @@
 # Bridge mode
 
-Status: **in progress** (2026-10-25). Wave 1 of 4 has landed (schemas, reducer, anterior teeth, geometry building blocks).
+Status: **in progress** (2026-10-26). Waves 1–3 have landed: a bridge can be designed end to end in the editor and exported as one solid. Next is AI phase 2 (bridge proposers, one-click bridge auto-design, the assistant measuring bridges).
 
 ## Goal
 
@@ -624,4 +624,55 @@ Built by parallel agents in git worktrees, integrated in waves. Each green wave 
   - No connector fillets.
   - Worker cache: up to 64 entries.
 
-Waves 3–4 (app; AI; follow-on specs) follow.
+### Wave 3 (2026-10-26): bridge in the editor, AI phase 1
+**App:**
+- **Bridge tool** (`apps/web/src/tools/bridgeTool.ts`):
+  - `bridgeTool.settled()`, `bridgeTool.evaluate({ union, maps })`
+  - `bridgeRequest(doc, fdi, opts)`, `bridgeProposalCommands(doc, result)`
+  - `propose()`, `check()`, `export(kind)`
+- **Bridge panels** (`ui/steps/BridgePanels.tsx`), and changes to `tools/{axis,controller,crown,focus,frame}Tool.ts`, the
+  Frame, Margin, Axis, Proposal, Adapt and Finalize steps, `io/exportCrown.ts` and `ui/bridge.css`.
+- **What each step does in a bridge:**
+  - **Frame:** a click per abutment. "Align to arch" and "Place pontics" each dispatch one batch. A ridge click sets a
+    pontic centre.
+  - **Axis:** one common axis, with a per-abutment table (margin undercut, blockout, angle from its own axis) and the
+    divergence. It refuses when a margin is open.
+  - **Proposal:** "Propose bridge" places every unit as one undo entry. Every unit and connector is shown; clicking
+    activates a unit, and moves apply to the active unit only.
+  - **Adapt:** occlusion on all units, contacts on free sides only. A connector card per connection: designed and
+    measured area, height and room, offsets, area edits, failures. "Check bridge" runs the union checks through
+    `bridgeGate`.
+  - **Finalize:** readiness per unit, with connected sides excluded, plus the connector and union rows, under one soft
+    gate. Export gives one STL per bridge (the union) plus a construction sidecar.
+- **Approved deviation:** `setConnector` no longer marks `adapt` stale; the reducer test asserts it.
+- **E2E** (`tools/e2e/bridge.mjs`, Playwright, `/app/`): 34 of 34 checks pass on 35–[36]–37 and [12]–11–21–[22].
+  - Connectors measured on the union: 10.01 mm² (after an edit to 10) and 9.00 mm².
+  - The downloaded STL has 59,078 triangles, is closed, one component of genus 0, 791 mm³.
+  - The single-crown E2E scripts still pass.
+
+**AI phase 1:**
+- `bridgeGate` (`apps/web/src/ai/qa.ts`) and `bridgeMetricsFrom` (`metrics.ts`).
+- A bridge-aware assistant prompt (`prompts.ts`).
+- One proposal event per unit and step (`events.ts`).
+- The QA test is extended with bridge pass and fail cases.
+
+**Review fixes** (07cfd8f):
+- The arch-curve cache is oriented per call.
+- Connector `fit-clearance` failure.
+- Seating also compares sample counts.
+- An upper bound on the pontic base gap.
+- The BL-ratio walk skips pontics.
+- Pontics are laid out on the retainer shells.
+- `bridgeAxis` reports `prepClosed`.
+
+**Verification:**
+- `pnpm typecheck`, `pnpm test` (103: the 102 from these waves, plus 1 from the landing session) and the web build pass.
+- The editor bundle is 1,310 kB, up 47 kB for the bridge UI. It is already over Vite's warning; code splitting is
+  the existing Day 7 follow-up.
+
+**Open:**
+- The upper incisor margin is partly hidden in the Margin step's default view: the occlusal estimate tilts labially.
+- The click frame next to a gap can be far off (37: 102°); "Align to arch" fixes it.
+- The Proposal step still offers the single-crown "Auto-design crown" in a bridge; AI phase 2 replaces it.
+
+AI phase 2 and the follow-on specs' phase B (framework, Maryland, implant, inlay) follow.

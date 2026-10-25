@@ -1,10 +1,11 @@
-import type { ScanRole, StepId } from '@dcad/shared';
+import { bridgeOf, type ScanRole, type StepId, unitKind } from '@dcad/shared';
 import { useDesignStore } from '../design/store';
 import type { Viewer } from '../engine/Viewer';
 import { sceneController } from '../state/sceneController';
 import { useSceneStore } from '../state/sceneStore';
 import { analysis } from '../workers/geometryClient';
 import { axisTool } from './axisTool';
+import { bridgeTool } from './bridgeTool';
 import { crownTool } from './crownTool';
 import { gizmoTool } from './gizmoTool';
 import { errorText, toothContext } from './context';
@@ -19,6 +20,8 @@ const AXIS_COLOR = '#b07cff';
 const HIDE_ANTAGONIST: readonly StepId[] = ['frame', 'margin', 'axis'];
 /** Steps after which the accepted margin stays visible. */
 const SHOW_MARGIN: readonly StepId[] = ['margin', 'axis'];
+/** Steps that show the restorations: a click on a bridge unit makes it the active tooth. */
+const PICK_UNIT: readonly StepId[] = ['params', 'proposal', 'adapt', 'finalize'];
 
 function centroid(points: ReadonlyArray<{ p: readonly number[] }>): [number, number, number] {
   const c: [number, number, number] = [0, 0, 0];
@@ -56,6 +59,7 @@ class DesignTools {
     marginTool.attach(viewer);
     axisTool.attach(viewer);
     crownTool.attach(viewer);
+    bridgeTool.attach(viewer);
     gizmoTool.attach(viewer);
     focusTool.attach(viewer);
     this.sync();
@@ -67,6 +71,7 @@ class DesignTools {
     marginTool.attach(null);
     axisTool.attach(null);
     crownTool.attach(null);
+    bridgeTool.attach(null);
     gizmoTool.attach(null);
     focusTool.attach(null);
   }
@@ -96,6 +101,9 @@ class DesignTools {
     const ctx = toothContext();
 
     if (this.lastStep !== step || this.lastFdi !== activeFdi) {
+      // Picking another unit of the bridge on screen keeps the camera where the designer put it.
+      const bridge = bridgeOf(useDesignStore.getState().doc, activeFdi);
+      const sameBridge = this.lastStep === step && PICK_UNIT.includes(step) && this.lastFdi !== null && Boolean(bridge?.teeth.includes(this.lastFdi));
       if (this.lastStep === 'margin' || this.lastFdi !== activeFdi) marginTool.cancel();
       if (this.lastStep === 'axis') axisTool.hide();
       if (this.lastStep === 'frame') useToolStore.getState().set({ framePick: 'seed' });
@@ -103,18 +111,25 @@ class DesignTools {
       this.lastFdi = activeFdi;
       if (step === 'axis') axisTool.enter();
       if (step === 'margin') this.focusPrep('occlusal');
-      if (step === 'axis' || step === 'proposal' || step === 'adapt' || step === 'finalize') this.focusPrep('oblique');
+      if (!sameBridge && (step === 'axis' || step === 'proposal' || step === 'adapt' || step === 'finalize')) {
+        this.focusPrep('oblique', bridge && step !== 'axis' ? bridge.teeth : null);
+      }
     }
     this.syncAntagonist(step);
 
     const v = this.viewer;
     if (!v) return;
 
-    const key = ctx ? `${step}:${ctx.jaw.role}` : '';
+    const { doc } = useDesignStore.getState();
+    const bridged = Boolean(ctx && bridgeOf(doc, ctx.fdi));
+    // A pontic has no prep: no margin to trace (its step list skips the margin; this covers the moment before).
+    const pontic = Boolean(ctx && unitKind(doc.setup, ctx.fdi) === 'pontic');
+    const key = ctx ? `${step}:${ctx.jaw.role}:${bridged}:${pontic}` : '';
     if (key !== this.interactionKey) {
       this.interactionKey = key;
       if (ctx && step === 'frame') v.setInteraction(frameInteraction(ctx.jaw.role));
-      else if (ctx && step === 'margin') v.setInteraction(marginTool.interaction(ctx.jaw.role));
+      else if (ctx && step === 'margin' && !pontic) v.setInteraction(marginTool.interaction(ctx.jaw.role));
+      else if (ctx && bridged && PICK_UNIT.includes(step)) v.setInteraction(bridgeTool.interaction(ctx.jaw.role));
       else v.setInteraction(null);
     }
 
@@ -126,12 +141,27 @@ class DesignTools {
     focusTool.sync();
   }
 
-  /** Zoom onto the prep: from occlusal to trace the margin, obliquely from buccal to judge the axis. */
-  private focusPrep(view: 'occlusal' | 'oblique'): void {
+  /**
+   * Zoom onto the prep: from occlusal to trace the margin, obliquely from buccal to judge the axis. With `units` (a
+   * bridge whose restorations are shown), the view takes in every unit that has a frame.
+   */
+  private focusPrep(view: 'occlusal' | 'oblique', units: readonly number[] | null = null): void {
     const frame = toothContext()?.tooth.frame;
     if (!frame) return;
     const dir: [number, number, number] =
       view === 'occlusal' ? [...frame.occlusal] : [0, 1, 2].map((k) => frame.occlusal[k]! + 1.2 * frame.buccal[k]!) as [number, number, number];
+    const { doc } = useDesignStore.getState();
+    const origins = (units ?? []).flatMap((fdi) => {
+      const f = doc.teeth.find((t) => t.fdi === fdi)?.frame;
+      return f ? [f.origin] : [];
+    });
+    if (origins.length > 1) {
+      const centre = [0, 1, 2].map((k) => origins.reduce((s, o) => s + o[k]!, 0) / origins.length) as [number, number, number];
+      let span = 0;
+      for (const a of origins) for (const b of origins) span = Math.max(span, Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!));
+      this.viewer?.focus(centre, dir, 40 + span);
+      return;
+    }
     this.viewer?.focus(frame.origin, dir, view === 'occlusal' ? 32 : 40);
   }
 
@@ -170,9 +200,24 @@ class DesignTools {
   private drawOverlays(step: StepId): void {
     const o = this.viewer!.overlays;
     const tooth = toothContext()?.tooth;
-    const inputs = [step, tooth?.frame, tooth?.margin, tooth?.axis];
+    // In a bridge, the frame step also marks where the other units are (abutment frames, placed pontics), and the
+    // margin and axis steps show the other abutments' margins (the axis is common to all of them).
+    const { doc } = useDesignStore.getState();
+    const bridge = tooth ? bridgeOf(doc, tooth.fdi) : undefined;
+    const otherTeeth = (bridge?.teeth ?? []).filter((f) => f !== tooth?.fdi).map((f) => doc.teeth.find((t) => t.fdi === f));
+    const others = step === 'frame' ? otherTeeth.map((t) => t?.frame) : [];
+    const otherMargins = SHOW_MARGIN.includes(step) ? otherTeeth.map((t) => t?.margin) : [];
+    const inputs = [step, tooth?.frame, tooth?.margin, tooth?.axis, ...others, ...otherMargins];
     if (inputs.length === this.drawn.length && inputs.every((x, i) => x === this.drawn[i])) return;
     this.drawn = inputs;
+
+    const placed = others.flatMap((f) => (f ? [f.origin] : []));
+    if (placed.length > 0) o.setMarkers('units:origins', placed, { color: '#ffffff', outline: '#222222', sizePx: 7 });
+    else o.remove('units:origins');
+    o.removePrefix('units:margin:');
+    otherMargins.forEach((m, i) => {
+      if (m) o.setPolyline(`units:margin:${i}`, m.points.map((p) => p.p), { color: MARGIN_COLOR, widthPx: 2, closed: true, opacity: 0.7 });
+    });
 
     const frame = tooth?.frame;
     if (frame && step === 'frame') {

@@ -1,10 +1,10 @@
-import type { ScanRole, StepId } from '@dcad/shared';
+import { bridgeOf, type MarginLine, type ScanRole, type StepId } from '@dcad/shared';
 import { useDesignStore } from '../design/store';
 import type { Viewer } from '../engine/Viewer';
 import { useSceneStore } from '../state/sceneStore';
 import { analysis } from '../workers/geometryClient';
 import { isStale } from '../workers/latestWins';
-import { fromMarginPoints, toothContext } from './context';
+import { fromMarginPoints, toothContext, type ToothContext } from './context';
 import { useToolStore } from './toolStore';
 
 /** Steps in which the crown is adjusted. */
@@ -29,6 +29,8 @@ class FocusTool {
   private focused: ScanRole[] = [];
   /** Focus faces of the last margin (the worker caches them too). */
   private cache: { sha: string; margin: unknown; occlusal: unknown; faces: Uint32Array } | null = null;
+  /** Focus faces per abutment margin of a bridge. */
+  private readonly bridgeCache = new WeakMap<MarginLine, { sha: string; occlusal: unknown; faces: Uint32Array }>();
 
   constructor() {
     useToolStore.subscribe((s, prev) => {
@@ -46,19 +48,29 @@ class FocusTool {
   sync(): void {
     const v = this.viewer;
     if (!v) return;
-    const { activeStep } = useDesignStore.getState();
+    const { activeStep, doc } = useDesignStore.getState();
     const { focusPrep, surroundings } = useToolStore.getState();
     const ctx = toothContext();
     const tooth = ctx?.tooth;
-    const on = Boolean(focusPrep && FOCUS_STEPS.includes(activeStep) && tooth?.crown && tooth.margin && tooth.frame);
+    // A bridge keeps every abutment's prep in focus, whichever unit (a pontic too) is active.
+    const bridge = tooth ? bridgeOf(doc, tooth.fdi) : undefined;
+    const preps = (bridge ? bridge.teeth.flatMap((f) => doc.teeth.filter((t) => t.fdi === f)) : tooth ? [tooth] : []).flatMap((t) =>
+      t.margin && t.frame ? [{ margin: t.margin, occlusal: t.frame.occlusal }] : [],
+    );
+    const on = Boolean(focusPrep && FOCUS_STEPS.includes(activeStep) && tooth?.crown && preps.length > 0);
     // Scene objects are in the key so a re-added scan gets the look again.
-    const key = on && ctx ? [ctx.jaw.sha256, ctx.antagonist?.role, tooth!.margin, tooth!.frame, surroundings, useSceneStore.getState().objects] : [];
+    const key = on && ctx ? [ctx.jaw.sha256, ctx.antagonist?.role, ...preps.flatMap((p) => [p.margin, p.occlusal]), surroundings, useSceneStore.getState().objects] : [];
     if (key.length === this.key.length && key.every((x, i) => x === this.key[i])) return;
     this.key = key;
-    if (!on || !ctx || !tooth?.margin || !tooth.frame) {
+    if (!on || !ctx || !tooth) {
       this.clear();
       return;
     }
+    if (bridge) {
+      void this.focusBridge(ctx, preps, key, surroundings);
+      return;
+    }
+    if (!tooth.margin || !tooth.frame) return;
     const look = (faces: Uint32Array | null) => ({ faces, contextOpacity: surroundings, desaturate: SURROUNDINGS_DESATURATE });
     const apply = (faces: Uint32Array) => {
       if (this.key !== key || this.viewer !== v) return; // superseded
@@ -84,6 +96,41 @@ class FocusTool {
         // Without a closed prep region there is no crown to focus on; keep the normal look.
         if (!isStale(e) && this.key === key) this.clear();
       });
+  }
+
+  /** The prep regions of every abutment of a bridge, fetched one after the other (the worker call is latest-wins). */
+  private async focusBridge(ctx: ToothContext, preps: Array<{ margin: MarginLine; occlusal: readonly number[] }>, key: unknown[], surroundings: number): Promise<void> {
+    const v = this.viewer;
+    const parts: Uint32Array[] = [];
+    try {
+      for (const p of preps) {
+        const hit = this.bridgeCache.get(p.margin);
+        if (hit && hit.sha === ctx.jaw.sha256 && hit.occlusal === p.occlusal) {
+          parts.push(hit.faces);
+          continue;
+        }
+        const faces = await analysis.focusFaces({ jawSha: ctx.jaw.sha256, margin: fromMarginPoints(p.margin.points), occlusal: v3(p.occlusal) });
+        this.bridgeCache.set(p.margin, { sha: ctx.jaw.sha256, occlusal: p.occlusal, faces });
+        parts.push(faces);
+        if (this.key !== key) return; // superseded
+      }
+    } catch (e) {
+      if (!isStale(e) && this.key === key) this.clear();
+      return;
+    }
+    if (this.key !== key || this.viewer !== v || !v) return;
+    const all = new Uint32Array(parts.reduce((n, f) => n + f.length, 0));
+    let o = 0;
+    for (const f of parts) {
+      all.set(f, o);
+      o += f.length;
+    }
+    const look = (faces: Uint32Array | null) => ({ faces, contextOpacity: surroundings, desaturate: SURROUNDINGS_DESATURATE });
+    const roles: ScanRole[] = [ctx.jaw.role, ...(ctx.antagonist ? [ctx.antagonist.role] : [])];
+    for (const role of this.focused) if (!roles.includes(role)) v.setObjectFocus(role, null);
+    v.setObjectFocus(ctx.jaw.role, look(all));
+    if (ctx.antagonist) v.setObjectFocus(ctx.antagonist.role, look(null));
+    this.focused = roles;
   }
 
   private clear(): void {

@@ -125,8 +125,11 @@ describe('applyCommand', () => {
     expect(() => applyCommand(doc, { type: 'setContact', fdi: 35, side: 'distal', targetMm: 0 })).toThrow(CommandError);
     expect(applyCommand(doc, { type: 'setContact', fdi: 35, side: 'mesial', targetMm: 0 }).teeth[0]!.steps.adapt).toBe('done');
     expect(() => applyCommand(doc, { type: 'setConnector', between: [36, 35], areaMm2: 8 })).toThrow(CommandError);
+    // A connector is derived on top of the adapted units: editing it keeps their adaptation on.
+    doc = applyCommand(doc, { type: 'adaptOcclusion', fdi: 35, clearanceMm: 0.05 });
     doc = applyCommand(doc, { type: 'setConnector', between: [36, 35], areaMm2: 12 });
     expect(doc.bridges[0]!.connectors[0]).toEqual({ between: [35, 36], areaMm2: 12, ...offsets });
+    expect(tooth(35).steps.adapt).toBe('done');
 
     // Removing a bridged tooth drops its connections (35–[36] remains, a cantilever, with its connector settings);
     // the remaining abutment's common axis was searched with 37 and becomes stale.

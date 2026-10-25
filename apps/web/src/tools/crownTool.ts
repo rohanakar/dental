@@ -8,6 +8,7 @@ import { useSessionStore } from '../state/session';
 import type { CrownMapName, CrownRequest, CrownResult } from '../workers/analysisTypes';
 import { analysis } from '../workers/geometryClient';
 import { isStale } from '../workers/latestWins';
+import { bridgeTool } from './bridgeTool';
 import { errorText, fromMarginPoints, toothContext, type ToothContext } from './context';
 import { CROWN_MAPS, crownMapLegend } from './crownLegend';
 import { useToolStore, type LegendSpec } from './toolStore';
@@ -68,6 +69,10 @@ function inputsOf(ctx: ToothContext | null): unknown[] {
  * The crown mesh is derived data: recomputed in the worker from (scans,
  * frame, margin, axis, params, crown pose) whenever any of them changes, so
  * undo/redo and parameter edits always show the matching crown.
+ *
+ * While the active tooth is a unit of a bridge, bridgeTool shows the whole
+ * bridge instead, and the methods below that act on "the crown" act on the
+ * active unit (bridgeTool.ts). Single crowns take the path below unchanged.
  */
 class CrownTool {
   private viewer: Viewer | null = null;
@@ -92,6 +97,12 @@ class CrownTool {
 
   /** Called on every store change. */
   sync(step: StepId): void {
+    if (bridgeTool.handles()) {
+      this.clear(false);
+      bridgeTool.sync(step);
+      return;
+    }
+    bridgeTool.clear();
     const ctx = toothContext();
     const crown = ctx?.tooth.crown;
     const inputs = inputsOf(ctx);
@@ -109,7 +120,11 @@ class CrownTool {
   /** Called after each newly displayed crown result. Returns an unsubscribe function. */
   onResult(listener: () => void): () => void {
     this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+    const offBridge = bridgeTool.onResult(listener);
+    return () => {
+      this.listeners.delete(listener);
+      offBridge();
+    };
   }
 
   /**
@@ -118,6 +133,7 @@ class CrownTool {
    * the cusps follow). null ends the drag preview.
    */
   previewDrag(delta: readonly number[] | null): void {
+    if (bridgeTool.handles()) return bridgeTool.previewDrag(delta);
     this.dragOffset = delta ? v3(delta) : ZERO;
     this.applyPreview();
   }
@@ -127,6 +143,7 @@ class CrownTool {
    * plus any move not recomputed yet. Null before the first crown.
    */
   gizmoAnchor(): V3 | null {
+    if (bridgeTool.handles()) return bridgeTool.gizmoAnchor();
     if (!this.cuspCentre) return null;
     const m = this.pendingMove();
     return [this.cuspCentre[0] + m[0], this.cuspCentre[1] + m[1], this.cuspCentre[2] + m[2]];
@@ -134,6 +151,10 @@ class CrownTool {
 
   /** Propose a new template pose from the frame, contacts and antagonist (setCrown). */
   async propose(): Promise<void> {
+    if (bridgeTool.handles()) {
+      await bridgeTool.propose();
+      return;
+    }
     const ctx = toothContext();
     if (!ctx) return;
     const result = await this.compute(ctx, false);
@@ -155,12 +176,15 @@ class CrownTool {
 
   setVisible(visible: boolean): void {
     useToolStore.getState().set({ crownVisible: visible });
-    this.applyVisibility(useDesignStore.getState().activeStep);
+    const step = useDesignStore.getState().activeStep;
+    if (bridgeTool.handles()) bridgeTool.applyVisibility(step);
+    else this.applyVisibility(step);
   }
 
   setOpacity(opacity: number): void {
     useToolStore.getState().set({ crownOpacity: opacity });
     this.viewer?.setObjectOpacity(CROWN_OBJECT_ID, opacity);
+    bridgeTool.setOpacity(opacity);
   }
 
   /**
@@ -168,6 +192,8 @@ class CrownTool {
    * Separate actions: browsers block a second download started by one click.
    */
   export(kind: 'stl' | 'info'): string | null {
+    // A bridge exports as one solid (the merged units and connectors).
+    if (bridgeTool.handles()) return bridgeTool.export(kind);
     const ctx = toothContext();
     const last = this.last;
     if (!ctx || !last) return null;
@@ -189,6 +215,10 @@ class CrownTool {
    * reading metrics). Null when there is no crown.
    */
   async settled(): Promise<CrownResult | null> {
+    if (bridgeTool.handles()) {
+      await bridgeTool.settled();
+      return bridgeTool.activeUnit();
+    }
     for (;;) {
       const pending = this.inflight;
       if (!pending) return this.last;
@@ -207,13 +237,19 @@ class CrownTool {
   async evaluate(maps: CrownMapName[]): Promise<CrownResult | null> {
     const ctx = toothContext();
     if (!ctx?.tooth.crown) return null;
+    if (bridgeTool.handles()) {
+      // The active unit, designed with its bridge (connected sides have connectors, not contacts).
+      const result = await bridgeTool.evaluate({ maps }).catch(() => null);
+      return result?.units.find((u) => u.fdi === ctx.fdi) ?? null;
+    }
     const req = request(ctx, true, 'none');
     if (!req) return null;
     return analysis.designCrownUnlatched({ ...req, maps });
   }
 
-  /** Current crown mesh (for tests and export). */
+  /** Current crown mesh (for tests and export); in a bridge, the active unit's. */
   current(): CrownResult | null {
+    if (bridgeTool.handles()) return bridgeTool.activeUnit();
     return this.last;
   }
 
@@ -343,7 +379,8 @@ class CrownTool {
     }
   }
 
-  private clear(): void {
+  /** Remove the crown; `resetStatus` false leaves the status rows to bridgeTool (the active tooth is a bridge unit). */
+  private clear(resetStatus = true): void {
     if (!this.geometry && !this.last) return;
     this.viewer?.removeObject(CROWN_OBJECT_ID);
     this.viewer?.overlays.remove('crown:conflicts');
@@ -353,7 +390,7 @@ class CrownTool {
     this.cuspCentre = null;
     this.previewing = false;
     this.inputs = [];
-    useToolStore.getState().set({ crown: null });
+    if (resetStatus) useToolStore.getState().set({ crown: null });
   }
 }
 

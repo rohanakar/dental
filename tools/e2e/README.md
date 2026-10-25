@@ -13,10 +13,15 @@ These scripts drive the real web app in headless Chrome (Playwright, `channel: '
 - `crown-move.mjs` (offline): one-click crown left pending → keyboard nudge, gizmo drag and nudge pad before Accept
   (draft auto-accepted, instant preview, no snap-back, adaptation off until Re-adapt, open contact reported, undo and
   redo) → focus view (pixel classes with focus on and off) and the blue crown. Exits non-zero on a failed check.
+- `bridge.mjs` (offline): posterior bridge 35–[36]–37 on `lower-bridge.stl` through every step (abutment frames, align
+  to arch, place pontics and a ridge click, margins, common axis, Propose bridge, click-to-activate and a nudge,
+  adaptation, a connector edit, Check bridge, Finalize, export; the STL is parsed in Node as one closed solid of
+  genus 0), then the anterior bridge [12]–11–21–[22] up to Propose bridge. Screenshots go to `out/e2e/bridge/`
+  (`E2E_OUT`); `E2E_ONLY=posterior|anterior` runs one part. Exits non-zero on a failed check.
 
 ```bash
 pnpm dev:web                          # terminal 1 (and pnpm dev:api + Postgres for the online script)
-pnpm --filter @dcad/e2e offline       # or: online, move
+pnpm --filter @dcad/e2e offline       # or: online, move, bridge
 ```
 
 Day 7 turns these into `@playwright/test` specs.

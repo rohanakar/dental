@@ -225,3 +225,14 @@ view: the prep stays bright, the surroundings are dimmed, and the crown is desig
 **2026-10-25: UX critique and polish.** An impeccable critique scored the editor 24/40. Colour maps are now neutral at contact with the material minimum marked; Finalize leads with a ready-to-mill checklist from the QA gates and a soft export gate; one-click drafts are reviewed with the crown on screen and every gate listed; contrast, focus, field and type tokens give a sharper instrument look. +2 tests. See [2026-10-25-ux-critique-polish.md](2026-10-25-ux-critique-polish.md).
 
 **2026-10-25: landing page and user journey.** A static landing page now sits at `/`: the category standard with real renders from the editor, the five checks quoted from the run that made the images, and a working lab sign-up. The editor moved to `/app/`. The journey gained a demo entry (`?demo`: one click on the prep to a crown draft), a first-run case list, a wizard Back/Next footer that understands pontics, resuming a case at its first unfinished step, and the prep jaw as the default for scan import. The impeccable finish review reached ship after two fix rounds. 1 test added. See [2026-10-25-landing-and-journey.md](2026-10-25-landing-and-journey.md).
+
+**2026-10-25: FDI handedness fix.** The mesial rule and the synthetic arch were both mirrored relative to anatomy (tests
+passed; real scans would have had mesial and distal swapped). Both are fixed. See
+[2026-10-25-fdi-handedness-fix.md](2026-10-25-fdi-handedness-fix.md).
+
+**2026-10-26: bridge mode (in progress).** Bridges as exocad allows them: any teeth, cantilevers, midline, full arch.
+- **Done:** front-tooth templates; the bridge setup UI; pontics; connectors measured on the merged solid; a common
+  insertion axis; export as one solid. Built by parallel agents in worktrees and landed in green waves; 96 → 103
+  tests.
+- **Next:** AI phase 2 and the follow-on bridge types (framework, Maryland, implant and inlay).
+- See [2026-10-25-bridge-mode.md](2026-10-25-bridge-mode.md) and its follow-on specs.

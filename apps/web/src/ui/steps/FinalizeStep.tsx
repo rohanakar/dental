@@ -6,6 +6,7 @@ import { axisTool } from '../../tools/axisTool';
 import { crownTool } from '../../tools/crownTool';
 import { useToolStore, type AxisReport } from '../../tools/toolStore';
 import { AlertIcon, CheckIcon, FailIcon, UnknownIcon } from '../icons';
+import { BridgeFinalize, useActiveBridge } from './BridgePanels';
 import { CrownStatusView } from './CrownStatusView';
 import { MapSelect, ReadaptNotice } from './CrownViewControls';
 import { isReady, millReadiness, type ReadinessItem, type ReadinessStatus, readinessNeeds } from './readiness';
@@ -44,6 +45,12 @@ function ReadinessList({ items }: { items: ReadinessItem[] }) {
 }
 
 export function FinalizeStep() {
+  const bridge = useActiveBridge();
+  // A bridge is finalized and exported as one piece.
+  return bridge ? <BridgeFinalize /> : <CrownFinalize />;
+}
+
+function CrownFinalize() {
   const tooth = useDesignStore(selectActiveTooth);
   const material = useDesignStore((s) => s.doc.setup.teeth.find((t) => t.fdi === s.activeFdi)?.material);
   const kind = useDesignStore((s) => unitKind(s.doc.setup, s.activeFdi));

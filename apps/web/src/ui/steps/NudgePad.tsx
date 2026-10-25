@@ -32,7 +32,7 @@ const cap = (s: string) => s[0]!.toUpperCase() + s.slice(1);
  * A move shifts the anatomy while the margin stays on the prep, and switches
  * a stored adaptation off until Re-adapt.
  */
-export function NudgePad() {
+export function NudgePad({ label = 'Adjust' }: { label?: string }) {
   const gizmo = useGizmoStore((s) => s.enabled);
   const setGizmo = useGizmoStore((s) => s.setEnabled);
   const move = (direction: ClinicalDirection) => (e: MouseEvent) => moveCrown(direction, e.shiftKey);
@@ -40,7 +40,7 @@ export function NudgePad() {
   return (
     <div className="nudge-pad">
       <ReadaptNotice />
-      <h3>Adjust</h3>
+      <h3>{label}</h3>
       <div className="nudge-label">
         Move {MOVE_MM.small} mm, or {MOVE_MM.large} mm with Shift. The cusps follow; the margin stays on the prep. Keys: arrows
         and PgUp/PgDn.

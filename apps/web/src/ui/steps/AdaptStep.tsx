@@ -1,3 +1,4 @@
+import type { Command } from '@dcad/shared';
 import { useEffect, useState } from 'react';
 import { adaptationStale } from '../../design/adaptation';
 import { useDesignStore, selectActiveTooth } from '../../design/store';
@@ -5,6 +6,7 @@ import { crownTool } from '../../tools/crownTool';
 import { userEdit } from '../../tools/nudge';
 import { useToolStore } from '../../tools/toolStore';
 import type { AdaptReportView } from '../../workers/analysisTypes';
+import { BridgeConnectors, BridgeResultPanel, connectedTo, useActiveBridge } from './BridgePanels';
 import { CrownStatusView } from './CrownStatusView';
 import { FocusControls, MapSelect, ReadaptNotice } from './CrownViewControls';
 import './NudgePad.css';
@@ -42,7 +44,19 @@ function Report({ report, label, what }: { report?: AdaptReportView; label: stri
 }
 
 export function AdaptStep() {
+  const activeFdi = useDesignStore((s) => s.activeFdi);
+  // Show the occlusion map by default here: it is what adaptation changes.
+  useEffect(() => {
+    if (useToolStore.getState().crownMap === 'none') crownTool.setMap('occlusion');
+  }, []);
+  // One panel per tooth, so the targets start from that tooth's own values (bridge units are switched here).
+  return <AdaptPanel key={activeFdi} />;
+}
+
+function AdaptPanel() {
   const tooth = useDesignStore(selectActiveTooth);
+  const doc = useDesignStore((s) => s.doc);
+  const bridge = useActiveBridge();
   const reports = useToolStore((s) => s.crown?.adapt);
   const computing = useToolStore((s) => s.crown?.computing ?? false);
   const crown = tooth?.crown?.kind === 'template' ? tooth.crown : undefined;
@@ -52,19 +66,17 @@ export function AdaptStep() {
     distal: crown?.adapt?.distal?.targetMm ?? tooth?.params.proximalContactMm ?? 0.02,
   });
 
-  // Show the occlusion map by default here: it is what adaptation changes.
-  useEffect(() => {
-    if (useToolStore.getState().crownMap === 'none') crownTool.setMap('occlusion');
-  }, []);
-
   if (!tooth) return null;
-  if (!crown) return <div className="step-body warning">Propose a crown first.</div>;
+  if (!crown) return <div className="step-body warning">{bridge ? 'Propose the bridge first.' : 'Propose a crown first.'}</div>;
   const frame = tooth.frame;
   const stale = adaptationStale(tooth);
+  // A bridge adapts the occlusion of every unit at once; contacts exist only on free sides.
+  const units = bridge ? doc.teeth.filter((t) => bridge.teeth.includes(t.fdi) && t.crown?.kind === 'template') : [];
 
   const adapt = (key: (typeof SIDES)[number]['key']) => {
     const value = targets[key];
-    if (key === 'occlusion') userEdit({ type: 'adaptOcclusion', fdi: tooth.fdi, clearanceMm: value });
+    if (key === 'occlusion' && units.length > 1) userEdit(units.map((t): Command => ({ type: 'adaptOcclusion', fdi: t.fdi, clearanceMm: value })));
+    else if (key === 'occlusion') userEdit({ type: 'adaptOcclusion', fdi: tooth.fdi, clearanceMm: value });
     else userEdit({ type: 'setContact', fdi: tooth.fdi, side: key, targetMm: value });
   };
 
@@ -73,11 +85,24 @@ export function AdaptStep() {
       <p className="muted">
         Moves the occlusal surface and the proximal walls until the clearance to the antagonist and the neighbours reaches
         the target. Negative targets make intentional contact. The minimum thickness always wins; conflicts are reported.
+        {bridge && ' Sides joined to another unit have a connector instead of a contact.'}
       </p>
+      {bridge && <BridgeResultPanel />}
       <ReadaptNotice />
       {SIDES.map(({ key, label, what }) => {
+        const joined = bridge && key !== 'occlusion' ? connectedTo(bridge, tooth.fdi, key) : null;
+        if (joined) {
+          return (
+            <div className="adapt-row" key={key}>
+              <span>
+                {label.replace(' contact', '')} side of {tooth.fdi}: connector to {joined}, no contact
+              </span>
+            </div>
+          );
+        }
         const active = key === 'occlusion' ? crown.adapt?.occlusion : crown.adapt?.[key];
         const noNeighbour = key !== 'occlusion' && !(key === 'mesial' ? frame?.mesialContact : frame?.distalContact);
+        const all = key === 'occlusion' && units.length > 1;
         return (
           <div className="adapt-row" key={key}>
             <label className="param-field" title={`Target clearance to the ${what} (mm)`}>
@@ -97,6 +122,7 @@ export function AdaptStep() {
             </label>
             <button className="btn" disabled={computing || noNeighbour} onClick={() => adapt(key)} title={noNeighbour ? `No ${what} found in the tooth frame` : undefined}>
               Adapt {label.toLowerCase()}
+              {all ? `, all ${units.length} units` : ''}
             </button>
             <Report report={reports?.[key]} label={label} what={what} />
           </div>
@@ -111,10 +137,11 @@ export function AdaptStep() {
             userEdit({ type: 'setCrown', fdi: tooth.fdi, crown: bare });
           }}
         >
-          Reset adaptation
+          Reset adaptation{bridge ? ` of ${tooth.fdi}` : ''}
         </button>
       </div>
       <CrownStatusView />
+      {bridge && <BridgeConnectors />}
       <fieldset className="view-controls">
         <legend>View</legend>
         <MapSelect />

@@ -310,3 +310,237 @@
 .step.active .step-note {
   color: inherit;
 }
+
+/* ---- bridge units in the design steps ------------------------------------------------------------ */
+
+.bridge-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bridge-panel h3 {
+  margin: 0;
+}
+
+/* One button per unit, in arch order; the active unit is pressed. A dot tells the unit's state for the step. */
+.bridge-units {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.bridge-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: var(--control-h);
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+/* A pontic is drawn dashed, as in the tooth chart. */
+.bridge-unit.pontic {
+  border-style: dashed;
+  border-color: var(--field-border);
+}
+
+.bridge-unit:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.bridge-unit[aria-pressed='true'] {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.bridge-unit-fdi {
+  font-weight: 600;
+}
+
+.bridge-unit-kind {
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+}
+
+.bridge-unit[aria-pressed='true'] .bridge-unit-kind {
+  color: inherit;
+}
+
+.bridge-unit.done::after,
+.bridge-unit.stale::after,
+.bridge-unit.pending::after {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.bridge-unit.done::after {
+  background: var(--ok);
+}
+
+.bridge-unit.stale::after {
+  background: var(--warn-icon);
+}
+
+.bridge-unit.pending::after {
+  border: 1.5px solid var(--text-muted);
+}
+
+/* An action with its explanation: text left, button right. */
+.bridge-action {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.bridge-changes {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  font-size: var(--fs-small);
+}
+
+.bridge-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+}
+
+.bridge-table th,
+.bridge-table td {
+  padding: 3px 4px;
+  text-align: right;
+}
+
+.bridge-table th:first-child {
+  text-align: left;
+}
+
+.bridge-table thead th {
+  font-weight: 500;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.bridge-table td.ok {
+  color: var(--ok);
+}
+
+.bridge-table td.bad {
+  color: var(--error-text);
+  font-weight: 600;
+}
+
+/* ---- connectors (Adapt step) ----------------------------------------------------------------------- */
+
+.connector-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.connector-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* A failed check: the card takes the error edge of the export confirmation. */
+.connector-card.failed {
+  border-color: color-mix(in srgb, var(--error-text) 45%, var(--border));
+}
+
+.connector-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.connector-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-small);
+  color: var(--text-muted);
+}
+
+.connector-status svg {
+  width: 14px;
+  height: 14px;
+}
+
+.connector-status.checked {
+  color: var(--ok);
+}
+
+.connector-status.failed {
+  color: var(--error-text);
+  font-weight: 500;
+}
+
+.connector-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.connector-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-small);
+  color: var(--text-muted);
+}
+
+.connector-field input {
+  color: var(--text);
+}
+
+/* ---- ready to mill, grouped per unit (Finalize) ------------------------------------------------------ */
+
+.readiness-group + .readiness-group {
+  border-top: 1px solid var(--border);
+}
+
+.readiness-group-title {
+  padding: 6px 10px;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.readiness-group[open] > .readiness-group-title {
+  padding-bottom: 0;
+}
+
+.readiness-count {
+  font-weight: 400;
+}
+
+.readiness-count.open {
+  color: var(--error-text);
+  font-weight: 500;
+}

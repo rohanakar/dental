@@ -1,3 +1,4 @@
+import { unitKind } from '@dcad/shared';
 import { useDesignStore, selectActiveTooth } from '../../design/store';
 import { marginTool } from '../../tools/marginTool';
 import { useToolStore } from '../../tools/toolStore';
@@ -14,9 +15,11 @@ function polylineLength(points: ReadonlyArray<{ p: readonly number[] }>): number
 
 export function MarginStep() {
   const tooth = useDesignStore(selectActiveTooth);
+  const pontic = useDesignStore((s) => unitKind(s.doc.setup, s.activeFdi) === 'pontic');
   const anchors = useToolStore((s) => s.marginAnchors);
   const surface = useToolStore((s) => s.surface);
   if (!tooth) return null;
+  if (pontic) return <div className="step-body muted">Pontic {tooth.fdi} replaces a missing tooth: it has no prep, so no margin.</div>;
   if (!tooth.frame) return <div className="step-body warning">Set the tooth frame first.</div>;
   const margin = tooth.margin;
   const drafting = anchors.length > 0;

@@ -85,6 +85,25 @@ export interface AxisReport {
   marginUndercutCount: number;
   marginPointCount: number;
   prepClosed: boolean;
+  /** A bridge: the common axis evaluated on every abutment (the fields above are then totals over them). */
+  bridge?: BridgeAxisReport;
+}
+
+export interface BridgeAxisReport {
+  abutments: Array<{
+    fdi: number;
+    marginUndercutCount: number;
+    marginPointCount: number;
+    /** Projected undercut area of this prep at the common axis: what its intaglio blocks out. */
+    blockoutAreaMm2: number;
+    maxDepthMm: number;
+    prepClosed: boolean;
+    /** Angle from this abutment's own least-undercut axis to the common axis (null until searched). */
+    angleToOwnDeg: number | null;
+  }>;
+  /** Largest angle between two abutments' own least-undercut axes (null until searched). */
+  divergenceDeg: number | null;
+  warnings: string[];
 }
 
 const initial = {
