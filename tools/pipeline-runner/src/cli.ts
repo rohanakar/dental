@@ -3,17 +3,19 @@
  *
  *   pnpm pipeline [--cases data/golden] [--out out/pipeline] [--case <id>] [--synthetic] [--auto]
  *
- * --synthetic first writes data/golden/synthetic-36 (no patient data). Each
- * case writes <out>/<id>/metrics.json and crown.stl. --auto also runs every
- * case with the automatic margin (classical.margin-ridge) instead of the
- * scripted anchors, writing <out>/<id>-auto/. Exits 1 if any check fails or a
- * case errors.
+ * --synthetic first writes the synthetic cases (no patient data) into
+ * data/golden: synthetic-36 and the bridges synthetic-bridge-35-37 and
+ * synthetic-bridge-12-22. Each case writes <out>/<id>/metrics.json and
+ * crown.stl (a bridge case: bridge.stl). --auto also runs every case with the
+ * automatic margin (classical.margin-ridge) instead of the scripted anchors,
+ * writing <out>/<id>-auto/. Exits 1 if any check fails or a case errors.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { GoldenCase, writeSyntheticCase } from './golden';
+import { runBridgeCase } from './bridgePipeline';
+import { GoldenCase, SYNTHETIC_BRIDGES, writeSyntheticBridgeCase, writeSyntheticCase, type SyntheticBridgeKind } from './golden';
 import { runCase } from './pipeline';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -34,6 +36,12 @@ if (values.synthetic) {
   const t0 = performance.now();
   writeSyntheticCase(dir);
   console.log(`wrote ${dir} (${Math.round(performance.now() - t0)} ms)`);
+  for (const kind of Object.keys(SYNTHETIC_BRIDGES) as SyntheticBridgeKind[]) {
+    const bridgeDir = join(casesDir, SYNTHETIC_BRIDGES[kind].id);
+    const t1 = performance.now();
+    writeSyntheticBridgeCase(bridgeDir, kind);
+    console.log(`wrote ${bridgeDir} (${Math.round(performance.now() - t1)} ms)`);
+  }
 }
 
 if (!existsSync(casesDir)) {
@@ -60,13 +68,25 @@ for (const id of ids) {
     runs++;
     try {
       const spec = GoldenCase.parse(JSON.parse(readFileSync(join(dir, 'case.json'), 'utf8')));
-      const { metrics, crownStl } = await runCase(spec, dir, { auto });
       const caseOut = join(outDir, label);
       mkdirSync(caseOut, { recursive: true });
+      let metrics: { ok: boolean; timingsMs: Record<string, number>; checks: Array<{ id: string; passed: boolean; message: string; value?: number; threshold?: number }> };
+      let title: string;
+      if (spec.bridge) {
+        const result = await runBridgeCase(spec, dir, { auto });
+        metrics = result.metrics;
+        writeFileSync(join(caseOut, 'bridge.stl'), result.bridgeStl);
+        title = `bridge ${result.metrics.teeth.join('–')}, ${auto ? 'auto' : 'scripted'} margins`;
+      } else {
+        const result = await runCase(spec, dir, { auto });
+        metrics = result.metrics;
+        writeFileSync(join(caseOut, 'crown.stl'), result.crownStl);
+        title = `FDI ${result.metrics.fdi}, ${result.metrics.margin.source} margin`;
+      }
       writeFileSync(join(caseOut, 'metrics.json'), `${JSON.stringify(metrics, null, 2)}\n`);
-      writeFileSync(join(caseOut, 'crown.stl'), crownStl);
-      const total = Object.values(metrics.timingsMs).reduce((a, b) => a + b, 0);
-      console.log(`\n${metrics.ok ? 'PASS' : 'FAIL'}  ${label} (FDI ${metrics.fdi}, ${metrics.margin.source} margin) in ${Math.round(total)} ms → ${join(caseOut, 'metrics.json')}`);
+      // Bridge timings include the designBridge.* breakdown of their designBridge entry.
+      const total = Object.entries(metrics.timingsMs).reduce((a, [k, v]) => a + (k.startsWith('designBridge.') ? 0 : v), 0);
+      console.log(`\n${metrics.ok ? 'PASS' : 'FAIL'}  ${label} (${title}) in ${Math.round(total)} ms → ${join(caseOut, 'metrics.json')}`);
       for (const c of metrics.checks) {
         const value = c.value !== undefined ? ` = ${c.value}${c.threshold !== undefined ? ` (limit ${c.threshold})` : ''}` : '';
         console.log(`  ${c.passed ? '✓' : '✗'} ${c.id}${value}: ${c.message}`);

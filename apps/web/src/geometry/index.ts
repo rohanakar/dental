@@ -27,3 +27,8 @@ export * from './autoMargin';
 export * from './meshBoolean';
 export * from './sectionArea';
 export * from './arch';
+// Bridges: pontics, connectors, the bridge orchestration and the checks on the merged solid.
+export * from './pontic';
+export * from './connectors';
+export * from './bridge';
+export * from './bridgeUnion';

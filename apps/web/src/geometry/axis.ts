@@ -180,3 +180,104 @@ export function marginUndercut(input: { points: Float32Array; axis: V3; ray: Ray
   }
   return { flags, count };
 }
+
+/** Abutments whose individual best axes diverge by more than this get a warning (long or curved spans). */
+export const AXIS_DIVERGENCE_WARN_DEG = 12;
+
+export interface CommonAxisAbutment {
+  fdi: number;
+  /** This abutment's prep region (faces inside its margin). */
+  faceMask: Uint8Array;
+  /** Dense margin, xyz per point. */
+  margin: Float32Array;
+  /** The abutment frame's occlusal direction. */
+  occlusal: V3;
+}
+
+export interface CommonAxisAbutmentResult {
+  fdi: number;
+  /** This abutment's own least-undercut axis (cone around its occlusal). */
+  individualAxis: V3;
+  /** Angle from its own axis to the common one. */
+  angleToCommonDeg: number;
+  /** Projected undercut area of this prep at the common axis (the blockout it needs), mm². */
+  blockoutAreaMm2: number;
+  /** Margin points in an undercut at the common axis; must be 0 for the bridge to seat. */
+  marginUndercutCount: number;
+  /** Per margin point: 1 = in an undercut. */
+  marginFlags: Uint8Array;
+}
+
+export interface CommonAxisResult extends AxisSearchResult {
+  /** Cone centre: the mean of the abutment occlusal directions. */
+  center: V3;
+  abutments: CommonAxisAbutmentResult[];
+  /** Largest angle between two abutments' individual axes. */
+  divergenceDeg: number;
+  /** Σ marginUndercutCount over the abutments. */
+  marginUndercutTotal: number;
+  warnings: string[];
+}
+
+const angleBetweenDeg = (a: V3, b: V3) => Math.acos(Math.min(1, Math.max(-1, dot(normalize(a), normalize(b))))) / DEG;
+
+/**
+ * One insertion axis for every abutment of a bridge: the least-undercut
+ * search over the union of the abutments' prep regions, in a cone around the
+ * mean of their occlusal directions. Per abutment it reports the blockout
+ * area and the margin undercut at that axis (the bridge seats only if no
+ * margin point is in an undercut), and how far its own best axis lies from
+ * the others' (a divergence above AXIS_DIVERGENCE_WARN_DEG is a warning).
+ */
+export function searchCommonAxis(input: {
+  positions: Float32Array;
+  indices: Uint32Array;
+  ray: RayCaster;
+  abutments: CommonAxisAbutment[];
+  coneDeg?: number;
+  samples?: number;
+}): CommonAxisResult {
+  const { positions, indices, ray, abutments } = input;
+  if (abutments.length === 0) throw new Error('A common axis needs at least one abutment');
+  const union = new Uint8Array(indices.length / 3);
+  const mean: V3 = [0, 0, 0];
+  for (const a of abutments) {
+    for (let f = 0; f < union.length; f++) if (a.faceMask[f]) union[f] = 1;
+    const o = normalize(a.occlusal);
+    mean[0] += o[0];
+    mean[1] += o[1];
+    mean[2] += o[2];
+  }
+  const center = normalize(mean);
+  const cone = { coneDeg: input.coneDeg, samples: input.samples };
+  const common = searchInsertionAxis({ positions, indices, faceMask: union, center, ...cone });
+  const results = abutments.map((a): CommonAxisAbutmentResult => {
+    const own = abutments.length === 1 ? common : searchInsertionAxis({ positions, indices, faceMask: a.faceMask, center: a.occlusal, ...cone });
+    // A zero cone evaluates the undercut cost at exactly the common direction.
+    const at = searchInsertionAxis({ positions, indices, faceMask: a.faceMask, center: common.direction, coneDeg: 0, samples: 1 });
+    const { flags, count } = marginUndercut({ points: a.margin, axis: common.direction, ray, faceMask: a.faceMask });
+    return {
+      fdi: a.fdi,
+      individualAxis: own.direction,
+      angleToCommonDeg: angleBetweenDeg(own.direction, common.direction),
+      blockoutAreaMm2: at.centerUndercutAreaMm2,
+      marginUndercutCount: count,
+      marginFlags: flags,
+    };
+  });
+  let divergenceDeg = 0;
+  for (let i = 0; i < results.length; i++) {
+    for (let j = i + 1; j < results.length; j++) {
+      divergenceDeg = Math.max(divergenceDeg, angleBetweenDeg(results[i]!.individualAxis, results[j]!.individualAxis));
+    }
+  }
+  const warnings: string[] = [];
+  if (divergenceDeg > AXIS_DIVERGENCE_WARN_DEG) {
+    warnings.push(`The abutments diverge by ${divergenceDeg.toFixed(1)}° (over ${AXIS_DIVERGENCE_WARN_DEG}°): the common axis needs large blockouts; check each abutment.`);
+  }
+  for (const r of results) {
+    if (r.marginUndercutCount > 0) warnings.push(`Abutment ${r.fdi}: ${r.marginUndercutCount} margin points are in an undercut for the common axis; the bridge cannot seat.`);
+  }
+  const marginUndercutTotal = results.reduce((s, r) => s + r.marginUndercutCount, 0);
+  return { ...common, center, abutments: results, divergenceDeg, marginUndercutTotal, warnings };
+}

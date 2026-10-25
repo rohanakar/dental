@@ -6,6 +6,12 @@ import type {
   AutoMarginResult,
   AxisAnalysis,
   AxisRequest,
+  BridgeAxisRequest,
+  BridgeAxisResult,
+  BridgeFramesRequest,
+  BridgeFramesResult,
+  BridgeRequest,
+  BridgeResultView,
   CrownRequest,
   CrownResult,
   FocusFacesRequest,
@@ -92,4 +98,14 @@ export const analysis = {
   initBooleans: (): Promise<{ ms: number }> => geometryWorker().initBooleans(),
   /** Prep faces drawn in focus while the crown is adjusted. */
   focusFaces: (request: FocusFacesRequest): Promise<Uint32Array> => latest.run('focus', () => geometryWorker().focusFaces(request)),
+  /** Bridge: the common insertion axis over the abutments (store it on every abutment with setAxis). */
+  bridgeAxis: (request: BridgeAxisRequest): Promise<BridgeAxisResult> => latest.run('bridgeAxis', () => geometryWorker().bridgeAxis(request)),
+  /** Bridge Frame step: pontic frames on the arch curve, and the abutment frames aligned to it. */
+  bridgeFrames: (request: BridgeFramesRequest): Promise<BridgeFramesResult> => latest.run('bridgeFrames', () => geometryWorker().bridgeFrames(request)),
+  /** One bridge: every unit and connector (cached per unit), plus the union and its checks with `union: true`. */
+  designBridge: (request: BridgeRequest): Promise<BridgeResultView> => latest.run('bridge', () => geometryWorker().designBridge(request)),
+  /** Like designBridge but never superseded (proposals, QA, export). */
+  designBridgeUnlatched: (request: BridgeRequest): Promise<BridgeResultView> => geometryWorker().designBridge(request),
+  bridgeAxisUnlatched: (request: BridgeAxisRequest): Promise<BridgeAxisResult> => geometryWorker().bridgeAxis(request),
+  bridgeFramesUnlatched: (request: BridgeFramesRequest): Promise<BridgeFramesResult> => geometryWorker().bridgeFrames(request),
 };

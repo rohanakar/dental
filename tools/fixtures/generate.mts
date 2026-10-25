@@ -27,6 +27,9 @@ const along = across * 2;
 const outputs: Array<[string, Uint8Array]> = [
   ['lower.stl', writeBinaryStl(syntheticArch({ jaw: 'lower', along, across }))],
   ['upper.stl', writeBinaryStl(syntheticArch({ jaw: 'upper', along: 600, across: 250 }))],
+  // Bridge demos (antagonists: upper.stl and lower.stl): 35–[36]–37, and [12]–11–21–[22] across the midline.
+  ['lower-bridge.stl', writeBinaryStl(syntheticArch({ jaw: 'lower', along, across, preps: [35, 37], missing: [36] }))],
+  ['upper-anterior-bridge.stl', writeBinaryStl(syntheticArch({ jaw: 'upper', along, across, preps: [11, 21], missing: [12, 22] }))],
   ['lower-colored.ply', writePly(syntheticArch({ jaw: 'lower', along: 600, across: 250, colors: true }))],
   ['upper-colored.ply', writePly(syntheticArch({ jaw: 'upper', along: 600, across: 250, colors: true }))],
 ];

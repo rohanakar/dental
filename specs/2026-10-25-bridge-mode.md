@@ -569,4 +569,59 @@ Built by parallel agents in git worktrees, integrated in waves. Each green wave 
   - Finalize readiness still counts a connected side's frame contact as a neighbour (wave 3).
   - The chart layout is not the standard dentist's-view row; to be confirmed with the user.
 
-Waves 2b–4 (pontics, connectors and checks with the runner; app; AI) follow.
+### Wave 2b (2026-10-25): pontics, connectors, union checks, worker API, bridge golden cases
+- **Geometry** (`apps/web/src/geometry/`):
+  - `axis.ts` `searchCommonAxis`
+  - `bridge.ts`: `layoutPontics` (arch curve, cantilevers), `archAlignedFrame`, `designBridge` + `BridgeCache`
+  - `pontic.ts`: `designPontic`, `proposePonticPose`
+  - `connectors.ts`: `designConnector`, `measureConnector`
+  - `bridgeUnion.ts`: `checkBridgeUnion`
+  - `crown.ts`: the second half of `designCrown` split into `placeShell` / `fitAndFinishShell` / `proposeCrownPoseFor`,
+    shared with pontics. Single-crown output is byte-identical.
+  - `designBridge` dispatches on unit kind only, so the follow-on retainer types plug in.
+- **Worker** (`analysis.*`, each with an unlatched variant): `bridgeAxis`, `bridgeFrames` and `designBridge`. Unit
+  results are cached by resolved pose, so moving one unit recomputes only it and its connectors.
+- **Runner:**
+  - `tools/pipeline-runner/src/bridgePipeline.ts`.
+  - `GoldenCase.bridge` (units carry `restoration`).
+  - `writeSyntheticBridgeCase(dir, 'posterior' | 'anterior')`.
+  - The CLI runs every case, and `--synthetic` writes all three.
+  - Fixtures: `lower-bridge.stl` and `upper-anterior-bridge.stl`.
+- **Test:** `pipeline.test.ts` "passes every check on the synthetic bridges" (posterior `35–[36]–37`, anterior
+  `[12]–11–21–[22]`; 1.7 s and 2.2 s). The suite goes 100 → 102.
+- **Measured at 1M triangles:**
+
+  | | Posterior | Anterior | 10 units (35–45) |
+  |---|---|---|---|
+  | First design | 0.91 s | 1.19 s | 2.44 s |
+  | Union + checks | 0.41 s | 0.45 s | 1.63 s |
+
+  - Moving a retainer recomputes in 335–390 ms, a pontic in 204–215 ms.
+  - Connectors measured on the union: posterior 9.0 mm² and 3.39 mm high; anterior 7.0 mm² and 3.0 mm; the midline
+    11.0 mm².
+  - Seating change on the union ≤ 3e-7 mm. Pontic base gap −0.0002 mm (target 0).
+  - The common axis has no blockout. Pontic mesial · direction to the mesial neighbour is 0.96–0.98.
+  - Each union is one closed, printable solid of genus 0.
+  - Runner CLI at 1M triangles: 6/6 runs pass.
+- **Deviations:**
+  - **Connector height:** h = min(available, max(√(4A/π), minimum height)). Otherwise every 7 mm² anterior connector
+    would be 2.985 mm high, below the 3 mm minimum.
+  - **Connector line and placement:**
+    - The connector line is horizontal, so the section height is along the insertion axis.
+    - The tube is sized 0.05% over its target area.
+    - The intaglio clearance is checked over the whole end cap.
+  - **Pontic base:** built along the common axis.
+  - **Pontic height:** falls back to the template when the antagonist is more than 1.3× the template height away.
+  - **Cantilevers:** shortened when a natural neighbour is closer than the nominal width.
+  - **Abutment MD direction:** `archAlignedFrame` re-derives it from the arch curve, because the click estimate next to
+    a gap was up to 102° off. The runner applies it; the app offers it.
+  - **Pontic proximal adaptation:** only toward a natural contact on a free side.
+  - **Failed union:** reported as `unionError`, not thrown.
+- **Open:**
+  - **10-unit anterior span:** the incisor pontics are 1.74 mm short of the antagonist. With six front teeth missing,
+    the whole-jaw PCA occlusal estimate tilts 7° labially.
+  - **Arch curve across a 21 mm gap:** about 1.8 mm labial of the true arch.
+  - No connector fillets.
+  - Worker cache: up to 64 entries.
+
+Waves 3–4 (app; AI; follow-on specs) follow.

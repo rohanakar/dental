@@ -2,7 +2,9 @@
 import * as Comlink from 'comlink';
 // Vite emits manifold.wasm as a separate asset; the boolean engine (manifold-3d) itself is a lazy chunk.
 import manifoldWasmUrl from 'manifold-3d/manifold.wasm?url';
-import { searchInsertionAxis, marginUndercut, undercutDepths } from '../geometry/axis';
+import { fitArchCurve, type ArchCurve } from '../geometry/arch';
+import { searchCommonAxis, searchInsertionAxis, marginUndercut, undercutDepths } from '../geometry/axis';
+import { archAlignedFrame, BridgeCache, designBridge, layoutPontics, type BridgeUnitInput } from '../geometry/bridge';
 import {
   dijkstraTree,
   liveWireWeight,
@@ -28,6 +30,14 @@ import type {
   AutoMarginResult,
   AxisAnalysis,
   AxisRequest,
+  BridgeAxisRequest,
+  BridgeAxisResult,
+  BridgeConnectorView,
+  BridgeFramesRequest,
+  BridgeFramesResult,
+  BridgeRequest,
+  BridgeResultView,
+  BridgeUnitView,
   CrownRequest,
   CrownResult,
   FocusFacesRequest,
@@ -79,6 +89,27 @@ function regionFor(scan: RetainedScan, margin: Float32Array, occlusal: V3): Prep
   });
 }
 
+/** Bridge units and connectors by input hash, across calls: moving one unit recomputes only it and its connectors. */
+const bridgeCache = new BridgeCache(64);
+
+/** The jaw's arch curve, fitted once per scan and occlusal direction (the mean of its abutments' occlusal). */
+function archCurveOf(scan: RetainedScan, frames: Array<{ occlusal: V3; buccal: V3 }>): ArchCurve {
+  if (frames.length === 0) throw new Error('A bridge needs an abutment frame to fit the arch curve');
+  const sum = frames.reduce<V3>((s, f) => [s[0] + f.occlusal[0], s[1] + f.occlusal[1], s[2] + f.occlusal[2]], [0, 0, 0]);
+  const l = Math.hypot(...sum) || 1;
+  const occlusal: V3 = [sum[0] / l, sum[1] / l, sum[2] / l];
+  return registry.cached(scan, `arch:${occlusal.map((x) => x.toFixed(2)).join(',')}`, () =>
+    fitArchCurve({ positions: scan.positions, occlusal, buccalHint: frames[0]!.buccal }),
+  );
+}
+
+/** Copies of a cached typed array (cached results stay intact; the copies are transferred). */
+function copyOut<T extends Float32Array | Uint32Array>(array: T, transfer: ArrayBuffer[]): T {
+  const copy = array.slice() as T;
+  transfer.push(copy.buffer as ArrayBuffer);
+  return copy;
+}
+
 function importPayload(processed: Awaited<ReturnType<typeof processScan>>) {
   const { payload, transfer } = buildScanPayload(processed);
   // Keep a worker-side copy (and BVH) before the buffers are transferred away.
@@ -120,6 +151,7 @@ const api = {
 
   releaseScan(sha256: string): void {
     registry.release(sha256);
+    bridgeCache.clear();
   },
 
   /** Adjacency + signed curvature (cached); warms the live-wire. */
@@ -269,6 +301,125 @@ const api = {
     const ids = new Uint32Array(faceCount);
     for (let f = 0, k = 0; f < faceMask.length; f++) if (faceMask[f]) ids[k++] = f;
     return Comlink.transfer(ids, [ids.buffer as ArrayBuffer]);
+  },
+
+  /** Bridge: one insertion axis over all abutment preps, with per-abutment blockout, margin undercut and divergence. */
+  bridgeAxis(request: BridgeAxisRequest): BridgeAxisResult {
+    const t0 = performance.now();
+    const scan = registry.get(request.jawSha);
+    const abutments = request.abutments.map((a) => ({
+      fdi: a.fdi,
+      faceMask: regionFor(scan, a.margin, a.occlusal).faceMask,
+      margin: a.margin,
+      occlusal: a.occlusal,
+    }));
+    const found = searchCommonAxis({ positions: scan.positions, indices: scan.indices, ray: rayOf(scan), abutments, coneDeg: request.coneDeg });
+    const result: BridgeAxisResult = {
+      direction: found.direction,
+      center: found.center,
+      angleFromCenterDeg: found.angleFromCenterDeg,
+      undercutAreaMm2: found.undercutAreaMm2,
+      divergenceDeg: found.divergenceDeg,
+      marginUndercutTotal: found.marginUndercutTotal,
+      abutments: found.abutments,
+      warnings: found.warnings,
+      ms: performance.now() - t0,
+    };
+    return Comlink.transfer(result, found.abutments.map((a) => a.marginFlags.buffer as ArrayBuffer));
+  },
+
+  /** Bridge Frame step: pontic frames laid out on the arch (from the abutment margins), abutment frames aligned to it. */
+  bridgeFrames(request: BridgeFramesRequest): BridgeFramesResult {
+    const t0 = performance.now();
+    const scan = registry.get(request.jawSha);
+    const ray = rayOf(scan);
+    const frames = request.units.flatMap((u) => (u.kind !== 'pontic' && u.frame ? [u.frame] : []));
+    const curve = archCurveOf(scan, frames);
+    const abutments = request.units.flatMap((u) => {
+      if (u.kind === 'pontic' || !u.frame) return [];
+      const aligned = archAlignedFrame({ frame: u.frame, fdi: u.fdi, curve, ray });
+      return [{ fdi: u.fdi, frame: aligned.frame, changeDeg: aligned.changeDeg }];
+    });
+    const pontics = layoutPontics({
+      curve,
+      jaw: ray,
+      units: request.units.map((u) => (u.kind === 'pontic' ? { fdi: u.fdi, kind: u.kind, centre: u.centre } : { fdi: u.fdi, kind: u.kind, frame: u.frame, outline: u.margin })),
+    });
+    return {
+      abutments,
+      pontics,
+      curve: { kind: curve.kind, lengthMm: curve.lengthMm, midlineS: curve.midlineS, rmsMm: curve.rmsMm, warnings: curve.warnings },
+      ms: performance.now() - t0,
+    };
+  },
+
+  /**
+   * Every unit (retainers via designCrown, pontics via designPontic) and
+   * connector of one bridge, and with `union` the merged solid and its checks.
+   * Units and connectors are cached by input hash across calls.
+   */
+  async designBridge(request: BridgeRequest): Promise<BridgeResultView> {
+    const t0 = performance.now();
+    if (request.union) await initMeshBoolean({ wasmUrl: manifoldWasmUrl });
+    const scan = registry.get(request.jawSha);
+    const antagonist = request.antagonistSha && registry.has(request.antagonistSha) ? registry.get(request.antagonistSha) : null;
+    const units: BridgeUnitInput[] = request.units.map((u) => {
+      if (u.kind === 'pontic') return u;
+      if (!u.frame || !u.margin) throw new Error(`Abutment ${u.fdi} needs a frame and a margin`);
+      const region = regionFor(scan, u.margin, u.frame.occlusal);
+      if (!region.closed) throw new Error(`Abutment ${u.fdi}: the prep region is not closed by the margin; fix the margin first`);
+      return { ...u, region };
+    });
+    const design = designBridge({
+      jaw: { positions: scan.positions, indices: scan.indices, graph: surfaceOf(scan).graph, smoothNormals: smoothNormalsOf(scan), ray: rayOf(scan) },
+      antagonist: antagonist ? rayOf(antagonist) : undefined,
+      axis: request.axis,
+      units,
+      connectors: request.connectors,
+      material: request.material,
+      curve: archCurveOf(scan, request.units.flatMap((u) => (u.kind !== 'pontic' && u.frame ? [u.frame] : []))),
+      maps: request.maps,
+      union: request.union,
+      cache: bridgeCache,
+      scanKey: `${request.jawSha}:${antagonist ? antagonist.sha256 : ''}`,
+    });
+    // Unit and connector results live on in the cache: send copies of their buffers.
+    const transfer: ArrayBuffer[] = [];
+    const unitViews = design.units.map((r): BridgeUnitView => {
+      const { mesh, maps, moveWeights, ...rest } = r.design;
+      return {
+        ...rest,
+        positions: copyOut(mesh.positions, transfer),
+        indices: copyOut(mesh.indices, transfer),
+        moveWeights: copyOut(moveWeights, transfer),
+        ...(maps ? { maps: Object.fromEntries(Object.entries(maps).map(([k, v]) => [k, copyOut(v as Float32Array, transfer)])) } : {}),
+        fdi: r.fdi,
+        kind: r.kind,
+        frame: r.frame,
+        proposed: r.proposed,
+        connectedSides: r.connectedSides,
+        ...(r.layout ? { layout: r.layout } : {}),
+        cached: r.cached,
+        ms: r.ms,
+      };
+    });
+    const connectorViews = design.connectors.map((c): BridgeConnectorView => {
+      const { mesh, ...rest } = c;
+      return { ...rest, positions: copyOut(mesh.positions, transfer), indices: copyOut(mesh.indices, transfer) };
+    });
+    const union = design.union && { positions: design.union.mesh.positions, indices: design.union.mesh.indices, checks: design.union.checks };
+    if (union) transfer.push(union.positions.buffer as ArrayBuffer, union.indices.buffer as ArrayBuffer);
+    const result: BridgeResultView = {
+      units: unitViews,
+      connectors: connectorViews,
+      ...(union ? { union } : {}),
+      ...(design.unionError ? { unionError: design.unionError } : {}),
+      curve: design.curve,
+      warnings: design.warnings,
+      timingsMs: design.timingsMs,
+      ms: performance.now() - t0,
+    };
+    return Comlink.transfer(result, transfer);
   },
 };
 

@@ -85,14 +85,14 @@ export interface CaseResult {
 }
 
 /** Gap accuracy required on the axial walls (spec: ±0.01 mm). */
-const MAX_GAP_ERROR_MM = 0.01;
+export const MAX_GAP_ERROR_MM = 0.01;
 /** Adaptation may undershoot its clearance target by this much. */
-const ADAPT_TOLERANCE_MM = 0.02;
+export const ADAPT_TOLERANCE_MM = 0.02;
 /** Thickness enforcement may undershoot the profile by this much. */
-const THICKNESS_TOLERANCE_MM = 0.02;
+export const THICKNESS_TOLERANCE_MM = 0.02;
 
 /** min / max / mean of the finite values of a per-vertex map. */
-function mapStats(values: Float32Array | undefined): { min: number; max: number; mean: number; count: number } | undefined {
+export function mapStats(values: Float32Array | undefined): { min: number; max: number; mean: number; count: number } | undefined {
   if (!values) return undefined;
   let min = Infinity, max = -Infinity, sum = 0, count = 0;
   for (const v of values) {
@@ -111,11 +111,11 @@ const normalize = (a: V3): V3 => {
   const l = Math.hypot(a[0], a[1], a[2]);
   return [a[0] / l, a[1] / l, a[2] / l];
 };
-const round = (n: number, digits = 4) => Number(n.toFixed(digits));
-const roundV = (v: V3): V3 => [round(v[0]), round(v[1]), round(v[2])];
+export const round = (n: number, digits = 4) => Number(n.toFixed(digits));
+export const roundV = (v: V3): V3 => [round(v[0]), round(v[1]), round(v[2])];
 
 /** Distance from p to a closed polyline (packed xyz). */
-function distanceToClosedPolyline(p: V3, poly: Float32Array): number {
+export function distanceToClosedPolyline(p: V3, poly: Float32Array): number {
   const n = poly.length / 3;
   let best = Infinity;
   for (let i = 0; i < n; i++) {

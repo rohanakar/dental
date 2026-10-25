@@ -3,7 +3,7 @@ import { Matrix4, Quaternion, Vector3 } from 'three';
 import { ADAPT_OPEN_TOLERANCE_MM, adaptContacts, adaptOcclusion, findConflict, type AdaptConflict, type AdaptInput, type AdaptReport } from './adapt';
 import { clearanceMap, thicknessMap, unmillableMap, type CrownMapName } from './crownMaps';
 import { templateForTooth, type CrownTemplate } from './crownTemplate';
-import { buildIntaglio, distanceFromMargin, measureIntaglioGap, offsetPrep, planeBasis, type GapCheck } from './intaglio';
+import { buildIntaglio, distanceFromMargin, measureIntaglioGap, offsetPrep, planeBasis, type GapCheck, type Intaglio } from './intaglio';
 import type { IndexedMesh } from './mesh';
 import { validateClosedMesh, type MeshValidation } from './meshValidate';
 import { countSelfIntersections } from './selfIntersect';
@@ -63,7 +63,8 @@ export function crownAxes(frame: CrownFrame): CrownAxes {
   return { x, y, z, epsilon };
 }
 
-function poseRotation(axes: CrownAxes): Quaternion {
+/** Rotation of a template pose from the crown axes (the mirror, if any, goes into scale.x). */
+export function poseRotation(axes: CrownAxes): Quaternion {
   const m = new Matrix4().makeBasis(
     new Vector3(...scale(axes.x, axes.epsilon)),
     new Vector3(...axes.y),
@@ -275,7 +276,7 @@ function shellGraphOf(template: CrownTemplate): SurfaceGraph {
 }
 
 /** Ray caster over a mesh, keeping the BVH-ordered index so closest-point face ids match. */
-function surfaceOf(mesh: IndexedMesh): IntaglioSurface {
+export function meshSurface(mesh: IndexedMesh): IntaglioSurface {
   const positions = mesh.positions.slice();
   const indices = mesh.indices.slice();
   return { ray: bvhRayCaster(createBvh({ positions, indices })), positions, indices };
@@ -329,75 +330,86 @@ function ignoredPrepFaces(
   return faces;
 }
 
-/**
- * Crown: intaglio (gap + blockout) + library template placed in the tooth
- * frame, fitted with an RBF displacement field that pins its cervical ring to
- * the margin (offset by the margin thickness) while the cusps stay put, pushed
- * out to the thickness profile, and joined to the intaglio by the margin band
- * into one closed, outward-oriented mesh.
- */
-export function designCrown(input: CrownInput): CrownDesign {
-  const timings: Record<string, number> = {};
-  let t = performance.now();
-  const lap = (name: string) => {
-    const now = performance.now();
-    timings[name] = now - t;
-    t = now;
-  };
-  const { jaw, region, params, frame } = input;
-  const warnings: string[] = [];
-  const template = input.template ?? templateForTooth(input.fdi);
-  const axis = normalize(input.axis);
-  const axes = crownAxes(frame);
+/** A library template placed by a pose, with its cervical ring ordered around an axis. */
+export interface PlacedShell {
+  template: CrownTemplate;
+  /** World positions of the template vertices; the fit moves them in place. */
+  shell: Float32Array;
+  /** The pose mirrors the template (quadrants 2 and 4): faces are flipped when assembled. */
+  mirrored: boolean;
+  /** Cervical ring vertex ids (template-local), CCW seen from +axis, starting at the most mesial one. */
+  ring: number[];
+  /** Placed ring positions, in ring order. */
+  ringPoints: V3[];
+  /** Normalized arc-length fraction of each ring point. */
+  fractions: number[];
+}
 
-  // Prep height above the margin centroid (for the minimum crown height).
-  const nm = input.margin.length / 3;
-  let centroid: V3 = [0, 0, 0];
-  for (let i = 0; i < nm; i++) centroid = add(centroid, scale(pointAt(input.margin, i), 1 / nm));
-  let prepHeight = 0;
-  for (let v = 0; v < region.vertexMask.length; v++) {
-    if (region.vertexMask[v]) prepHeight = Math.max(prepHeight, dot(sub(pointAt(jaw.positions, v), centroid), axes.z));
-  }
-
-  let pose = input.pose;
-  if (!pose) {
-    const proposal = proposeCrownPose({ template, frame, margin: input.margin, prepHeightMm: prepHeight, antagonist: input.antagonist, params });
-    pose = proposal.pose;
-    warnings.push(...proposal.warnings);
-  }
-  lap('pose');
-
-  // Place the template.
+/** Place a template by its pose and order its cervical ring CCW around `axis`, starting at the most `mesial` point. */
+export function placeShell(template: CrownTemplate, pose: Pose, axis: V3, mesial: V3): PlacedShell {
   const toWorld = poseTransform(pose);
   const mirrored = pose.scale[0] * pose.scale[1] * pose.scale[2] < 0;
   const tv = template.mesh.positions.length / 3;
   const shell = new Float32Array(tv * 3);
   for (let i = 0; i < tv; i++) shell.set(toWorld(pointAt(template.mesh.positions, i)), i * 3);
+  const loopPoints = Array.from(template.cervicalLoop, (v) => pointAt(shell, v));
+  const order = orderLoop(loopPoints, axis, mesial);
+  const ringPoints = order.map((i) => loopPoints[i]!);
+  return { template, shell, mirrored, ring: order.map((i) => template.cervicalLoop[i]!), ringPoints, fractions: arcFractions(ringPoints) };
+}
 
-  // Pair the cervical ring with the margin by arc length, both CCW around the axis from the mesial end.
-  const ringPoints = Array.from(template.cervicalLoop, (v) => pointAt(shell, v));
-  const ringOrder = orderLoop(ringPoints, axis, axes.x);
-  const ring = ringOrder.map((i) => template.cervicalLoop[i]!);
-  const ringOrdered = ringOrder.map((i) => ringPoints[i]!);
-  const fractions = arcFractions(ringOrdered);
-  const marginPoints = Array.from({ length: nm }, (_, i) => pointAt(input.margin, i));
-  const marginOrdered = orderLoop(marginPoints, axis, axes.x).map((i) => marginPoints[i]!);
-  const marginFractions = arcFractions(marginOrdered);
+/**
+ * Everything after the inner surface, shared by crowns and pontics: the band
+ * (outer cervical loop), the RBF fit of the shell, assembly into one closed
+ * mesh, thickness, adaptation, validation and the colour maps.
+ */
+export interface ShellFinishInput {
+  placed: PlacedShell;
+  pose: Pose;
+  axes: CrownAxes;
+  /** The inner surface's axis (insertion axis): the band lies ⊥ to it and the axial thickness is measured along it. */
+  axis: V3;
+  /** Inner surface (crown intaglio, pontic base): its first ring.length vertices are the rim, in ring order, CCW from +axis. */
+  inner: Intaglio;
+  /** The rim, xyz per ring point. */
+  rim: Float32Array;
+  /** Width of the band that joins the rim to the shell's cervical ring. */
+  bandMm: number;
+  params: DesignParams;
+  /** 'enforce': push the shell out to the thickness profile (crowns); 'measure': report only (solid pontics). */
+  thickness: 'enforce' | 'measure';
+  /** The jaw scan: neighbours for the proximal adaptation and map. */
+  jawRay: RayCaster;
+  /** Jaw faces that are not neighbours (the prep and its band); computed once, on first use. */
+  ignoredFaces: () => Uint8Array | undefined;
+  antagonist?: RayCaster;
+  adapt?: CrownAdapt;
+  maps?: CrownMapName[];
+  neighbours?: { ray: RayCaster; faceMask?: Uint8Array };
+  /** Fit check of the inner surface (crowns: the cement gap on the axial walls). */
+  gapCheck: (inner: IntaglioSurface) => GapCheck;
+  warnings: string[];
+  timings: Record<string, number>;
+  lap: (name: string) => void;
+}
+
+export interface FinishedShell {
+  design: CrownDesign;
+  /** The inner surface with its BVH (closest points and rays). */
+  inner: IntaglioSurface;
+  /** The shell's pinned cervical loop, xyz per point. */
+  outerLoop: Float32Array;
+}
+
+/** Fit, assemble, check and adapt a placed shell over its inner surface (see ShellFinishInput). */
+export function fitAndFinishShell(input: ShellFinishInput): FinishedShell {
+  const { placed, pose, axes, axis, inner: intaglio, rim, params, warnings, timings, lap } = input;
+  const { template, shell, ring, mirrored } = placed;
+  const tv = template.mesh.positions.length / 3;
   const T = ring.length;
-  const rim = new Float32Array(T * 3);
-  for (let i = 0; i < T; i++) rim.set(sampleLoop(marginOrdered, marginFractions, fractions[i]!), i * 3);
-  lap('pairing');
-
-  // Intaglio on the gap-offset prep.
-  const distance = distanceFromMargin(jaw.positions, jaw.graph, region.vertexMask, region.loopVertices);
-  const offset = offsetPrep({ positions: jaw.positions, indices: jaw.indices, normals: jaw.smoothNormals, faceMask: region.faceMask, distance, params });
-  lap('offset');
-  const intaglio = buildIntaglio({ offset: offset.ray, rim, axis });
-  warnings.push(...intaglio.warnings);
-  lap('intaglio');
 
   // Outer margin loop: the margin offset outward (in the plane ⊥ axis) by the margin thickness.
-  const band = Math.max(params.marginThicknessMm, MIN_BAND_MM);
+  const band = input.bandMm;
   const outer: V3[] = [];
   for (let i = 0; i < T; i++) {
     const prev = pointAt(rim, (i - 1 + T) % T);
@@ -468,8 +480,8 @@ export function designCrown(input: CrownInput): CrownDesign {
   }
   const mesh: IndexedMesh = { positions, indices };
 
-  // Thickness: push the outer shell to the profile (the cervical ring is pinned).
-  const intaglioSurface = surfaceOf(intaglio.mesh);
+  // Thickness: push the outer shell to the profile (the cervical ring is pinned); a pontic only measures it.
+  const intaglioSurface = meshSurface(intaglio.mesh);
   const fixed = new Uint8Array(tv);
   for (const v of ring) fixed[v] = 1;
   const outerLoop = new Float32Array(T * 3);
@@ -484,13 +496,14 @@ export function designCrown(input: CrownInput): CrownDesign {
       params,
       shellGraph: shellGraphOf(template),
       fixed,
+      ...(input.thickness === 'measure' ? { iterations: 0 } : {}),
     });
   let enforced = enforce();
   lap('thickness');
 
   // Adaptation to the antagonist and the neighbours, then thickness again (it wins), then conflicts.
-  let ignored: Uint8Array | undefined;
-  const ignoredFaces = () => (ignored ??= ignoredPrepFaces(jaw, region));
+  let ignored: { faces: Uint8Array | undefined } | undefined;
+  const ignoredFaces = () => (ignored ??= { faces: input.ignoredFaces() }).faces;
   const adaptReports: NonNullable<CrownDesign['adapt']> = {};
   const checks: Array<{ key: 'occlusion' | 'mesial' | 'distal'; input: Omit<AdaptInput, 'shellGraph'>; kind: AdaptConflict['kind'] }> = [];
   const adaptBase = (target: RayCaster, direction: V3, targetMm: number, ignoreFaces?: Uint8Array) => ({
@@ -519,7 +532,7 @@ export function designCrown(input: CrownInput): CrownDesign {
     const target = adapt?.[side];
     if (!target) continue;
     const direction = side === 'mesial' ? axes.x : scale(axes.x, -1);
-    const base = adaptBase(jaw.ray, direction, target.targetMm, ignoredFaces());
+    const base = adaptBase(input.jawRay, direction, target.targetMm, ignoredFaces());
     adaptReports[side] = { ...adaptContacts(base), targetMm: target.targetMm };
     checks.push({ key: side, input: { ...base, select: (n, h) => h >= 0.3 && h <= 0.9 && dot(n, direction) > 0.5 }, kind: 'contact too tight' });
   }
@@ -575,20 +588,12 @@ export function designCrown(input: CrownInput): CrownDesign {
     if (Number.isNaN(t) || t >= minFar) continue;
     if (distanceToLoop(pointAt(positions, ni + v), outerLoop) >= THICKNESS_RAMP_MM) minFar = t;
   }
-  if (enforced.minSlackAfterMm < -0.02) {
+  if (input.thickness === 'enforce' && enforced.minSlackAfterMm < -0.02) {
     warnings.push(`Material is ${(-enforced.minSlackAfterMm).toFixed(2)} mm thinner than required in places after enforcement.`);
   }
   lap('thicknessCheck');
 
-  const gapCheck = measureIntaglioGap({
-    positions: jaw.positions,
-    normals: jaw.smoothNormals,
-    vertexMask: region.vertexMask,
-    distance,
-    axis,
-    params,
-    intaglio: intaglioSurface.ray,
-  });
+  const gapCheck = input.gapCheck(intaglioSurface);
   lap('gapCheck');
 
   let maps: Partial<Record<CrownMapName, Float32Array>> | undefined;
@@ -601,7 +606,7 @@ export function designCrown(input: CrownInput): CrownDesign {
         maps.occlusion = clearanceMap({ positions, normals, vertexStart: ni, vertexEnd: ni + tv, target: input.antagonist });
       }
       if (name === 'proximal') {
-        const neighbours = input.neighbours ?? { ray: jaw.ray, faceMask: ignoredFaces() };
+        const neighbours = input.neighbours ?? { ray: input.jawRay, faceMask: ignoredFaces() };
         const proximal = clearanceMap({ positions, normals, vertexStart: ni, vertexEnd: ni + tv, target: neighbours.ray, ignoreFaces: neighbours.faceMask });
         // Proximal contacts are on the sides: drop vertices facing mostly occlusal or cervical.
         for (let v = ni; v < ni + tv; v++) {
@@ -616,7 +621,7 @@ export function designCrown(input: CrownInput): CrownDesign {
     lap('maps');
   }
 
-  return {
+  const design: CrownDesign = {
     mesh,
     pose,
     templateId: template.id,
@@ -637,4 +642,103 @@ export function designCrown(input: CrownInput): CrownDesign {
     warnings,
     timingsMs: timings,
   };
+  return { design, inner: intaglioSurface, outerLoop };
+}
+
+/** The pose designCrown proposes when none is stored: proposeCrownPose with the prep height over the margin centroid. */
+export function proposeCrownPoseFor(
+  input: Pick<CrownInput, 'fdi' | 'jaw' | 'region' | 'frame' | 'margin' | 'antagonist' | 'params' | 'template'>,
+): { pose: Pose; warnings: string[] } {
+  const { jaw, region, frame } = input;
+  const template = input.template ?? templateForTooth(input.fdi);
+  const axes = crownAxes(frame);
+  // Prep height above the margin centroid (for the minimum crown height).
+  const nm = input.margin.length / 3;
+  let centroid: V3 = [0, 0, 0];
+  for (let i = 0; i < nm; i++) centroid = add(centroid, scale(pointAt(input.margin, i), 1 / nm));
+  let prepHeight = 0;
+  for (let v = 0; v < region.vertexMask.length; v++) {
+    if (region.vertexMask[v]) prepHeight = Math.max(prepHeight, dot(sub(pointAt(jaw.positions, v), centroid), axes.z));
+  }
+  return proposeCrownPose({ template, frame, margin: input.margin, prepHeightMm: prepHeight, antagonist: input.antagonist, params: input.params });
+}
+
+/**
+ * Crown: intaglio (gap + blockout) + library template placed in the tooth
+ * frame, fitted with an RBF displacement field that pins its cervical ring to
+ * the margin (offset by the margin thickness) while the cusps stay put, pushed
+ * out to the thickness profile, and joined to the intaglio by the margin band
+ * into one closed, outward-oriented mesh.
+ */
+export function designCrown(input: CrownInput): CrownDesign {
+  const timings: Record<string, number> = {};
+  let t = performance.now();
+  const lap = (name: string) => {
+    const now = performance.now();
+    timings[name] = now - t;
+    t = now;
+  };
+  const { jaw, region, params, frame } = input;
+  const warnings: string[] = [];
+  const template = input.template ?? templateForTooth(input.fdi);
+  const axis = normalize(input.axis);
+  const axes = crownAxes(frame);
+  const nm = input.margin.length / 3;
+
+  let pose = input.pose;
+  if (!pose) {
+    const proposal = proposeCrownPoseFor(input);
+    pose = proposal.pose;
+    warnings.push(...proposal.warnings);
+  }
+  lap('pose');
+
+  // Place the template; pair its cervical ring with the margin by arc length, both CCW around the axis from the mesial end.
+  const placed = placeShell(template, pose, axis, axes.x);
+  const marginPoints = Array.from({ length: nm }, (_, i) => pointAt(input.margin, i));
+  const marginOrdered = orderLoop(marginPoints, axis, axes.x).map((i) => marginPoints[i]!);
+  const marginFractions = arcFractions(marginOrdered);
+  const T = placed.ring.length;
+  const rim = new Float32Array(T * 3);
+  for (let i = 0; i < T; i++) rim.set(sampleLoop(marginOrdered, marginFractions, placed.fractions[i]!), i * 3);
+  lap('pairing');
+
+  // Intaglio on the gap-offset prep.
+  const distance = distanceFromMargin(jaw.positions, jaw.graph, region.vertexMask, region.loopVertices);
+  const offset = offsetPrep({ positions: jaw.positions, indices: jaw.indices, normals: jaw.smoothNormals, faceMask: region.faceMask, distance, params });
+  lap('offset');
+  const intaglio = buildIntaglio({ offset: offset.ray, rim, axis });
+  warnings.push(...intaglio.warnings);
+  lap('intaglio');
+
+  return fitAndFinishShell({
+    placed,
+    pose,
+    axes,
+    axis,
+    inner: intaglio,
+    rim,
+    bandMm: Math.max(params.marginThicknessMm, MIN_BAND_MM),
+    params,
+    thickness: 'enforce',
+    jawRay: jaw.ray,
+    ignoredFaces: () => ignoredPrepFaces(jaw, region),
+    antagonist: input.antagonist,
+    adapt: input.adapt,
+    maps: input.maps,
+    neighbours: input.neighbours,
+    gapCheck: (inner) =>
+      measureIntaglioGap({
+        positions: jaw.positions,
+        normals: jaw.smoothNormals,
+        vertexMask: region.vertexMask,
+        distance,
+        axis,
+        params,
+        intaglio: inner.ray,
+      }),
+    warnings,
+    timings,
+    lap,
+  }).design;
 }
