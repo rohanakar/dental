@@ -40,10 +40,13 @@ describe('pipeline runner', () => {
       expect(c.measured!.minAreaMm2).toBeGreaterThanOrEqual(minConnectorAreaMm2('zirconia', c.between[0], c.between[1]));
       expect(c.measured!.heightMm).toBeGreaterThanOrEqual(3);
       expect(c.designed.heightMm).toBeGreaterThanOrEqual(3);
+      // Both ends stay clear of their units' fitting surfaces.
+      for (const f of c.designed.fitClearanceMm) expect(f).toBeGreaterThanOrEqual(0.2 - 1e-4);
     }
     // The union leaves every retainer's seating unchanged.
     expect(metrics.seating.length).toBe(2);
     for (const s of metrics.seating) {
+      expect(s.samples).toBe(s.ownSamples);
       expect(s.deltaMeanMm).toBeLessThanOrEqual(0.005);
       expect(s.deltaMaxMm).toBeLessThanOrEqual(0.005);
     }
@@ -51,7 +54,10 @@ describe('pipeline runner', () => {
     // the mesial neighbour (35 for 36; 11 and 21, across the midline, for 12 and 22).
     const pontics = metrics.units.filter((u) => u.kind === 'pontic');
     expect(metrics.ponticBase.map((p) => p.fdi)).toEqual(pontics.map((p) => p.fdi));
-    for (const p of metrics.ponticBase) expect(p.minGapMm).toBeGreaterThanOrEqual(p.targetMm - 0.02);
+    for (const p of metrics.ponticBase) {
+      expect(p.minGapMm).toBeGreaterThanOrEqual(p.targetMm - 0.02);
+      expect(p.minGapMm).toBeLessThanOrEqual(p.targetMm + 0.05);
+    }
     for (const p of pontics) {
       const neighbour = metrics.units.find((u) => u.fdi === p.fdi - 1)!;
       const d = neighbour.frame.origin.map((x, i) => x - p.frame.origin[i]!);

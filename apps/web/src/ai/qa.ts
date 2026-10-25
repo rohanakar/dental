@@ -102,6 +102,7 @@ export function adaptGate(result: Pick<CrownResult, 'adapt'>): QaCheck[] {
  */
 export const SEATING_TOLERANCE_MM = 0.005;
 export const PONTIC_BASE_TOLERANCE_MM = 0.02;
+export const PONTIC_BASE_MAX_EXCESS_MM = 0.05;
 
 /**
  * A designed bridge for the bridge gate: the worker's `BridgeResultView` or the geometry's `BridgeResult`, both
@@ -121,9 +122,11 @@ export interface BridgeGateInput {
  * - the union is closed, printable, and one component of genus 0; a failed or missing union fails with the reason;
  * - per connector (`bridge.connector.35-36.*`): the smallest measured section is at least the designed area and the
  *   material minimum, its height at least the minimum height, and the design reported no failure
- *   ('insufficient-height', 'too-wide');
- * - per retainer: the seating (cement gap) is unchanged on the union, within SEATING_TOLERANCE_MM;
- * - per pontic: the base gap to the ridge is at least ponticRidgeGapMm − PONTIC_BASE_TOLERANCE_MM.
+ *   ('insufficient-height', 'too-wide', 'fit-clearance');
+ * - per retainer: the seating (cement gap) is unchanged on the union, within SEATING_TOLERANCE_MM and on the same
+ *   number of samples;
+ * - per pontic: the smallest base gap to the ridge is within ponticRidgeGapMm − PONTIC_BASE_TOLERANCE_MM …
+ *   + PONTIC_BASE_MAX_EXCESS_MM.
  * The per-unit crown and adapt gates run separately.
  */
 export function bridgeGate(result: BridgeGateInput): QaCheck[] {
@@ -163,12 +166,12 @@ export function bridgeGate(result: BridgeGateInput): QaCheck[] {
 
   for (const s of checks?.seating ?? []) {
     const change = Math.max(s.deltaMeanMm, s.deltaMaxMm);
-    const ok = s.onUnion.samples > 0 && s.deltaMeanMm <= SEATING_TOLERANCE_MM && s.deltaMaxMm <= SEATING_TOLERANCE_MM;
+    const ok = s.onUnion.samples > 0 && s.onUnion.samples === s.own.samples && s.deltaMeanMm <= SEATING_TOLERANCE_MM && s.deltaMaxMm <= SEATING_TOLERANCE_MM;
     qa.push(check(`bridge.seating.${s.fdi}`, ok, `Retainer ${s.fdi}: seating unchanged in the merged bridge (largest change of the cement gap, mm)`, change, SEATING_TOLERANCE_MM, 4));
   }
   for (const p of checks?.ponticBase ?? []) {
     const limit = p.targetMm - PONTIC_BASE_TOLERANCE_MM;
-    const ok = p.samples > 0 && p.minGapMm >= limit && p.meanGapMm >= limit;
+    const ok = p.samples > 0 && p.minGapMm >= limit && p.minGapMm <= p.targetMm + PONTIC_BASE_MAX_EXCESS_MM && p.meanGapMm >= limit;
     qa.push(check(`bridge.ponticBase.${p.fdi}`, ok, `Pontic ${p.fdi}: smallest gap from the base to the ridge (mm)`, p.minGapMm, round(limit)));
   }
   return qa;

@@ -22,6 +22,7 @@ import { meshBooleanReady, unionMeshes } from './meshBoolean';
 import type { V3 } from './pca';
 import { designPontic, proposePonticPose, type PonticBaseGap } from './pontic';
 import { bvhRayCaster, createBvh, type RayCaster } from './raycast';
+import type { IntaglioSurface } from './thickness';
 import { findNeighbourContacts, mesialFromBuccal } from './toothFrame';
 
 /**
@@ -46,6 +47,24 @@ const normalize = (a: V3): V3 => {
 };
 const reject = (a: V3, n: V3): V3 => sub(a, scale(n, dot(a, n)));
 const pointAt = (a: Float32Array, i: number): V3 => [a[i * 3]!, a[i * 3 + 1]!, a[i * 3 + 2]!];
+
+/**
+ * Directions for fitting a jaw's arch curve from its abutment frames: occlusal
+ * = the mean of their occlusal directions; buccal hint = the sum of their
+ * buccal directions (not one frame's: on a straight quadrant scan the hint
+ * decides which side is buccal, so one flipped frame must not decide it).
+ * Fit unhinted and orient per call (orientArchCurve) when the fit is cached.
+ */
+export function archFitDirections(frames: ReadonlyArray<{ occlusal: V3; buccal: V3 }>): { occlusal: V3; buccalHint?: V3 } {
+  if (frames.length === 0) throw new Error('A bridge needs an abutment frame to fit the arch curve');
+  let occlusal: V3 = [0, 0, 0];
+  let buccal: V3 = [0, 0, 0];
+  for (const f of frames) {
+    occlusal = add(occlusal, normalize(f.occlusal));
+    buccal = add(buccal, normalize(f.buccal));
+  }
+  return { occlusal: normalize(occlusal), ...(Math.hypot(...buccal) > 1e-6 ? { buccalHint: normalize(buccal) } : {}) };
+}
 
 // ---- Pontic layout ---------------------------------------------------------------
 
@@ -285,7 +304,10 @@ export interface BridgeUnitInput {
   /** The unit's role (RESTORATION_ROLE[type].role); designBridge dispatches on it. */
   kind: UnitKind;
   params: DesignParams;
-  /** Abutments: the tooth frame (required). Pontics: optional; omitted = layoutPontics. */
+  /**
+   * Abutments: the tooth frame (required). Pontics: optional, omitted = layoutPontics on the retainer shells. A stored
+   * pontic frame gives the axes; a proposed pose is still centred by the layout on the retainer shells.
+   */
   frame?: CrownFrame;
   /** Abutments: dense margin, xyz packed, and its prep region. */
   margin?: Float32Array;
@@ -294,7 +316,7 @@ export interface BridgeUnitInput {
   pose?: Pose;
   /** Adaptation targets; sides facing a connected unit are dropped (they have a connector, not a contact). */
   adapt?: CrownAdapt;
-  /** Pontics: centre override (a click on the ridge). */
+  /** Pontics: centre override (a click on the ridge); places the proposed pose, also when a frame is stored. */
   centre?: V3;
   template?: CrownTemplate;
 }
@@ -365,8 +387,8 @@ export interface UnitWork {
   key: string;
   /** Ray caster over the whole unit mesh. */
   solid: RayCaster;
-  /** Ray caster over its fitting surface (intaglio or base). */
-  inner: RayCaster;
+  /** Its fitting surface (intaglio or base). */
+  inner: IntaglioSurface;
   blMm: number;
 }
 
@@ -438,14 +460,19 @@ function dropAdaptSides(adapt: CrownAdapt | undefined, sides: ProximalSide[]): C
   return out;
 }
 
-/** Ray caster over the triangles whose corners are all among the first `count` vertices (a unit's fitting surface). */
-function innerSurface(mesh: IndexedMesh, count: number): RayCaster {
+/**
+ * A unit's fitting surface: the triangles whose corners are all among the first `count` vertices (the intaglio or
+ * the pontic base), with a ray caster and its BVH-ordered index (for signed distances).
+ */
+function innerSurface(mesh: IndexedMesh, count: number): IntaglioSurface {
   const tris: number[] = [];
   const idx = mesh.indices;
   for (let f = 0; f < idx.length; f += 3) {
     if (idx[f]! < count && idx[f + 1]! < count && idx[f + 2]! < count) tris.push(idx[f]!, idx[f + 1]!, idx[f + 2]!);
   }
-  return bvhRayCaster(createBvh({ positions: mesh.positions.slice(0, count * 3), indices: Uint32Array.from(tris) }));
+  const positions = mesh.positions.slice(0, count * 3);
+  const indices = Uint32Array.from(tris); // reordered in place by the BVH build; canonical afterwards
+  return { ray: bvhRayCaster(createBvh({ positions, indices })), positions, indices };
 }
 
 const solidOf = (mesh: IndexedMesh): RayCaster => bvhRayCaster(createBvh({ positions: mesh.positions.slice(), indices: mesh.indices.slice() }));
@@ -480,12 +507,7 @@ export function designBridge(input: BridgeInput): BridgeResult {
   const common = [input.scanKey ?? '', Boolean(antagonist), axis, input.maps ?? []];
 
   // Arch curve: fit once per scan (callers pass it in); here from the abutment frames.
-  let curve = input.curve;
-  if (!curve) {
-    let occlusal: V3 = [0, 0, 0];
-    for (const u of abutments) if (u.frame) occlusal = add(occlusal, normalize(u.frame.occlusal));
-    curve = fitArchCurve({ positions: jaw.positions, occlusal: normalize(occlusal), buccalHint: abutments[0]!.frame?.buccal });
-  }
+  const curve = input.curve ?? fitArchCurve({ positions: jaw.positions, ...archFitDirections(abutments.flatMap((u) => (u.frame ? [u.frame] : []))) });
   lap('curve');
 
   const work = new Map<number, UnitWork>();
@@ -570,11 +592,12 @@ export function designBridge(input: BridgeInput): BridgeResult {
       const adapt = dropAdaptSides(u.adapt, sides);
       let proposal: { pose: Pose; warnings: string[] } | null = null;
       if (!u.pose) {
-        // The nearest retainers on either side give the bucco-lingual ratio.
+        // The nearest retainers on either side give the bucco-lingual ratio (pontics are skipped, designed or not).
         const index = units.indexOf(u);
         const ratios: number[] = [];
         for (const dir of [-1, 1]) {
           for (let k = index + dir; k >= 0 && k < units.length; k += dir) {
+            if (units[k]!.kind === 'pontic') continue;
             const w = work.get(units[k]!.fdi);
             if (w) {
               ratios.push(Math.abs(w.result.design.pose.scale[1]));
@@ -584,7 +607,9 @@ export function designBridge(input: BridgeInput): BridgeResult {
         }
         proposal = proposePonticPose({
           template: u.template ?? templateForTooth(u.fdi),
-          frame,
+          // Centred in the span its width comes from: the layout on the retainer shells (a stored frame may come from
+          // the layout on the margins, before the crowns existed). Its axes stay the stored frame's.
+          frame: { ...frame, origin: layout.frame.origin },
           ridgeGapMm: u.params.ponticRidgeGapMm,
           spanMm: layout.mdMm,
           blRatio: ratios.length ? ratios.reduce((a, b) => a + b, 0) / ratios.length : 1,

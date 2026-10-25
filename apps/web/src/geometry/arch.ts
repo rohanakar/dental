@@ -305,6 +305,37 @@ function fitParabola(px: Float64Array, py: Float64Array, ex: [number, number]): 
   return { ex, a0, a1, a2, xmin, xmax, rms: Math.sqrt(r2 / Math.max(1, n)) };
 }
 
+const GUESSED_BUCCAL_WARNING = 'The scan is nearly straight: the arch curve is a line and buccal was guessed; pass a buccal hint.';
+
+/**
+ * The same curve with its outward normal toward `buccalHint`. Only a straight
+ * fit ('line') can be flipped: its inside cannot be told from its shape, so
+ * fitArchCurve takes it from the hint. A curved fit knows its inside and is
+ * returned as is. A flipped line runs the other way (s → length − s), so
+ * mesialAt follows. This lets callers cache the fit without a hint and orient
+ * it per call: a cached fit oriented by a stale hint would put buccal on the
+ * lingual side and every frame derived from it 180° off.
+ */
+export function orientArchCurve(curve: ArchCurve, buccalHint: V3 | undefined): ArchCurve {
+  if (curve.kind !== 'line' || !buccalHint || !(Math.hypot(...buccalHint) > 0)) return curve;
+  const warnings = curve.warnings.filter((w) => w !== GUESSED_BUCCAL_WARNING);
+  const L = curve.lengthMm;
+  if (dot(curve.normalAt(L / 2), buccalHint) >= 0) return { ...curve, warnings };
+  const flip = (v: V3): V3 => [-v[0], -v[1], -v[2]];
+  const normalAt = (s: number): V3 => flip(curve.normalAt(L - s));
+  return {
+    ...curve,
+    pointAt: (s) => curve.pointAt(L - s),
+    tangentAt: (s) => flip(curve.tangentAt(L - s)),
+    normalAt,
+    project: (p) => L - curve.project(p),
+    // A line has no midline.
+    towardMidline: () => null,
+    mesialAt: (s, fdi) => mesialFromBuccal(fdi, curve.occlusal, normalAt(s)),
+    warnings,
+  };
+}
+
 /** Fit the arch curve of a jaw scan. Throws if the scan has too few points. */
 export function fitArchCurve(input: ArchCurveInput): ArchCurve {
   const P = input.positions;
@@ -374,7 +405,7 @@ export function fitArchCurve(input: ArchCurveInput): ArchCurve {
     let ex = axis2(major);
     let outward = fitParabola(px, py, ex).a2 <= 0 ? 1 : -1;
     if (input.buccalHint) outward = dot(normalize(input.buccalHint), to3([-ex[1], ex[0]])) >= 0 ? 1 : -1;
-    else warnings.push('The scan is nearly straight: the arch curve is a line and buccal was guessed; pass a buccal hint.');
+    else warnings.push(GUESSED_BUCCAL_WARNING);
     if (outward < 0) ex = [-ex[0], -ex[1]];
     const line = fitParabola(px, py, ex);
     let r2 = 0;

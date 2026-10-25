@@ -17,14 +17,19 @@ import { countSelfIntersections } from './selfIntersect';
  *   least the designed area, its height at least the material minimum, and the
  *   design reported no failure;
  * - seating: the cement gap re-measured per retainer against the union
- *   matches the retainer's own within SEATING_TOLERANCE_MM (the union left
- *   the fitting surfaces untouched);
- * - pontic base: from the ridge up to the union, the gap is at least
- *   ponticRidgeGapMm − PONTIC_BASE_TOLERANCE_MM.
+ *   matches the retainer's own within SEATING_TOLERANCE_MM, on the same
+ *   number of samples (the union left the fitting surfaces untouched; a
+ *   dropped sample means material in the cement space);
+ * - pontic base: from the ridge up to the union, the smallest gap is within
+ *   ponticRidgeGapMm − PONTIC_BASE_TOLERANCE_MM … + PONTIC_BASE_MAX_EXCESS_MM
+ *   (and the mean gap is not below the lower bound): the base rests on the
+ *   ridge at the target gap, neither in it nor floating above it.
  */
 
 export const SEATING_TOLERANCE_MM = 0.005;
 export const PONTIC_BASE_TOLERANCE_MM = 0.02;
+/** The pontic base's smallest gap to the ridge may exceed ponticRidgeGapMm by at most this much. */
+export const PONTIC_BASE_MAX_EXCESS_MM = 0.05;
 
 export interface BridgeUnionCheck {
   triangles: number;
@@ -164,8 +169,14 @@ export function checkBridgeUnion(input: {
       });
       const deltaMeanMm = Math.abs(onUnion.meanErrorMm - design.gapCheck.meanErrorMm);
       const deltaMaxMm = Math.abs(onUnion.maxErrorMm - design.gapCheck.maxErrorMm);
-      const ok = onUnion.samples > 0 && deltaMeanMm <= SEATING_TOLERANCE_MM && deltaMaxMm <= SEATING_TOLERANCE_MM;
-      if (!ok) failures.push(`Retainer ${result.fdi}: the seating changed in the union (mean ${(deltaMeanMm * 1000).toFixed(1)} µm, max ${(deltaMaxMm * 1000).toFixed(1)} µm).`);
+      const ok =
+        onUnion.samples > 0 && onUnion.samples === design.gapCheck.samples && deltaMeanMm <= SEATING_TOLERANCE_MM && deltaMaxMm <= SEATING_TOLERANCE_MM;
+      if (!ok) {
+        failures.push(
+          `Retainer ${result.fdi}: the seating changed in the union (mean ${(deltaMeanMm * 1000).toFixed(1)} µm, max ${(deltaMaxMm * 1000).toFixed(1)} µm, ` +
+            `${onUnion.samples} of ${design.gapCheck.samples} gap samples).`,
+        );
+      }
       seating.push({ fdi: result.fdi, own: design.gapCheck, onUnion, deltaMeanMm, deltaMaxMm, ok });
     }
     if (result.kind === 'pontic') {
@@ -186,8 +197,17 @@ export function checkBridgeUnion(input: {
       }
       const meanGapMm = samples ? sum / samples : Number.NaN;
       const minGapMm = samples ? min : Number.NaN;
-      const ok = samples > 0 && minGapMm >= target - PONTIC_BASE_TOLERANCE_MM && meanGapMm >= target - PONTIC_BASE_TOLERANCE_MM;
-      if (!ok) failures.push(`Pontic ${result.fdi}: the base is ${Number.isFinite(minGapMm) ? `${minGapMm.toFixed(3)} mm` : 'not measured'} from the ridge (target ${target} mm).`);
+      const ok =
+        samples > 0 &&
+        minGapMm >= target - PONTIC_BASE_TOLERANCE_MM &&
+        minGapMm <= target + PONTIC_BASE_MAX_EXCESS_MM &&
+        meanGapMm >= target - PONTIC_BASE_TOLERANCE_MM;
+      if (!ok) {
+        failures.push(
+          `Pontic ${result.fdi}: the base is ${Number.isFinite(minGapMm) ? `${minGapMm.toFixed(3)} mm` : 'not measured'} from the ridge ` +
+            `(target ${target} mm, −${PONTIC_BASE_TOLERANCE_MM}/+${PONTIC_BASE_MAX_EXCESS_MM} mm).`,
+        );
+      }
       ponticBase.push({ fdi: result.fdi, samples, minGapMm, meanGapMm, targetMm: target, ok });
     }
   }

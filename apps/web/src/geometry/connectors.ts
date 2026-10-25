@@ -2,6 +2,7 @@ import type { IndexedMesh } from './mesh';
 import type { V3 } from './pca';
 import type { RayCaster } from './raycast';
 import { scanSections } from './sectionArea';
+import { signedIntaglioDistance, type IntaglioSurface } from './thickness';
 
 /**
  * Bridge connectors: one elliptical tube per connection, along the line
@@ -25,8 +26,12 @@ import { scanSections } from './sectionArea';
  * exceeds CONNECTOR_MAX_WIDTH_FRACTION of the narrower unit.
  *
  * Ends: each end sinks into its unit by min(1 mm, the depth at which the end
- * cap comes within CONNECTOR_FIT_CLEARANCE_MM of that unit's fitting surface),
- * so a connector never reaches the intaglio or the pontic base.
+ * comes within CONNECTOR_FIT_CLEARANCE_MM of that unit's fitting surface), so
+ * a connector never reaches the intaglio or the pontic base. The clearance is
+ * the signed distance to the fitting surface (negative = through it), sampled
+ * densely over the end cap and the side wall next to it. A wall too thin for
+ * both the clearance and a MIN_SINK_MM overlap fails with "fit-clearance";
+ * the end then sinks less, and never as far as the fitting surface.
  */
 
 export const CONNECTOR_HYGIENE_MM = 1.0;
@@ -45,8 +50,12 @@ const FACING_BAND_MM = 0.3;
 const MARGINAL_RIDGE_BAND_MM = 1.5;
 /** Sink search step. */
 const SINK_STEP_MM = 0.05;
-/** The smallest sink kept, so the tube always overlaps its unit. */
+/** The overlap with its unit every connector end needs (for a robust union); a thinner wall fails 'fit-clearance'. */
 const MIN_SINK_MM = 0.1;
+/** Float rounding allowed on the fit clearance (0.1 µm). */
+const FIT_CLEARANCE_TOLERANCE_MM = 1e-4;
+/** Fitting-surface distances are searched this far (beyond it, the clearance is Infinity). */
+const FIT_SEARCH_MM = 5;
 /** Smallest cross-section dimension of the generated tube (a failed connector still gets a visible mesh). */
 const MIN_TUBE_MM = 0.5;
 
@@ -70,8 +79,8 @@ export interface ConnectorUnit {
   shellStart: number;
   /** Ray caster over the whole unit mesh (where the connector line enters it). */
   solid: RayCaster;
-  /** The unit's fitting surface (retainer intaglio, pontic base). */
-  inner: RayCaster;
+  /** The unit's fitting surface (retainer intaglio, pontic base), faces pointing out of the material. */
+  inner: IntaglioSurface;
   /** Unit centre (its pose position): the connector runs along the line between the centres. */
   centre: V3;
   /** Buccal direction of the unit's frame. */
@@ -100,7 +109,11 @@ export interface ConnectorInput {
   segments?: number;
 }
 
-export type ConnectorFailureCode = 'insufficient-height' | 'too-wide';
+/**
+ * 'insufficient-height': less room than the minimum height; 'too-wide': wider than CONNECTOR_MAX_WIDTH_FRACTION of
+ * the narrower unit; 'fit-clearance': an end closer than CONNECTOR_FIT_CLEARANCE_MM to its unit's fitting surface.
+ */
+export type ConnectorFailureCode = 'insufficient-height' | 'too-wide' | 'fit-clearance';
 
 export interface ConnectorFailure {
   code: ConnectorFailureCode;
@@ -115,7 +128,10 @@ export interface ConnectorEnd {
   point: V3;
   /** Depth of the end below the unit's surface along the connector line. */
   sinkMm: number;
-  /** Smallest distance from the end cap to the unit's fitting surface. */
+  /**
+   * Smallest signed distance from the end (cap and the side wall next to it) to the unit's fitting surface:
+   * negative = through it; Infinity = none within 5 mm. Below CONNECTOR_FIT_CLEARANCE_MM it is a 'fit-clearance' failure.
+   */
   fitClearanceMm: number;
 }
 
@@ -173,12 +189,33 @@ function sectionPolygon(widthMm: number, heightMm: number, segments: number): Ar
   });
 }
 
-/** Smallest distance from a cross-section polygon placed at `at` to a surface (Infinity beyond 5 mm). */
-function capClearance(at: V3, polygon: Array<[number, number]>, widthDir: V3, heightDir: V3, surface: RayCaster): number {
-  let min = surface.closestPoint(at, 5)?.distance ?? Infinity;
-  for (const [x, y] of polygon) {
-    const p = add(at, add(scale(widthDir, x), scale(heightDir, y)));
-    min = Math.min(min, surface.closestPoint(p, 5)?.distance ?? Infinity);
+/**
+ * Sample points of a connector end, relative to its cap centre and as offsets (x along widthDir, y along heightDir,
+ * d back along the line toward the connector centre, as a fraction of the sink): the cap centre, its polygon vertices
+ * on rings at 1, 2/3 and 1/3 of the rim, the rim edge midpoints, and the rim halfway back up the side wall.
+ */
+function endSamples(polygon: Array<[number, number]>): Array<[number, number, number]> {
+  const out: Array<[number, number, number]> = [[0, 0, 0]];
+  polygon.forEach(([x, y], i) => {
+    const [nx, ny] = polygon[(i + 1) % polygon.length]!;
+    for (const f of [1, 2 / 3, 1 / 3]) out.push([f * x, f * y, 0]);
+    out.push([(x + nx) / 2, (y + ny) / 2, 0]);
+    out.push([x, y, 0.5]);
+  });
+  return out;
+}
+
+/**
+ * Smallest signed distance from a connector end to a fitting surface (positive on the material side, negative
+ * through it; Infinity beyond FIT_SEARCH_MM). `cap` is the end-cap centre, `back` the unit vector from it toward
+ * the connector centre and `sink` the end's depth (for the side-wall samples).
+ */
+function endClearance(cap: V3, back: V3, sink: number, samples: Array<[number, number, number]>, widthDir: V3, heightDir: V3, surface: IntaglioSurface): number {
+  let min = Infinity;
+  for (const [x, y, d] of samples) {
+    const p = add(cap, add(add(scale(widthDir, x), scale(heightDir, y)), scale(back, d * sink)));
+    const s = signedIntaglioDistance(p, surface, FIT_SEARCH_MM);
+    if (s) min = Math.min(min, s.distance);
   }
   return min;
 }
@@ -255,7 +292,11 @@ export function designConnector(input: ConnectorInput): ConnectorGeometry {
   const polygon = sectionPolygon(widthMm, tubeHeight, segments);
 
   // Ends: where the connector line enters each unit, then sunk into it.
-  const end = (unit: ConnectorUnit, sign: 1 | -1): { t: number; end: ConnectorEnd } => {
+  const samples = endSamples(polygon);
+  /** Signed clearance of an end cap at t on the line (unit on the `sign` side), `sink` deep in its unit. */
+  const clearanceAt = (unit: ConnectorUnit, sign: 1 | -1, t: number, sink: number) =>
+    endClearance(add(centre, scale(direction, t)), scale(direction, -sign), sink, samples, widthDir, axis, unit.inner);
+  const end = (unit: ConnectorUnit, sign: 1 | -1): { t: number; surface: number } => {
     const toward = scale(direction, sign); // from the centre toward this unit
     const hits = unit.solid.all(centre, toward, 40);
     let surface: number; // signed position of the unit's surface on the line
@@ -269,15 +310,16 @@ export function designConnector(input: ConnectorInput): ConnectorGeometry {
       warnings.push(`Connector ${label}: its line misses unit ${unit.fdi}; it ends at the unit's facing area.`);
       surface = dot(sub(sign === -1 ? fa.point : fb.point, centre), direction);
     }
-    const at = (sink: number) => add(centre, scale(direction, surface + sign * sink));
-    const clearance = (sink: number) => capClearance(at(sink), polygon, widthDir, axis, unit.inner);
-    let sink = Math.min(CONNECTOR_MAX_SINK_MM, clearance(0) - CONNECTOR_FIT_CLEARANCE_MM);
-    while (sink > MIN_SINK_MM && clearance(sink) < CONNECTOR_FIT_CLEARANCE_MM) sink -= SINK_STEP_MM;
-    if (sink < MIN_SINK_MM) {
-      sink = MIN_SINK_MM;
-      warnings.push(`Connector ${label}: the end in unit ${unit.fdi} is within ${CONNECTOR_FIT_CLEARANCE_MM} mm of its fitting surface.`);
-    }
-    return { t: surface + sign * sink, end: { fdi: unit.fdi, point: at(sink), sinkMm: sink, fitClearanceMm: clearance(sink) } };
+    const clearance = (sink: number) => clearanceAt(unit, sign, surface + sign * sink, sink);
+    // Distances change by at most the distance moved, so sinking by (clearance at the surface − the required
+    // clearance) keeps it; step back where the sampled end disagrees.
+    const c0 = clearance(0);
+    let sink = Math.min(CONNECTOR_MAX_SINK_MM, c0 - CONNECTOR_FIT_CLEARANCE_MM);
+    while (sink > MIN_SINK_MM && clearance(sink) < CONNECTOR_FIT_CLEARANCE_MM - FIT_CLEARANCE_TOLERANCE_MM) sink -= SINK_STEP_MM;
+    // A wall too thin for the clearance: overlap the unit by MIN_SINK_MM, or by half the distance to the fitting
+    // surface when that is less, so the end never reaches it (the clearance check below fails).
+    if (sink < MIN_SINK_MM) sink = Math.max(0, Math.min(MIN_SINK_MM, c0 / 2));
+    return { t: surface + sign * sink, surface };
   };
   const ea = end(a, -1);
   const eb = end(b, 1);
@@ -286,6 +328,21 @@ export function designConnector(input: ConnectorInput): ConnectorGeometry {
     const mid = (tA + tB) / 2;
     [tA, tB] = [mid - MIN_SINK_MM, mid + MIN_SINK_MM];
   }
+  // The final ends: their depth and clearance; closer than CONNECTOR_FIT_CLEARANCE_MM to a fitting surface fails.
+  const finalEnd = (unit: ConnectorUnit, sign: 1 | -1, t: number, surface: number): ConnectorEnd => {
+    const sinkMm = sign * (t - surface);
+    const fitClearanceMm = clearanceAt(unit, sign, t, Math.max(0, sinkMm));
+    if (fitClearanceMm < CONNECTOR_FIT_CLEARANCE_MM - FIT_CLEARANCE_TOLERANCE_MM) {
+      failures.push({
+        code: 'fit-clearance',
+        message: `Connector ${label}: its end in ${unit.fdi} is ${fitClearanceMm < 0 ? 'through' : `${fitClearanceMm.toFixed(2)} mm from`} the fitting surface (at least ${CONNECTOR_FIT_CLEARANCE_MM} mm); the wall there is too thin for a connector.`,
+        valueMm: fitClearanceMm,
+        limitMm: CONNECTOR_FIT_CLEARANCE_MM,
+      });
+    }
+    return { fdi: unit.fdi, point: add(centre, scale(direction, t)), sinkMm, fitClearanceMm };
+  };
+  const ends: [ConnectorEnd, ConnectorEnd] = [finalEnd(a, -1, tA, ea.surface), finalEnd(b, 1, tB, eb.surface)];
 
   return {
     between: input.between,
@@ -299,7 +356,7 @@ export function designConnector(input: ConnectorInput): ConnectorGeometry {
     widthMm,
     available: { heightMm: availableMm, bottom: add(centre, scale(axis, lowest - z)), top: add(centre, scale(axis, top - z)) },
     span: [tA, tB],
-    ends: [ea.end, eb.end],
+    ends,
     failures,
     warnings,
   };

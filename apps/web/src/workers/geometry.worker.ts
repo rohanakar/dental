@@ -2,9 +2,9 @@
 import * as Comlink from 'comlink';
 // Vite emits manifold.wasm as a separate asset; the boolean engine (manifold-3d) itself is a lazy chunk.
 import manifoldWasmUrl from 'manifold-3d/manifold.wasm?url';
-import { fitArchCurve, type ArchCurve } from '../geometry/arch';
+import { fitArchCurve, orientArchCurve, type ArchCurve } from '../geometry/arch';
 import { searchCommonAxis, searchInsertionAxis, marginUndercut, undercutDepths } from '../geometry/axis';
-import { archAlignedFrame, BridgeCache, designBridge, layoutPontics, type BridgeUnitInput } from '../geometry/bridge';
+import { archAlignedFrame, archFitDirections, BridgeCache, designBridge, layoutPontics, type BridgeUnitInput } from '../geometry/bridge';
 import {
   dijkstraTree,
   liveWireWeight,
@@ -92,15 +92,15 @@ function regionFor(scan: RetainedScan, margin: Float32Array, occlusal: V3): Prep
 /** Bridge units and connectors by input hash, across calls: moving one unit recomputes only it and its connectors. */
 const bridgeCache = new BridgeCache(64);
 
-/** The jaw's arch curve, fitted once per scan and occlusal direction (the mean of its abutments' occlusal). */
+/**
+ * The jaw's arch curve: fitted once per scan and occlusal direction (the mean of its abutments' occlusal) without a
+ * buccal hint, then oriented per call by the abutments' buccal directions. The hint is not part of the cached fit, so
+ * a flipped frame never gets a stale orientation.
+ */
 function archCurveOf(scan: RetainedScan, frames: Array<{ occlusal: V3; buccal: V3 }>): ArchCurve {
-  if (frames.length === 0) throw new Error('A bridge needs an abutment frame to fit the arch curve');
-  const sum = frames.reduce<V3>((s, f) => [s[0] + f.occlusal[0], s[1] + f.occlusal[1], s[2] + f.occlusal[2]], [0, 0, 0]);
-  const l = Math.hypot(...sum) || 1;
-  const occlusal: V3 = [sum[0] / l, sum[1] / l, sum[2] / l];
-  return registry.cached(scan, `arch:${occlusal.map((x) => x.toFixed(2)).join(',')}`, () =>
-    fitArchCurve({ positions: scan.positions, occlusal, buccalHint: frames[0]!.buccal }),
-  );
+  const { occlusal, buccalHint } = archFitDirections(frames);
+  const fit = registry.cached(scan, `arch:${occlusal.map((x) => x.toFixed(2)).join(',')}`, () => fitArchCurve({ positions: scan.positions, occlusal }));
+  return orientArchCurve(fit, buccalHint);
 }
 
 /** Copies of a cached typed array (cached results stay intact; the copies are transferred). */
@@ -307,13 +307,12 @@ const api = {
   bridgeAxis(request: BridgeAxisRequest): BridgeAxisResult {
     const t0 = performance.now();
     const scan = registry.get(request.jawSha);
-    const abutments = request.abutments.map((a) => ({
-      fdi: a.fdi,
-      faceMask: regionFor(scan, a.margin, a.occlusal).faceMask,
-      margin: a.margin,
-      occlusal: a.occlusal,
-    }));
+    const regions = request.abutments.map((a) => regionFor(scan, a.margin, a.occlusal));
+    const abutments = request.abutments.map((a, i) => ({ fdi: a.fdi, faceMask: regions[i]!.faceMask, margin: a.margin, occlusal: a.occlusal }));
     const found = searchCommonAxis({ positions: scan.positions, indices: scan.indices, ray: rayOf(scan), abutments, coneDeg: request.coneDeg });
+    // A margin that does not close on the surface lets its prep region leak onto the neighbours: the axis is then
+    // searched over the wrong faces. Reported per abutment, as axisAnalysis does for one prep.
+    const open = request.abutments.filter((_, i) => !regions[i]!.closed).map((a) => a.fdi);
     const result: BridgeAxisResult = {
       direction: found.direction,
       center: found.center,
@@ -321,8 +320,12 @@ const api = {
       undercutAreaMm2: found.undercutAreaMm2,
       divergenceDeg: found.divergenceDeg,
       marginUndercutTotal: found.marginUndercutTotal,
-      abutments: found.abutments,
-      warnings: found.warnings,
+      prepClosed: open.length === 0,
+      abutments: found.abutments.map((a, i) => ({ ...a, prepClosed: regions[i]!.closed })),
+      warnings: [
+        ...(open.length ? [`The margin of ${open.join(', ')} is not closed on the surface: the common axis is not reliable. Fix the margin first.`] : []),
+        ...found.warnings,
+      ],
       ms: performance.now() - t0,
     };
     return Comlink.transfer(result, found.abutments.map((a) => a.marginFlags.buffer as ArrayBuffer));

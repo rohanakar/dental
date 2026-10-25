@@ -163,8 +163,12 @@ export interface BridgeAxisResult {
   divergenceDeg: number;
   /** Must be 0: margin points in an undercut over all abutments. */
   marginUndercutTotal: number;
+  /** Every abutment's margin closes on the surface; false = the axis was searched over a leaked region (unreliable). */
+  prepClosed: boolean;
   abutments: Array<{
     fdi: number;
+    /** This abutment's margin closes on the surface (its prep region did not leak). */
+    prepClosed: boolean;
     individualAxis: V3;
     angleToCommonDeg: number;
     blockoutAreaMm2: number;
@@ -217,7 +221,10 @@ export interface BridgeUnitRequest {
   /** The unit's role (RESTORATION_ROLE[restoration].role): the worker dispatches on it. */
   kind: UnitKind;
   params: DesignParams;
-  /** Abutments: required. Pontics: the stored frame; omitted = laid out on the arch. */
+  /**
+   * Abutments: required. Pontics: the stored frame (its axes); omitted = laid out on the arch. A proposed pontic pose
+   * is centred by the layout on the retainer shells either way.
+   */
   frame?: FrameView;
   /** Abutments: dense margin, xyz per point. */
   margin?: Float32Array;
@@ -225,7 +232,7 @@ export interface BridgeUnitRequest {
   pose?: Pose;
   /** Adaptation targets; sides facing a connected unit are ignored (they have a connector). */
   adapt?: CrownAdapt;
-  /** Pontics: centre override (a click on the ridge), used when no frame is stored. */
+  /** Pontics: centre override (a click on the ridge); places the proposed pose. Pass it again with a stored frame. */
   centre?: V3;
 }
 
@@ -280,7 +287,7 @@ export interface BridgeConnectorView {
   available: { heightMm: number; bottom: V3; top: V3 };
   span: [number, number];
   ends: [ConnectorEnd, ConnectorEnd];
-  /** 'insufficient-height' or 'too-wide'. */
+  /** 'insufficient-height', 'too-wide' or 'fit-clearance'. */
   failures: ConnectorFailure[];
   warnings: string[];
   cached: boolean;

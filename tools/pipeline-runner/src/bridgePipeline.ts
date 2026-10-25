@@ -14,6 +14,7 @@ import {
 import {
   analyzeSurface,
   archAlignedFrame,
+  archFitDirections,
   bvhRayCaster,
   createBvh,
   designBridge,
@@ -104,7 +105,17 @@ export interface BridgeCaseMetrics {
     settings: ConnectorDesign;
     minAreaMm2: number;
     minHeightMm: number;
-    designed: { areaMm2: number; heightMm: number; widthMm: number; availableHeightMm: number; centre: V3; lengthMm: number; sinkMm: [number, number] };
+    designed: {
+      areaMm2: number;
+      heightMm: number;
+      widthMm: number;
+      availableHeightMm: number;
+      centre: V3;
+      lengthMm: number;
+      /** Per end (between[0], between[1]): depth in the unit, and the signed clearance to its fitting surface. */
+      sinkMm: [number, number];
+      fitClearanceMm: [number, number];
+    };
     measured?: { minAreaMm2: number; heightMm: number; widthMm: number; at: V3 };
     failures: string[];
   }>;
@@ -118,7 +129,18 @@ export interface BridgeCaseMetrics {
     components: number;
     genus: number;
   };
-  seating: Array<{ fdi: number; samples: number; ownMeanMm: number; ownMaxMm: number; unionMeanMm: number; unionMaxMm: number; deltaMeanMm: number; deltaMaxMm: number }>;
+  seating: Array<{
+    fdi: number;
+    /** Gap samples on the union, and on the retainer alone (they must match). */
+    samples: number;
+    ownSamples: number;
+    ownMeanMm: number;
+    ownMaxMm: number;
+    unionMeanMm: number;
+    unionMaxMm: number;
+    deltaMeanMm: number;
+    deltaMaxMm: number;
+  }>;
   ponticBase: Array<{ fdi: number; samples: number; minGapMm: number; meanGapMm: number; targetMm: number }>;
   warnings: string[];
   checks: QaCheck[];
@@ -208,11 +230,7 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
         return { u, marginAnchors: u.marginAnchors, frame };
       }),
   );
-  const curve = await time('archCurve', () => {
-    let occlusal: V3 = [0, 0, 0];
-    for (const { frame } of estimates) occlusal = [occlusal[0] + frame.occlusal[0], occlusal[1] + frame.occlusal[1], occlusal[2] + frame.occlusal[2]];
-    return fitArchCurve({ positions, occlusal: normalize(occlusal), buccalHint: estimates[0]!.frame.buccal });
-  });
+  const curve = await time('archCurve', () => fitArchCurve({ positions, ...archFitDirections(estimates.map((e) => e.frame)) }));
 
   // Abutments: margin and prep region, as for a single crown.
   const abutments = await time('abutments', () =>
@@ -397,7 +415,7 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
     check(`seating.${s.fdi}`, s.ok, `Retainer ${s.fdi}: seating unchanged in the union (max change, mm)`, Math.max(s.deltaMeanMm, s.deltaMaxMm), 0.005);
   }
   for (const p of union.checks.ponticBase) {
-    check(`ponticBase.${p.fdi}`, p.ok, `Pontic ${p.fdi}: smallest base gap to the ridge (mm)`, p.minGapMm, round(p.targetMm - 0.02));
+    check(`ponticBase.${p.fdi}`, p.ok, `Pontic ${p.fdi}: smallest base gap to the ridge, within the target −0.02/+0.05 mm (mm)`, p.minGapMm, round(p.targetMm - 0.02));
   }
 
   const metrics: BridgeCaseMetrics = {
@@ -443,6 +461,7 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
           centre: roundV(c.centre),
           lengthMm: round(c.span[1] - c.span[0]),
           sinkMm: [round(c.ends[0].sinkMm), round(c.ends[1].sinkMm)] as [number, number],
+          fitClearanceMm: [round(c.ends[0].fitClearanceMm), round(c.ends[1].fitClearanceMm)] as [number, number],
         },
         ...(measured ? { measured: { minAreaMm2: round(measured.minAreaMm2), heightMm: round(measured.heightMm), widthMm: round(measured.widthMm), at: roundV(measured.at) } } : {}),
         failures: c.failures.map((f) => f.message),
@@ -461,6 +480,7 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
     seating: union.checks.seating.map((s) => ({
       fdi: s.fdi,
       samples: s.onUnion.samples,
+      ownSamples: s.own.samples,
       ownMeanMm: round(s.own.meanErrorMm, 5),
       ownMaxMm: round(s.own.maxErrorMm, 5),
       unionMeanMm: round(s.onUnion.meanErrorMm, 5),
