@@ -81,10 +81,15 @@ set it up for DentalCAD, so Claude can critique, audit, polish and extend the we
   `.hint-box` (`apps/web/src/styles.css:412`). It was recorded, not fixed.
 - No code changed, so typecheck and tests were not run. No tests were added.
 
+**Committed**
+- The skill, `skills-lock.json`, `PRODUCT.md` and `.impeccable/config.json` went in with 3974708, together with the
+  landing session's `DESIGN.md`.
+- The root `.gitignore` rule `data/` keeps scans out of git. It also matched the skill's `scripts/data/` font index,
+  so those two files were added explicitly (`git add -f`). The scan rule is unchanged.
+- The first critique snapshot (`.impeccable/critique/`) is committed too, as the record the polish spec refers to.
+
 **Follow-ups**
-- Run `/impeccable document` to write `DESIGN.md` from the current tokens in `apps/web/src/styles.css`. It needs a
-  short interview about visual character, and it unlocks live mode.
-- Decide whether to commit `.claude/skills/impeccable/`, `skills-lock.json`, `PRODUCT.md` and `.impeccable/config.json`
-  so everyone working on the repo gets the skill.
+- `DESIGN.md` now exists (3974708), so live mode can be set up on its first use. Keep its editor section in step
+  with `apps/web/src/styles.css`.
 - impeccable's anonymous telemetry is on by default. Turn it off with `impeccable telemetry off` or
   `DO_NOT_TRACK=1` if wanted.
