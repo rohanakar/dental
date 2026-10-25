@@ -1,6 +1,6 @@
 # Framework bridges (reduced crowns and pontics, overpress, pressed pontics)
 
-Status: **spec, awaiting review** (2026-10-25). No code yet.
+Status: **in progress** (2026-10-25). Phase A (cutback and overpress geometry) has landed; phase B (schemas, reducer, metals, worker, UI, runner variant) is next.
 Depends on: [2026-10-25-bridge-mode.md](2026-10-25-bridge-mode.md) (units, connectors, union, unit kinds).
 
 ## Goal
@@ -190,4 +190,40 @@ Also:
 
 ## Implementation summary
 
-_To be written after implementation._
+### Phase A (2026-10-25): cutback and overpress geometry
+- **`apps/web/src/geometry/cutback.ts`:**
+  - `unitCutbackSurface(design, template, frame, fitting?)` builds the cutback surface of a unit.
+  - `cutbackMask` handles the `full`, `facial` and `occlusal` modes, the collar, and an outward feather of 0.5 mm.
+  - `cutBack(surface, settings, framework) → CutbackResult` gives the reduced closed mesh with the same vertices and
+    faces as the anatomy, the per-vertex veneer, veneer statistics, a shortfall report ("insufficient veneering
+    space"), validation and timings.
+  - Pontics work without a fitting surface.
+- **`overpress.ts`:** `overpressSolid(anatomy, reduced)` (manifold difference, slivers dropped) and
+  `checkReassembly` (Hausdorff distance of framework ∪ overpress against the anatomy).
+- **Method** (deviation): erosion by S + ρ followed by dilation by ρ (ρ = half the framework minimum), mapped vertex by
+  vertex. Vertices that can't be offset are projected onto the nearest fitting balls, so incisal edges come out
+  shortened and rounded, never folded.
+  - A smoothed displacement field, as the spec proposed, left the incisal fin standing, and smoothed positions
+    folded.
+  - Protection retracts each vertex along its own cut, then `enforceThickness` guarantees the minimum.
+  - Up to 8 rounds of local repair remove any remaining self-intersections.
+- **Verified with scratch scripts** (36 and 11; zirconia full 1.0/min 0.5, CoCr-like facial 1.2/min 0.3, a forced
+  2.0, occlusal mode, pontic shells): 13 of 13 runs pass.
+  - The framework is closed and printable with 0 self-intersections, and at least its minimum everywhere.
+  - The overpress is closed, printable and one component.
+  - Reassembly Hausdorff ≤ 9.6e-5 mm.
+  - The veneer on the offset region is within ±0.05 mm in 100% of cases. The forced 2.0 mm reports a shortfall of
+    111 mm².
+  - Cutback takes 0.33–1.1 s and overpress about 0.2 s.
+- **Spec changes, to apply in phase B:**
+  - The veneer check becomes "≥ S − 0.05 outside the shortfall, and S ± 0.05 on the offset region". Sharp rims and
+    incisal edges get thicker porcelain by design.
+  - There is a new warning for veneer over 2 mm.
+  - The runner variant asserts `veneer.thinVertices === 0`, `offsetWithinTolerance ≥ 0.99`, printable framework and
+    overpress, and reassembly ≤ 0.05 mm. It must not assert "no shortfall": the synthetic prep's axial walls are
+    only 0.9–1.4 mm.
+- **Open:**
+  - Coarse template edges can't hold the 0.5 mm feather; local refinement is a follow-up.
+  - The overpress boolean leaves float32 micro-voids, under 1e-6 mm³ (reported, excluded from the Hausdorff).
+  - Incisal porcelain of 2.3–2.5 mm needs domain QA.
+  - Phase B needs `crown.ts` to expose `outerRing`, the intaglio triangle range and the shell height fractions.

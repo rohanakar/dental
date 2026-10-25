@@ -44,3 +44,7 @@ export * from './implantLibrary';
 export * from './syntheticImplant';
 export * from './scanBody';
 export * from './tiBase';
+
+// Framework bridges: cutback (reduced units) and overpress (needs the boolean engine).
+export * from './cutback';
+export * from './overpress';
