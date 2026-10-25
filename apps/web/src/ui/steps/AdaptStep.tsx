@@ -6,7 +6,7 @@ import { userEdit } from '../../tools/nudge';
 import { useToolStore } from '../../tools/toolStore';
 import type { AdaptReportView } from '../../workers/analysisTypes';
 import { CrownStatusView } from './CrownStatusView';
-import { FocusControls, ReadaptNotice } from './CrownViewControls';
+import { FocusControls, MapSelect, ReadaptNotice } from './CrownViewControls';
 import './NudgePad.css';
 
 const SIDES = [
@@ -21,7 +21,7 @@ function Report({ report, label, what }: { report?: AdaptReportView; label: stri
   return (
     <>
       <span className="muted small">
-        min {report.minClearanceMm.toFixed(2)} mm · {report.movedVertices} vertices moved (≤ {report.maxMoveMm.toFixed(2)} mm)
+        Closest {report.minClearanceMm.toFixed(2)} mm · surface moved up to {report.maxMoveMm.toFixed(2)} mm
       </span>
       {report.conflict && (
         <div className="warning">
@@ -74,7 +74,6 @@ export function AdaptStep() {
         Moves the occlusal surface and the proximal walls until the clearance to the antagonist and the neighbours reaches
         the target. Negative targets make intentional contact. The minimum thickness always wins; conflicts are reported.
       </p>
-      <FocusControls />
       <ReadaptNotice />
       {SIDES.map(({ key, label, what }) => {
         const active = key === 'occlusion' ? crown.adapt?.occlusion : crown.adapt?.[key];
@@ -116,6 +115,11 @@ export function AdaptStep() {
         </button>
       </div>
       <CrownStatusView />
+      <fieldset className="view-controls">
+        <legend>View</legend>
+        <MapSelect />
+        <FocusControls />
+      </fieldset>
     </div>
   );
 }

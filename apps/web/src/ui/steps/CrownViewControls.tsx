@@ -1,7 +1,10 @@
 import { adaptationStale } from '../../design/adaptation';
 import { selectActiveTooth, useDesignStore } from '../../design/store';
+import { CROWN_MAPS } from '../../tools/crownLegend';
+import { crownTool } from '../../tools/crownTool';
 import { reAdapt } from '../../tools/nudge';
 import { useToolStore } from '../../tools/toolStore';
+import type { CrownMapName } from '../../workers/analysisTypes';
 
 /**
  * Shown when a move or edit switched the stored adaptation off: the crown on
@@ -45,5 +48,23 @@ export function FocusControls() {
         />
       </div>
     </>
+  );
+}
+
+/** Colour map on the crown: the same choice on every step that shows the crown. */
+export function MapSelect() {
+  const map = useToolStore((s) => s.crownMap);
+  return (
+    <div className="field">
+      <label htmlFor="crown-map">Colour map</label>
+      <select id="crown-map" value={map} onChange={(e) => crownTool.setMap(e.target.value as CrownMapName | 'none')}>
+        <option value="none">None</option>
+        {(Object.keys(CROWN_MAPS) as CrownMapName[]).map((m) => (
+          <option key={m} value={m}>
+            {CROWN_MAPS[m].title}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useAssistant } from '../../ai/agent';
 import { useDesignStore } from '../../design/store';
 import { useSessionStore } from '../../state/session';
+import { useToolStore } from '../../tools/toolStore';
 import './ai.css';
 
 const EXAMPLES = ['Make the crown 0.3 mm shorter', 'Tighten the mesial contact to 0.01 mm', 'What is the occlusal clearance?'];
@@ -54,7 +55,11 @@ export function AssistantPanel() {
               </li>
             ))}
           </ul>
-          With the server's mock provider (no API key) you can call a tool directly: <code>{MOCK_HINT}</code>
+          {import.meta.env.DEV && (
+            <>
+              With the server's mock provider (no API key) you can call a tool directly: <code>{MOCK_HINT}</code>
+            </>
+          )}
         </div>
       ) : (
         <div className="assistant-log" ref={log} role="log" aria-live="polite">
@@ -73,10 +78,24 @@ export function AssistantPanel() {
       {pending && (
         <div className="assistant-banner" role="status">
           <span>The assistant changed the design.</span>
-          <button className="btn primary" onClick={accept} disabled={running}>
+          <button
+            className="btn primary"
+            onClick={() => {
+              accept();
+              useToolStore.getState().set({ message: { kind: 'info', text: "Assistant's changes accepted. Undo takes them back in one step." } });
+            }}
+            disabled={running}
+          >
             Accept
           </button>
-          <button className="btn" onClick={revert} disabled={running}>
+          <button
+            className="btn"
+            onClick={() => {
+              revert();
+              useToolStore.getState().set({ message: { kind: 'info', text: "Assistant's changes reverted." } });
+            }}
+            disabled={running}
+          >
             Revert
           </button>
         </div>

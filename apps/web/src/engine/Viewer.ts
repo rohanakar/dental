@@ -21,7 +21,7 @@ import {
   type Intersection,
 } from 'three';
 import { acceleratedRaycast } from 'three-mesh-bvh';
-import { COLOR_MAPS, createLutTexture, packScalars, type ColorMapName } from './colormap';
+import { COLOR_MAPS, createLutTexture, packScalars, type ColorMapName, type ColorStops } from './colormap';
 import { createMatcap, MATCAP_PRESETS, type MatcapPreset } from './matcap';
 import { createSurfaceMaterial, setScalarMap, type SurfaceMaterial } from './materials';
 import { TranslateGizmo, type GizmoOptions } from './gizmo';
@@ -156,7 +156,8 @@ export class Viewer {
   private readonly matcaps = new Map<MatcapPreset, ReturnType<typeof createMatcap>>();
   private readonly raycaster = new Raycaster();
   readonly overlays: OverlayLayer;
-  private readonly luts = new Map<ColorMapName, ReturnType<typeof createLutTexture>>();
+  /** Colour-map lookup textures, by map name or by the stops' JSON. */
+  private readonly luts = new Map<string, ReturnType<typeof createLutTexture>>();
   private interaction: InteractionHandler | null = null;
   private pointerDown: { x: number; y: number; t: number } | null = null;
   private dragging = false;
@@ -312,7 +313,11 @@ export class Viewer {
    * Colour-map overlay from per-vertex scalars (NaN = no value), or null to
    * turn it off. Writes a `scalar` attribute onto the object's geometry.
    */
-  setObjectScalars(id: string, values: Float32Array | null, opts: { map: ColorMapName; range: [number, number] } = { map: 'sequential', range: [0, 1] }): void {
+  setObjectScalars(
+    id: string,
+    values: Float32Array | null,
+    opts: { map: ColorMapName; range: [number, number]; stops?: ColorStops } = { map: 'sequential', range: [0, 1] },
+  ): void {
     const obj = this.objects.get(id);
     if (!obj) return;
     const geometry = obj.mesh.geometry;
@@ -321,7 +326,7 @@ export class Viewer {
       setScalarMap(obj.mesh.material, null);
     } else {
       geometry.setAttribute('scalar', new BufferAttribute(packScalars(values), 2));
-      setScalarMap(obj.mesh.material, this.lut(opts.map), opts.range);
+      setScalarMap(obj.mesh.material, this.lut(opts.stops ?? opts.map), opts.range);
     }
     this.requestRender();
   }
@@ -554,11 +559,13 @@ export class Viewer {
     obj.focus = obj.focus && { ...obj.focus, overlay: null };
   }
 
-  private lut(name: ColorMapName) {
-    let t = this.luts.get(name);
+  /** Lookup texture for a named map or explicit stops (e.g. re-centred per tooth). */
+  private lut(map: ColorMapName | ColorStops) {
+    const key = typeof map === 'string' ? map : JSON.stringify(map);
+    let t = this.luts.get(key);
     if (!t) {
-      t = createLutTexture(COLOR_MAPS[name]);
-      this.luts.set(name, t);
+      t = createLutTexture(typeof map === 'string' ? COLOR_MAPS[map] : map);
+      this.luts.set(key, t);
     }
     return t;
   }

@@ -9,9 +9,8 @@ export function ProjectControls() {
   return (
     <div className="group" role="group" aria-label="Project file">
       <button
-        className="btn"
+        className="btn quiet"
         type="button"
-        aria-label="Download project"
         title="Download the design and its scans as one .dcad.zip file"
         disabled={busy}
         onClick={() => void downloadProject()}
@@ -19,9 +18,8 @@ export function ProjectControls() {
         {busy ? 'Working…' : 'Download project'}
       </button>
       <button
-        className="btn"
+        className="btn quiet"
         type="button"
-        aria-label="Open project"
         title="Open a .dcad.zip project (works offline)"
         disabled={busy}
         onClick={() => input.current?.click()}
@@ -41,7 +39,7 @@ export function ProjectControls() {
       />
       {error && (
         <span className="save-state failed" role="alert" title={error}>
-          Project failed
+          Project failed: {error}
         </span>
       )}
     </div>

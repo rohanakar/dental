@@ -15,7 +15,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .assistant-msg {
@@ -27,7 +27,7 @@
 
 .assistant-msg.user {
   align-self: flex-end;
-  background: color-mix(in srgb, var(--accent) 15%, var(--panel));
+  background: var(--accent-tint);
 }
 
 .assistant-msg.assistant {
@@ -57,7 +57,7 @@
   border-radius: 6px;
   background: var(--warn-bg);
   color: var(--warn-text);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .assistant-banner span {
@@ -68,26 +68,12 @@
 .rx-intake textarea {
   width: 100%;
   resize: vertical;
-  border: 1px solid var(--border);
-  background: var(--panel-2);
-  border-radius: 6px;
-  padding: 6px 8px;
-  font: inherit;
 }
 
 .assistant-input {
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.link-btn {
-  border: none;
-  background: none;
-  padding: 0;
-  color: var(--accent);
-  cursor: pointer;
-  text-align: left;
 }
 
 .rx-intake {

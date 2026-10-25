@@ -9,6 +9,7 @@ import type { CrownMapName, CrownRequest, CrownResult } from '../workers/analysi
 import { analysis } from '../workers/geometryClient';
 import { isStale } from '../workers/latestWins';
 import { errorText, fromMarginPoints, toothContext, type ToothContext } from './context';
+import { CROWN_MAPS, crownMapLegend } from './crownLegend';
 import { useToolStore, type LegendSpec } from './toolStore';
 
 export const CROWN_OBJECT_ID = 'crown';
@@ -23,13 +24,15 @@ const sameArray = (a: readonly number[], b: readonly number[]) => a.length === b
 /** Vertices with at least this move weight count as cusps (they follow a move fully) for the gizmo anchor. */
 const CUSP_MOVE_WEIGHT = 0.95;
 
-/** How each crown map is shown (range and legend). */
-export const CROWN_MAPS: Record<CrownMapName, LegendSpec> = {
-  thickness: { title: 'Material thickness', map: 'sequential', range: [0, 2], unit: 'mm', lowLabel: 'thin', highLabel: 'thick' },
-  occlusion: { title: 'Occlusal clearance', map: 'diverging', range: [-0.2, 0.5], unit: 'mm', lowLabel: 'penetration', highLabel: 'gap' },
-  proximal: { title: 'Proximal clearance', map: 'diverging', range: [-0.2, 0.5], unit: 'mm', lowLabel: 'penetration', highLabel: 'gap' },
-  unmillable: { title: 'Unmillable (tool radius)', map: 'undercut', range: [0, 0.2], unit: 'mm', lowLabel: 'millable', highLabel: 'unreachable' },
-};
+export { CROWN_MAPS } from './crownLegend';
+
+/** The crown map's legend for the active tooth (contact-centred clearance, the material minimum on thickness). */
+function legendFor(map: CrownMapName): LegendSpec {
+  const tooth = toothContext()?.tooth;
+  if (!tooth) return CROWN_MAPS[map];
+  const adapt = tooth.crown?.kind === 'template' ? tooth.crown.adapt : undefined;
+  return crownMapLegend(map, tooth.params, { occlusion: adapt?.occlusion?.clearanceMm, contact: adapt?.mesial?.targetMm ?? adapt?.distal?.targetMm });
+}
 
 function request(ctx: ToothContext, withPose: boolean, map: CrownMapName | 'none'): CrownRequest | null {
   const { frame, margin, axis, params, crown } = ctx.tooth;
@@ -164,19 +167,20 @@ class CrownTool {
    * Download the crown as binary STL, or the construction-info sidecar.
    * Separate actions: browsers block a second download started by one click.
    */
-  export(kind: 'stl' | 'info'): void {
+  export(kind: 'stl' | 'info'): string | null {
     const ctx = toothContext();
     const last = this.last;
-    if (!ctx || !last) return;
+    if (!ctx || !last) return null;
     const { doc } = useDesignStore.getState();
     const caseRef = (doc.setup.patientRef || useSessionStore.getState().currentCase?.patientRef || 'case').replace(/[^\w.-]+/g, '_');
     const base = `${caseRef}-${ctx.fdi}`;
     if (kind === 'stl') {
       downloadBytes(crownStl({ positions: last.positions, indices: last.indices }), `${base}.stl`, 'model/stl');
-    } else {
-      const info = constructionInfo({ doc, tooth: ctx.tooth, appVersion: APP_VERSION, result: last });
-      downloadBytes(JSON.stringify(info, null, 2), `${base}.construction.json`, 'application/json');
+      return `${base}.stl`;
     }
+    const info = constructionInfo({ doc, tooth: ctx.tooth, appVersion: APP_VERSION, result: last });
+    downloadBytes(JSON.stringify(info, null, 2), `${base}.construction.json`, 'application/json');
+    return `${base}.construction.json`;
   }
 
   /**
@@ -254,8 +258,8 @@ class CrownTool {
 
   private applyMap(map: CrownMapName | 'none', result: CrownResult): void {
     const values = map === 'none' ? undefined : result.maps?.[map];
-    const spec = map === 'none' ? null : CROWN_MAPS[map];
-    this.viewer?.setObjectScalars(CROWN_OBJECT_ID, values && spec ? values : null, spec ? { map: spec.map, range: spec.range } : undefined);
+    const spec = map === 'none' ? null : legendFor(map);
+    this.viewer?.setObjectScalars(CROWN_OBJECT_ID, values && spec ? values : null, spec ? { map: spec.map, range: spec.range, stops: spec.stops } : undefined);
     // Conflict markers (insufficient reduction / contact too tight) at the conflict centroids.
     const conflicts = Object.values(result.adapt ?? {}).flatMap((r) => (r?.conflict ? [r.conflict.at] : []));
     if (conflicts.length > 0) this.viewer?.overlays.setMarkers('crown:conflicts', conflicts, { color: '#d64545', outline: '#ffffff', sizePx: 16 });
@@ -332,9 +336,10 @@ class CrownTool {
     if (!visible) this.viewer?.overlays.remove('crown:conflicts');
     // The legend belongs to the crown map only while the crown is on screen (the axis step has its own).
     const { legend, crownMap } = useToolStore.getState();
-    if (!visible && legend && crownMap !== 'none' && legend === CROWN_MAPS[crownMap]) useToolStore.getState().set({ legend: null });
-    if (visible && crownMap !== 'none' && this.last?.maps?.[crownMap] && legend !== CROWN_MAPS[crownMap]) {
-      useToolStore.getState().set({ legend: CROWN_MAPS[crownMap] });
+    const isCrownLegend = crownMap !== 'none' && legend?.title === CROWN_MAPS[crownMap].title;
+    if (!visible && isCrownLegend) useToolStore.getState().set({ legend: null });
+    if (visible && crownMap !== 'none' && this.last?.maps?.[crownMap] && !isCrownLegend) {
+      useToolStore.getState().set({ legend: legendFor(crownMap) });
     }
   }
 

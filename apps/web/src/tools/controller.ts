@@ -103,7 +103,7 @@ class DesignTools {
       this.lastFdi = activeFdi;
       if (step === 'axis') axisTool.enter();
       if (step === 'margin') this.focusPrep('occlusal');
-      if (step === 'axis' || step === 'proposal' || step === 'adapt') this.focusPrep('oblique');
+      if (step === 'axis' || step === 'proposal' || step === 'adapt' || step === 'finalize') this.focusPrep('oblique');
     }
     this.syncAntagonist(step);
 

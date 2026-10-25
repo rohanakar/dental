@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { selectDirty, useDesignStore } from '../../design/store';
 import { backToCases, save, signOut, useSessionStore } from '../../state/session';
+import { AlertIcon } from '../icons';
 import './session.css';
 
 function SaveState() {
@@ -8,8 +9,18 @@ function SaveState() {
   const version = useDesignStore((s) => s.version);
   const saving = useSessionStore((s) => s.saving);
   const error = useSessionStore((s) => s.saveError);
-  if (saving) return <span className="save-state">Saving…</span>;
-  if (error) return <span className="save-state failed" title={error}>Save failed</span>;
+  if (saving)
+    return (
+      <span className="save-state" role="status">
+        Saving…
+      </span>
+    );
+  if (error)
+    return (
+      <span className="save-state failed" role="alert" title={error}>
+        Save failed: {error}
+      </span>
+    );
   if (dirty) return <span className="save-state dirty">Unsaved changes</span>;
   return <span className="save-state">{version > 0 ? `Saved v${version}` : 'Not saved yet'}</span>;
 }
@@ -59,8 +70,10 @@ export function SessionControls() {
       </span>
       <SaveState />
       {saveWarning && (
-        <span className="badge offline" title={saveWarning}>
-          ⚠ Scans
+        <span className="badge offline" role="status" title={saveWarning}>
+          <AlertIcon />
+          Scans not saved
+          <span className="visually-hidden">: {saveWarning}</span>
         </span>
       )}
       <button
@@ -72,10 +85,10 @@ export function SessionControls() {
       >
         Save
       </button>
-      <button className="btn" type="button" onClick={backToCases}>
+      <button className="btn quiet" type="button" onClick={backToCases}>
         Cases
       </button>
-      <button className="btn ghost" type="button" title={user?.email} onClick={() => void signOut()}>
+      <button className="btn quiet" type="button" title={user?.email} onClick={() => void signOut()}>
         Sign out
       </button>
     </div>

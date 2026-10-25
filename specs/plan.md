@@ -219,3 +219,5 @@ Adapt step is done, with Re-adapt one click away. Open contacts fail QA. Every m
 (per-vertex move weights from the fit), with no snap-back. Edits accept a pending draft first, so undo works. Focus
 view: the prep stays bright, the surroundings are dimmed, and the crown is design blue. See
 [2026-10-14-crown-move-after-proposal.md](2026-10-14-crown-move-after-proposal.md).
+
+**2026-10-25: UX critique and polish.** An impeccable critique scored the editor 24/40. Colour maps are now neutral at contact with the material minimum marked; Finalize leads with a ready-to-mill checklist from the QA gates and a soft export gate; one-click drafts are reviewed with the crown on screen and every gate listed; contrast, focus, field and type tokens give a sharper instrument look. +2 tests. See [2026-10-25-ux-critique-polish.md](2026-10-25-ux-critique-polish.md).

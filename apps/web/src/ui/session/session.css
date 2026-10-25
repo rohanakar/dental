@@ -49,10 +49,11 @@
 .session-card input[type='text'],
 .session-card input[type='email'],
 .session-card input[type='password'] {
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 8px;
+  background: var(--field-bg);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-sm);
+  min-height: 32px;
+  padding: 0 8px;
   width: 100%;
 }
 
@@ -67,15 +68,6 @@
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
-}
-
-.link-btn {
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--accent);
-  cursor: pointer;
-  font-size: 13px;
 }
 
 .divider {
@@ -122,10 +114,14 @@
   cursor: pointer;
 }
 
-.case-table tbody tr:hover,
+.case-table tbody tr:hover {
+  background: var(--panel-2);
+}
+
 .case-table tbody tr:focus-visible {
   background: var(--panel-2);
-  outline: none;
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
 }
 
 .new-case {
@@ -155,16 +151,19 @@
 
 .session-controls .case-label {
   font-weight: 500;
-  max-width: 220px;
+  max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .save-state {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--text-muted);
   white-space: nowrap;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .save-state.dirty {

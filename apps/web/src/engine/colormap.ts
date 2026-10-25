@@ -26,7 +26,8 @@ export const COLOR_MAPS: Record<ColorMapName, ColorStops> = {
     [0.6, '#f08a3c'],
     [1, '#d64545'],
   ],
-  // Negative = penetration / too thin, 0 = target, positive = gap / thick.
+  // Negative = penetration, the neutral middle = contact, positive = gap. Re-centre with centerStops() when the
+  // range is not symmetric about the neutral value.
   diverging: [
     [0, '#c0392b'],
     [0.25, '#f39c6b'],
@@ -34,12 +35,37 @@ export const COLOR_MAPS: Record<ColorMapName, ColorStops> = {
     [0.75, '#7fb3e0'],
     [1, '#2e6bb5'],
   ],
+  // Low (just enough) warm to high (ample) cool; see thresholdStops() for "below the limit".
   sequential: [
-    [0, '#2e6bb5'],
+    [0, '#f2e394'],
     [0.5, '#7fd1c4'],
-    [1, '#f2e394'],
+    [1, '#2e6bb5'],
   ],
 };
+
+/** Position of `value` within `range`, as t ∈ [0, 1]. */
+export const rangeT = (range: readonly [number, number], value: number): number =>
+  Math.min(1, Math.max(0, (value - range[0]) / (range[1] - range[0])));
+
+/**
+ * Re-space diverging stops so their neutral middle (t = 0.5) falls on `value`
+ * within `range`; each half keeps its own stops, compressed or stretched.
+ * Without this an asymmetric range (−0.2…0.5 mm) puts the neutral colour at
+ * +0.15 mm instead of at contact.
+ */
+export function centerStops(stops: ColorStops, range: readonly [number, number], value: number): ColorStops {
+  const c = rangeT(range, value);
+  return stops.map(([t, color]) => [t <= 0.5 ? (t / 0.5) * c : c + ((t - 0.5) / 0.5) * (1 - c), color] as const);
+}
+
+/**
+ * Everything below `value` in `color` (a hard edge), the given stops spread
+ * over the rest of `range`; e.g. material thinner than the minimum.
+ */
+export function thresholdStops(stops: ColorStops, range: readonly [number, number], value: number, color: string): ColorStops {
+  const c = rangeT(range, value);
+  return [[0, color], [c, color], ...stops.map(([t, s]) => [c + t * (1 - c), s] as const)];
+}
 
 /** Linear interpolation of sRGB stops at t ∈ [0, 1]. */
 export function sampleStops(stops: ColorStops, t: number): Color {

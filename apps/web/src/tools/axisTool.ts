@@ -5,7 +5,7 @@ import { analysis } from '../workers/geometryClient';
 import type { AxisAnalysis } from '../workers/analysisTypes';
 import { isStale } from '../workers/latestWins';
 import { errorText, fromMarginPoints, toothContext } from './context';
-import { useToolStore, type V3 } from './toolStore';
+import { useToolStore, type AxisReport, type V3 } from './toolStore';
 
 /** Undercut depths at or above this show as fully red. */
 export const UNDERCUT_RANGE_MM: [number, number] = [0, 0.5];
@@ -96,6 +96,25 @@ class AxisTool {
     this.set(tiltToward(axis.direction, target.map((x) => x * sign), deg));
   }
 
+  /** The undercut analysis of the current axis without showing it, e.g. for the finalize checks. Null without an axis. */
+  async measure(): Promise<AxisReport | null> {
+    const ctx = toothContext();
+    const { margin, frame, axis } = ctx?.tooth ?? {};
+    if (!ctx || !margin || !frame || !axis) return null;
+    try {
+      // Unlatched: an independent measurement must not cancel (or be cancelled by) the axis step's own map.
+      const result = await analysis.axisUnlatched({
+        jawSha: ctx.jaw.sha256,
+        margin: fromMarginPoints(margin.points),
+        occlusal: [...frame.occlusal],
+        direction: [...axis.direction],
+      });
+      return axisReport(result, margin.points.length);
+    } catch {
+      return null;
+    }
+  }
+
   /** Clear the colour map (leaving the step). */
   hide(): void {
     const ctx = toothContext();
@@ -158,16 +177,18 @@ class AxisTool {
         lowLabel: 'visible',
         highLabel: 'undercut',
       },
-      axisReport: {
-        undercutAreaMm2: result.undercutAreaMm2,
-        angleFromOcclusalDeg: result.angleFromOcclusalDeg,
-        maxDepthMm: result.maxDepthMm,
-        marginUndercutCount: result.marginUndercutCount,
-        marginPointCount: points.length,
-        prepClosed: result.prepClosed,
-      },
+      axisReport: axisReport(result, points.length),
     });
   }
 }
+
+const axisReport = (result: AxisAnalysis, marginPointCount: number): AxisReport => ({
+  undercutAreaMm2: result.undercutAreaMm2,
+  angleFromOcclusalDeg: result.angleFromOcclusalDeg,
+  maxDepthMm: result.maxDepthMm,
+  marginUndercutCount: result.marginUndercutCount,
+  marginPointCount,
+  prepClosed: result.prepClosed,
+});
 
 export const axisTool = new AxisTool();

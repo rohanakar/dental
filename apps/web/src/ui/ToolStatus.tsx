@@ -12,7 +12,10 @@ export function ToolStatus() {
         </div>
       )}
       {message && (
-        <div className={message.kind === 'error' ? 'error' : message.kind === 'warning' ? 'warning' : 'info'} role="status">
+        <div
+          className={message.kind === 'error' ? 'error' : message.kind === 'warning' ? 'warning' : 'info'}
+          role={message.kind === 'error' ? 'alert' : 'status'}
+        >
           {message.text}
         </div>
       )}

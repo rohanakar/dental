@@ -1,4 +1,5 @@
 import type { StepId, StepStatus } from '@dcad/shared';
+import { useOrchestrator } from '../ai/orchestrator';
 import { useDesignStore } from '../design/store';
 
 export const STEPS: Array<{ id: StepId; label: string; available: boolean }> = [
@@ -13,11 +14,13 @@ export const STEPS: Array<{ id: StepId; label: string; available: boolean }> = [
   { id: 'finalize', label: 'Finalize', available: true },
 ];
 
-const STATUS_ICON: Record<StepStatus, string> = { pending: '○', done: '●', stale: '◐' };
-const STATUS_TITLE: Record<StepStatus, string> = {
-  pending: 'Not done yet',
-  done: 'Done',
-  stale: 'Out of date: an earlier step changed',
+type NavStatus = StepStatus | 'draft';
+
+const STATUS_TEXT: Record<NavStatus, string> = {
+  pending: 'not done yet',
+  done: 'done',
+  stale: 'out of date: an earlier step changed',
+  draft: 'in an open auto-design draft: accept or reject it',
 };
 
 export function StepNav() {
@@ -25,6 +28,8 @@ export function StepNav() {
   const steps = useDesignStore((s) => s.doc.teeth.find((t) => t.fdi === s.activeFdi)?.steps);
   const teeth = useDesignStore((s) => s.doc.setup.teeth);
   const activeFdi = useDesignStore((s) => s.activeFdi);
+  // Steps an auto-design draft changed are not done until the draft is accepted.
+  const drafted = useOrchestrator((s) => (s.pendingReview ? s.steps : null));
   const { setActiveStep, setActiveFdi } = useDesignStore.getState();
 
   return (
@@ -43,7 +48,8 @@ export function StepNav() {
       )}
       <ol>
         {STEPS.map(({ id, label, available }) => {
-          const status = steps?.[id] ?? 'pending';
+          const inDraft = drafted?.some((r) => r.step === id && (r.status === 'passed' || r.status === 'failed'));
+          const status: NavStatus = inDraft ? 'draft' : (steps?.[id] ?? 'pending');
           return (
             <li key={id}>
               <button
@@ -51,14 +57,13 @@ export function StepNav() {
                 className={`step${id === activeStep ? ' active' : ''} ${status}`}
                 disabled={!available}
                 aria-current={id === activeStep ? 'step' : undefined}
-                title={available ? STATUS_TITLE[status] : 'Coming in a later milestone'}
                 onClick={() => setActiveStep(id)}
               >
-                <span className="step-icon" aria-hidden>
-                  {STATUS_ICON[status]}
-                </span>
-                {label}
+                <span className="step-label">{label}</span>
                 {status === 'stale' && <span className="badge stale">stale</span>}
+                {status === 'draft' && <span className="badge draft">draft</span>}
+                <span className="step-icon" aria-hidden />
+                <span className="visually-hidden">, {available ? STATUS_TEXT[status] : 'coming in a later milestone'}</span>
               </button>
             </li>
           );

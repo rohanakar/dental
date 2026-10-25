@@ -4,35 +4,53 @@
   gap: 8px;
 }
 
+.nudge-pad h3 {
+  margin: 0;
+}
+
+/* Cross for mesial / distal / buccal / lingual, then a separate column for occlusal / cervical. */
 .nudge-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, 1fr) 1fr;
   gap: 4px;
-  max-width: 280px;
+  max-width: 300px;
+}
+
+.nudge-grid > :nth-child(4n) {
+  margin-left: 8px;
 }
 
 .nudge-grid .btn {
-  padding: 4px 6px;
-  font-size: 12px;
+  padding: 0 6px;
+  font-size: var(--fs-small);
 }
 
 .nudge-label {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 
 .nudge-row {
   display: grid;
-  grid-template-columns: 110px 1fr 1fr;
+  grid-template-columns: 104px 1fr 1fr;
   gap: 4px;
   align-items: center;
-  max-width: 280px;
-  font-size: 12px;
+  max-width: 300px;
+  font-size: var(--fs-small);
+}
+
+.nudge-head {
+  color: var(--text-muted);
 }
 
 .nudge-row .btn {
-  padding: 3px 6px;
-  font-size: 12px;
+  flex: 1;
+  padding: 0 6px;
+  font-size: var(--fs-small);
+}
+
+.nudge-row .row {
+  gap: 4px;
 }
 
 .readapt {

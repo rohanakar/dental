@@ -1,5 +1,6 @@
 import { sceneController } from '../state/sceneController';
 import { useSceneStore, type SceneObjectState } from '../state/sceneStore';
+import { CloseIcon } from './icons';
 
 const ROLE_LABEL: Record<SceneObjectState['role'], string> = {
   upper: 'Upper',
@@ -9,7 +10,7 @@ const ROLE_LABEL: Record<SceneObjectState['role'], string> = {
 
 const BUSY_LABEL: Partial<Record<SceneObjectState['phase'], string>> = {
   reading: 'Reading file…',
-  processing: 'Processing (weld, cleanup, BVH)…',
+  processing: 'Preparing the scan…',
   uploading: 'Uploading to the case…',
 };
 
@@ -33,26 +34,26 @@ function ObjectRow({ obj }: { obj: SceneObjectState }) {
           {obj.name}
         </span>
         <span className="badge">{ROLE_LABEL[obj.role]}</span>
-        <button className="btn ghost" title="Remove" aria-label={`Remove ${obj.name}`} onClick={() => sceneController.remove(obj.id)}>
-          ✕
+        <button className="btn ghost icon" title="Remove" aria-label={`Remove ${obj.name}`} onClick={() => sceneController.remove(obj.id)}>
+          <CloseIcon />
         </button>
       </div>
 
       {busy && (
-        <div className="row muted">
+        <div className="row muted" role="status">
           <span className="spinner" /> {BUSY_LABEL[obj.phase]}
         </div>
       )}
-      {obj.phase === 'error' && <div className="error">{obj.error}</div>}
+      {obj.phase === 'error' && (
+        <div className="error" role="alert">
+          {obj.error}
+        </div>
+      )}
 
       {ready && obj.stats && (
         <>
           <div className="stats">
-            {fmt(obj.stats.triangles)} triangles · {fmt(obj.stats.vertices)} vertices
-            <br />
-            {obj.stats.sizeMm.map((v) => v.toFixed(1)).join(' × ')} mm · {obj.stats.format}
-            <br />
-            processed in {Math.round(obj.stats.timingsMs.total + (obj.bvhMs ?? 0))} ms
+            {obj.stats.sizeMm.map((v) => v.toFixed(1)).join(' × ')} mm · {fmt(obj.stats.triangles)} triangles · {obj.stats.format}
           </div>
           <div className="row">
             <span className="muted">Opacity</span>
@@ -92,7 +93,7 @@ export function ObjectList() {
   if (objects.length === 0) return null;
   return (
     <section>
-      <h2>Objects</h2>
+      <h3>Objects</h3>
       <div className="objects">
         {objects.map((o) => (
           <ObjectRow key={o.id} obj={o} />

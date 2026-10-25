@@ -2,6 +2,7 @@ import { useDesignStore } from '../design/store';
 import type { StandardView } from '../engine/viewFrame';
 import { sceneController } from '../state/sceneController';
 import { useSceneStore } from '../state/sceneStore';
+import { CameraIcon, RedoIcon, UndoIcon } from './icons';
 import { ProjectControls } from './session/ProjectControls';
 import { SessionControls } from './session/SessionControls';
 
@@ -26,45 +27,42 @@ export function Toolbar() {
     <header className="toolbar">
       <span className="brand">Dental CAD</span>
       <div className="group" role="group" aria-label="History">
-        <button className="btn" disabled={!canUndo} title={draftOpen ? 'Accept or reject the open draft first' : 'Undo (Ctrl/⌘+Z)'} aria-label="Undo" onClick={undo}>
-          ↶
+        <button
+          className="btn quiet icon"
+          disabled={!canUndo}
+          title={draftOpen ? 'Accept or reject the open draft first' : 'Undo (Ctrl/⌘+Z)'}
+          aria-label="Undo"
+          aria-keyshortcuts="Control+Z Meta+Z"
+          onClick={undo}
+        >
+          <UndoIcon />
         </button>
-        <button className="btn" disabled={!canRedo} title="Redo (Shift+Ctrl/⌘+Z)" aria-label="Redo" onClick={redo}>
-          ↷
+        <button className="btn quiet icon" disabled={!canRedo} title="Redo (Shift+Ctrl/⌘+Z)" aria-label="Redo" aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z" onClick={redo}>
+          <RedoIcon />
         </button>
       </div>
       <span className="sep" />
-      <div className="group" role="group" aria-label="Standard views">
+      <div className="seg" role="group" aria-label="Standard views">
         {VIEWS.map(({ view, label, key }) => (
-          <button key={view} className="btn" disabled={!hasReady} title={`${label} view (${key})`} onClick={() => sceneController.setView(view)}>
+          <button key={view} className="btn" disabled={!hasReady} title={`${label} view (${key})`} aria-keyshortcuts={key} onClick={() => sceneController.setView(view)}>
             {label}
           </button>
         ))}
-        <button className="btn" disabled={!hasReady} title="Fit to scene (F)" onClick={() => sceneController.fit()}>
+        <button className="btn" disabled={!hasReady} title="Fit to scene (F)" aria-keyshortcuts="F" onClick={() => sceneController.fit()}>
           Fit
         </button>
       </div>
-      <span className="sep" />
-      <div className="group" role="group" aria-label="Projection">
-        <button
-          className={`btn${projection === 'perspective' ? ' active' : ''}`}
-          aria-pressed={projection === 'perspective'}
-          onClick={() => sceneController.setProjection('perspective')}
-        >
-          Perspective
-        </button>
-        <button
-          className={`btn${projection === 'orthographic' ? ' active' : ''}`}
-          aria-pressed={projection === 'orthographic'}
-          title="Orthographic (O toggles)"
-          onClick={() => sceneController.setProjection('orthographic')}
-        >
-          Orthographic
-        </button>
-      </div>
-      <span className="sep" />
-      <button className="btn" disabled={!hasReady} onClick={() => void sceneController.screenshot()}>
-        Screenshot
+      <button
+        className="btn"
+        aria-pressed={projection === 'orthographic'}
+        title="Orthographic projection: distances read true (O). Off: perspective."
+        aria-keyshortcuts="O"
+        onClick={() => sceneController.setProjection(projection === 'orthographic' ? 'perspective' : 'orthographic')}
+      >
+        Orthographic
+      </button>
+      <button className="btn quiet icon" disabled={!hasReady} aria-label="Screenshot" title="Screenshot (PNG)" onClick={() => void sceneController.screenshot()}>
+        <CameraIcon />
       </button>
       <span className="sep" />
       <ProjectControls />

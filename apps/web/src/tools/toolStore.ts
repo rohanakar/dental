@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ColorMapName } from '../engine/colormap';
+import type { ColorMapName, ColorStops } from '../engine/colormap';
 import type { GapCheck } from '../geometry/intaglio';
 import type { MeshValidation } from '../geometry/meshValidate';
 import type { CrownMapName, CrownResult } from '../workers/analysisTypes';
@@ -51,6 +51,17 @@ export interface LegendSpec {
   /** Labels for the low and high ends, e.g. "visible" / "deep undercut". */
   lowLabel?: string;
   highLabel?: string;
+  /** Explicit stops (instead of the named map's), e.g. re-centred on contact for this tooth. */
+  stops?: ColorStops;
+  /** Marked values on the bar: contact, the target, the material minimum. */
+  ticks?: LegendTick[];
+}
+
+export interface LegendTick {
+  value: number;
+  label: string;
+  /** Dotted mark: a target rather than a physical boundary. */
+  dashed?: boolean;
 }
 
 export interface CrownStatus {
