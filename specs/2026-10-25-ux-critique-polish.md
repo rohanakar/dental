@@ -241,6 +241,10 @@ refinement pass that keeps the incumbent look but sharpens it into a more precis
 - The critique snapshot stays open: its target, `App.tsx`, belongs to the journey session. Close it with
   `impeccable critique-storage close` once a re-run of `/impeccable critique` confirms the score.
 
+**Later cleanup:** bridge-mode wave 2 (297d773) replaced the tooth chart with quadrant rows in `ui/bridge.css`, with
+targets ≥ 24px. The old `.tooth-chart`, `.tooth-row` and `.tooth` rules in `styles.css` were no longer referenced and
+were removed.
+
 **Follow-ups**
 - **Interaction:** keyboard-only entry for the tooth frame and the margin; nudges that follow the camera; "Adapt all";
   numeric move entry; a collapsible step nav.
