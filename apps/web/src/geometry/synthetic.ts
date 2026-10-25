@@ -1,11 +1,13 @@
 import type { IndexedMesh } from './mesh';
+import { carveTooth, cavityContour, cavityShape, resampleContour, type CavityShape, type SyntheticCavity } from './syntheticCavity';
 
 /**
  * Synthetic dental-arch-like surface for tests and demos (no patient data).
  * An open U-shaped band with tooth-shaped domes (positions 1–7 per quadrant,
  * no third molars). Any tooth can be replaced by a crown prep (tapered stump,
- * chamfer and a convex margin edge) or left out (the convex gum band is then
- * the edentulous ridge). By default the lower-left first molar (FDI 36) is a
+ * chamfer and a convex margin edge), given an inlay or onlay cavity
+ * (syntheticCavity.ts), or left out (the convex gum band is then the
+ * edentulous ridge). By default the lower-left first molar (FDI 36) is a
  * prep. Units are mm, occlusal direction is +z for the lower jaw. The upper
  * jaw mirrors the same xy layout in z, so 26 sits above 36. Anatomically
  * correct in a right-handed frame (x = patient's right, y = anterior, z = up
@@ -22,6 +24,12 @@ export interface ArchOptions {
   missing?: number[];
   /** Legacy switch, used when `preps` is not given: true = the first molar on the patient's left (36 or 26). */
   withPrep?: boolean;
+  /**
+   * Inlay and onlay cavities carved into natural teeth (syntheticCavity.ts); their margins and seeds come from
+   * syntheticCavityMargin and syntheticCavitySeed. A cavity tooth must not be prepared or missing: pass `preps: []`
+   * for the lower jaw when it would otherwise default to the 36 prep.
+   */
+  cavities?: SyntheticCavity[];
   colors?: boolean;
 }
 
@@ -190,7 +198,33 @@ function toothStates(jaw: 'lower' | 'upper', options: ArchOptions): Record<'left
   };
   mark(preps, PREP);
   mark(options.missing ?? [], MISSING);
+  for (const c of options.cavities ?? []) {
+    const t = syntheticTooth(c.fdi);
+    if (t.jaw !== jaw) throw new Error(`Tooth ${c.fdi} is not in the ${jaw} jaw`);
+    if (states[t.side][t.type] !== NATURAL) throw new Error(`Tooth ${c.fdi} has a cavity, so it must be a natural tooth (not prepared or missing)`);
+  }
   return states;
+}
+
+/** Natural tooth height above the gum curve at footprint offsets (u, w) in mm (u: + distal, w: + buccal). */
+function naturalAt(layout: ArchLayout, type: number, u: number, w: number): number {
+  const half = (TOOTH_WIDTHS[type]! * layout.scale) / 2;
+  return Math.max(0, toothHeight(u / half, w / BL_HALF[type]!, type, false));
+}
+
+/** The cavity of one tooth fitted to the layout (footprint half widths, the central fossa height). */
+function shapeFor(layout: ArchLayout, type: number, kind: SyntheticCavity['kind']): CavityShape {
+  return cavityShape(kind, (TOOTH_WIDTHS[type]! * layout.scale) / 2, BL_HALF[type]!, naturalAt(layout, type, 0, 0));
+}
+
+/** Per side, per tooth type: the cavity carved into it, if any. */
+function cavityShapes(layout: ArchLayout, options: ArchOptions): Record<'left' | 'right', Array<CavityShape | undefined>> {
+  const out: Record<'left' | 'right', Array<CavityShape | undefined>> = { left: [], right: [] };
+  for (const c of options.cavities ?? []) {
+    const t = syntheticTooth(c.fdi);
+    out[t.side][t.type] = shapeFor(layout, t.type, c.kind);
+  }
+  return out;
 }
 
 export function syntheticArch(options: ArchOptions = {}): IndexedMesh {
@@ -198,7 +232,9 @@ export function syntheticArch(options: ArchOptions = {}): IndexedMesh {
   const across = options.across ?? 120;
   const jaw = options.jaw ?? 'lower';
   const states = toothStates(jaw, options);
-  const { thetas, arc, mid, starts, scale } = archLayout(along);
+  const layout = archLayout(along);
+  const { thetas, arc, mid, starts, scale } = layout;
+  const cavities = cavityShapes(layout, options);
 
   const nv = (along + 1) * (across + 1);
   const positions = new Float32Array(nv * 3);
@@ -224,6 +260,8 @@ export function syntheticArch(options: ArchOptions = {}): IndexedMesh {
         const m = (dist - (starts[type]! + half)) / half;
         const b = (s * HALF_WIDTH) / BL_HALF[type]!;
         tooth = toothHeight(m, b, type, state === PREP);
+        const cavity = cavities[side][type];
+        if (cavity) tooth = carveTooth(cavity, m * half, s * HALF_WIDTH, Math.max(0, tooth));
       }
       const z = gum + Math.max(0, tooth);
       const v = i * (across + 1) + j;
@@ -263,16 +301,17 @@ export function syntheticArch(options: ArchOptions = {}): IndexedMesh {
 }
 
 /**
- * Prep surface point at footprint coordinates (m mesio-distal, positive
- * distal; b bucco-lingual, positive buccal; both -1…1) of a synthetic tooth,
- * matching syntheticArch generated with the same `along` and the tooth in `preps`.
+ * Surface point of a synthetic tooth at footprint offsets u (mesio-distal,
+ * positive distal) and w (bucco-lingual, positive buccal), in mm from the
+ * footprint centre, at `height` above the gum curve; matches syntheticArch
+ * generated with the same `along`.
  */
-function prepPoint(layout: ArchLayout, tooth: SyntheticTooth, m: number, b: number): [number, number, number] {
+function toothPoint(layout: ArchLayout, tooth: SyntheticTooth, u: number, w: number, height: number): [number, number, number] {
   const { thetas, arc, mid, starts, scale } = layout;
   const type = tooth.type;
   const half = (TOOTH_WIDTHS[type]! * scale) / 2;
   // Left side: arc before the midline (x < 0); right side: beyond it.
-  const target = tooth.side === 'left' ? mid - (starts[type]! + half + m * half) : mid + starts[type]! + half + m * half;
+  const target = tooth.side === 'left' ? mid - (starts[type]! + half + u) : mid + starts[type]! + half + u;
   // Invert arc length → theta, linear between grid rows like the mesh.
   let lo = 0;
   let hi = arc.length - 1;
@@ -283,10 +322,20 @@ function prepPoint(layout: ArchLayout, tooth: SyntheticTooth, m: number, b: numb
   }
   const t = (target - arc[lo]!) / (arc[hi]! - arc[lo]!);
   const theta = thetas[lo]! + t * (thetas[hi]! - thetas[lo]!);
-  const s = (b * BL_HALF[type]!) / HALF_WIDTH;
+  const s = w / HALF_WIDTH;
   const [x, y] = bandPoint(theta, s);
-  const z = gumHeight(s) + prepHeight(footprintR(m, b), type <= LAST_ROUNDED_TYPE);
+  const z = gumHeight(s) + height;
   return [x, y, tooth.jaw === 'lower' ? z : 2 * 7 + OCCLUSAL_GAP - z];
+}
+
+/**
+ * Prep surface point at footprint coordinates (m mesio-distal, positive
+ * distal; b bucco-lingual, positive buccal; both -1…1) of a synthetic tooth,
+ * matching syntheticArch generated with the same `along` and the tooth in `preps`.
+ */
+function prepPoint(layout: ArchLayout, tooth: SyntheticTooth, m: number, b: number): [number, number, number] {
+  const half = (TOOTH_WIDTHS[tooth.type]! * layout.scale) / 2;
+  return toothPoint(layout, tooth, m * half, b * BL_HALF[tooth.type]!, prepHeight(footprintR(m, b), tooth.type <= LAST_ROUNDED_TYPE));
 }
 
 /**
@@ -315,6 +364,46 @@ export function syntheticPrepMargin(options: { fdi?: number; along?: number; sam
 /** A point on the occlusal top of a synthetic prep (default FDI 36), e.g. the user's "click the prep". */
 export function syntheticPrepSeed(options: { fdi?: number; along?: number } = {}): [number, number, number] {
   return prepPoint(archLayout(options.along ?? 400), syntheticTooth(options.fdi ?? SYNTHETIC_PREP_FDI), 0, 0);
+}
+
+/** The cavity of a synthetic tooth (its kind and analytic shape) at a grid resolution. */
+function cavityOf(options: { fdi: number; kind: SyntheticCavity['kind']; along?: number }) {
+  const tooth = syntheticTooth(options.fdi);
+  const layout = archLayout(options.along ?? 400);
+  return { tooth, layout, shape: shapeFor(layout, tooth.type, options.kind) };
+}
+
+/**
+ * Analytic cavosurface margin of a synthetic cavity, as `samples` xyz points
+ * at uniform arc length (in the footprint plane) around the cavity, in the
+ * order distal → buccal → mesial → lingual; sample 0 is the distal end. The contour is exact to
+ * 1e-9 mm at its 0.02 mm trace points (bisection), so the chords between
+ * samples are the only approximation. Pass the same `along` as the
+ * syntheticArch it is compared against, generated with this cavity.
+ */
+export function syntheticCavityMargin(options: { fdi: number; kind: SyntheticCavity['kind']; along?: number; samples?: number }): Float32Array {
+  const { tooth, layout, shape } = cavityOf(options);
+  const natural = (u: number, w: number) => naturalAt(layout, tooth.type, u, w);
+  const contour = resampleContour(cavityContour(shape, natural), options.samples ?? 64);
+  const out = new Float32Array(contour.length * 3);
+  contour.forEach(([u, w], i) => out.set(toothPoint(layout, tooth, u, w, natural(u, w)), i * 3));
+  return out;
+}
+
+/** A point on the floor of a synthetic cavity (the centre of the isthmus or of the onlay table): the flood-fill seed. */
+export function syntheticCavitySeed(options: { fdi: number; kind: SyntheticCavity['kind']; along?: number }): [number, number, number] {
+  const { tooth, layout, shape } = cavityOf(options);
+  const natural = naturalAt(layout, tooth.type, 0, 0);
+  return toothPoint(layout, tooth, 0, 0, carveTooth(shape, 0, 0, natural));
+}
+
+/**
+ * The pre-op scan of a synthetic case: the same arch without its cavities
+ * (an exact reference for restorations designed from it; every vertex outside
+ * the cavities is identical to the cavity arch's).
+ */
+export function syntheticPreop(options: ArchOptions = {}): IndexedMesh {
+  return syntheticArch({ ...options, cavities: [] });
 }
 
 /** Expand an indexed mesh into an STL-like triangle soup. */

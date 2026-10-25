@@ -1,6 +1,6 @@
 # Inlay and onlay retainers (inlay bridges)
 
-Status: **spec, awaiting review** (2026-10-25). No code yet.
+Status: **in progress** (2026-10-26). Phase A (synthetic cavities, inlay/onlay geometry) has landed; phase B (schemas, reducer, designBridge dispatch, box-limited connectors, UI, runner case) is next.
 Depends on:
 - [2026-10-25-bridge-mode.md](2026-10-25-bridge-mode.md) (pontics, connectors, union)
 - [2026-10-25-maryland-bridges.md](2026-10-25-maryland-bridges.md) (the patch intaglio in `patchRetainer.ts`)
@@ -210,4 +210,37 @@ Also:
 
 ## Implementation summary
 
-_To be written after implementation._
+### Phase A (2026-10-26): synthetic cavities and inlay/onlay retainer geometry
+- **Synthetic cavities:**
+  - `syntheticCavity.ts` holds analytic MOD/MO/DO/onlay cavities (`CAVITY_DIMENSIONS`: occlusal depth 2.5 mm, box
+    floor 2 mm below the pulpal floor, 8° walls, 0.4 mm fillets) with an exact margin contour.
+  - `synthetic.ts` gains `cavities`, `syntheticCavityMargin`, `syntheticCavitySeed` and `syntheticPreop`. The default
+    arches are byte-identical.
+- **`inlay.ts` `designInlay`:**
+  - The fitting patch with the `cementGap` ramp and blockout, the remaining-tooth slab S, and the anatomy slab A
+    (pre-op scan, or the library tooth fitted by `anatomyFit.ts` `fitAnatomy`).
+  - Then shaping and snapping, A − S, and a relax onto the margin.
+  - Checks: printable, margin fit, isthmus thickness, library-fit residual, seating.
+  - Helpers: `inlayConnectorLimit` (the connector's available height comes from the proximal box: "Insufficient
+    connector height: box too shallow"), `inlayConnectorUnit`, `measureCavitySeating`, `inlayBridgeIndications`.
+  - `faceSets.ts` holds the slab and mesh-cleanup helpers.
+- **Verified with scratch scripts** (MOD on 35 and 37, onlay on 36, 2000×250 grid with 1M triangles):
+  - Every result is printable with 0 self-intersections.
+  - Margin fit ≤ 0.045 mm; isthmus ≥ 2.4 mm (onlay 1.78); gap error ≤ 8 µm.
+  - With the pre-op source, the outer surface is 0.001 mm (mean) from the pre-op tooth.
+  - The library collar fit passes (p95 ≤ 0.136 mm).
+  - A trial bridge union with a pontic and two 9 mm² connectors (3.2–3.6 mm high) gives one component of genus 0,
+    with seating unchanged.
+  - A shallow box fails as intended.
+- **Deviations:**
+  - The solids are closed as slabs along a height-field direction within 15° of the axis, not as walls plus a cap.
+  - The library tooth is sampled onto the scan instead of subtracted directly.
+  - The snap shapes A along that direction, so the crossing lands on the margin.
+  - The library-fit gate uses the p95 residual.
+- **Integration fix:** `inlayConnectorUnit` now passes the fitting surface as `inner`, because the connectors' signed
+  fit clearance (review fix 07cfd8f) needs it.
+- **Open:**
+  - The pre-op union has one 2e-7 mm² rounding sliver, so the bridge reports not printable until phase B fixes it.
+  - `buildFittingPatch` can fold where it lifts isolated wall vertices.
+  - Grids with 0.12 mm rows are too coarse for the 0.05 mm margin tolerance, so the runner case must use 2000×250.
+  - On the library source, the onlay's occlusion is not adapted yet.

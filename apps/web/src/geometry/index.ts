@@ -48,3 +48,10 @@ export * from './tiBase';
 // Framework bridges: cutback (reduced units) and overpress (needs the boolean engine).
 export * from './cutback';
 export * from './overpress';
+
+// Inlays and onlays: synthetic cavities, the library tooth fitted to a collar, face-set and slab helpers, and the
+// snap-and-subtract retainer.
+export * from './syntheticCavity';
+export * from './anatomyFit';
+export * from './faceSets';
+export * from './inlay';
