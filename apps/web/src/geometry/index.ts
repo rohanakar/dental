@@ -32,3 +32,8 @@ export * from './pontic';
 export * from './connectors';
 export * from './bridge';
 export * from './bridgeUnion';
+
+// Surface-patch retainers: Maryland wings (inlays reuse the fitting patch), with scripted synthetic wing outlines.
+export * from './patchRetainer';
+export * from './wing';
+export * from './syntheticWing';

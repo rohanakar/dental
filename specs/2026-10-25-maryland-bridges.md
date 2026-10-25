@@ -1,6 +1,6 @@
 # Resin-bonded (Maryland) bridges
 
-Status: **spec, awaiting review** (2026-10-25). No code yet.
+Status: **in progress** (2026-10-25). Phase A (geometry) has landed; phase B (schemas, reducer, connectors to wings, UI, runner case) is next.
 Depends on: [2026-10-25-bridge-mode.md](2026-10-25-bridge-mode.md) (pontics, connectors, union, anterior teeth).
 Used by: [2026-10-25-inlay-bridges.md](2026-10-25-inlay-bridges.md) (the patch intaglio introduced here).
 
@@ -215,4 +215,32 @@ Also:
 
 ## Implementation summary
 
-_To be written after implementation._
+### Phase A (2026-10-25): surface-patch retainer and wing geometry
+- **`apps/web/src/geometry/patchRetainer.ts`** builds the retainer in steps:
+  - `buildFittingPatch`: region copy at scan resolution, then a gap callback of geodesic distance (uniform for wings,
+    `cementGap(d)` for inlays), then blockout along the axis with its area and fraction reported.
+  - `patchRetainer<T>` adds an outer-surface plug-in and the band, giving a closed solid.
+  - Helpers: `offsetOuter`, `closePatch`, `validatePatchSolid`, `fittingSurfaceOf`, `measurePatchGap`,
+    `simplifyOutlineLoop`.
+- **`wing.ts`**:
+  - `designWing`: thickness ramp from the 0.2 mm edge to 0.7 mm within 1 mm; space check along the axis, with local
+    thinning toward the 0.5 mm minimum and "insufficient space for the wing"; bonded and blocked-out area.
+  - `wingInsertionAxis`: the common axis over several wing masks.
+  - `WING_DEFAULTS` (local until phase B).
+- **`syntheticWing.ts`**: `syntheticWingOutline` gives scripted palatal or lingual outline anchors on the synthetic
+  arch.
+- **Verified with scratch scripts** (11 palatal wing, 12 missing; 400×120 and 1000×500 grids):
+  - Closed, printable, 0 self-intersections.
+  - Thickness 0.700 beyond the ramp, edge minimum 0.200.
+  - Fitting gap error ≤ 0.0009 mm; bonded area 14.7 mm²; 138 ms at full resolution.
+  - Space conflict and thinning cases behave as specified.
+  - The inlay path, with a `cementGap` ramp on a crown-prep region, closes with gap error ≤ 0.004 mm.
+- **Deviations:**
+  - The spec's forced conflict (antagonist 0.5 mm closer) cannot conflict on the synthetic 11, which has 2.37 mm
+    of clearance. It is shown with a larger shift, and on 33.
+  - Clearance is measured along the axis, as for crowns' "insufficient reduction".
+  - Offset directions come from the jaw's smoothed normals.
+  - Only the edge ramp is smoothed.
+  - Self-touching live-wire traces are simplified.
+- **Open:** an outline in an undercut folds the wing, which then reports not printable. Until a side-wall blockout
+  exists, the phase B gate must fail on `outlineUndercutPoints > 0` or `undercutFaces > 0`.
