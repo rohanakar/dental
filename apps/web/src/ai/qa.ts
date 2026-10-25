@@ -1,4 +1,6 @@
 import type { DesignParams, QaCheck } from '@dcad/shared';
+import type { BridgeChecks } from '../geometry/bridgeUnion';
+import type { ConnectorFailure } from '../geometry/connectors';
 import type { AxisAnalysis, CrownResult } from '../workers/analysisTypes';
 
 type V3 = readonly [number, number, number];
@@ -6,11 +8,11 @@ type V3 = readonly [number, number, number];
 /** Gates for the auto-design orchestrator: deterministic checks, not "confidence". */
 
 const round = (n: number, d = 3) => Number(n.toFixed(d));
-const check = (id: string, passed: boolean, message: string, value?: number, threshold?: number): QaCheck => ({
+const check = (id: string, passed: boolean, message: string, value?: number, threshold?: number, digits = 3): QaCheck => ({
   id,
   passed,
   message,
-  ...(value !== undefined && Number.isFinite(value) ? { value: round(value) } : {}),
+  ...(value !== undefined && Number.isFinite(value) ? { value: round(value, digits) } : {}),
   ...(threshold !== undefined ? { threshold } : {}),
 });
 
@@ -92,6 +94,84 @@ export function adaptGate(result: Pick<CrownResult, 'adapt'>): QaCheck[] {
     }
     return check(`adapt.${kind}`, true, `${kind}: target reached`, r?.minClearanceMm);
   });
+}
+
+/**
+ * Tolerances of the bridge checks, as in `geometry/bridgeUnion.ts` (not imported from there: that module would pull
+ * the union checks into the main bundle).
+ */
+export const SEATING_TOLERANCE_MM = 0.005;
+export const PONTIC_BASE_TOLERANCE_MM = 0.02;
+
+/**
+ * A designed bridge for the bridge gate: the worker's `BridgeResultView` or the geometry's `BridgeResult`, both
+ * designed with `union: true`.
+ */
+export interface BridgeGateInput {
+  /** The connectors as designed, with the failures their design reported. */
+  connectors: ReadonlyArray<{ between: readonly [number, number]; failures: readonly ConnectorFailure[] }>;
+  /** The checks measured on the merged solid. */
+  union?: { checks: BridgeChecks };
+  /** Why the boolean engine refused to merge the units (there is then no `union`). */
+  unionError?: string;
+}
+
+/**
+ * Bridge: the merged solid and its connectors, measured on the union (classical.connectors@1):
+ * - the union is closed, printable, and one component of genus 0; a failed or missing union fails with the reason;
+ * - per connector (`bridge.connector.35-36.*`): the smallest measured section is at least the designed area and the
+ *   material minimum, its height at least the minimum height, and the design reported no failure
+ *   ('insufficient-height', 'too-wide');
+ * - per retainer: the seating (cement gap) is unchanged on the union, within SEATING_TOLERANCE_MM;
+ * - per pontic: the base gap to the ridge is at least ponticRidgeGapMm − PONTIC_BASE_TOLERANCE_MM.
+ * The per-unit crown and adapt gates run separately.
+ */
+export function bridgeGate(result: BridgeGateInput): QaCheck[] {
+  const qa: QaCheck[] = [];
+  const checks = result.union?.checks;
+  if (!checks) {
+    const reason = result.unionError ? `The units could not be merged into one solid: ${result.unionError}` : 'The bridge was not merged into one solid';
+    qa.push(check('bridge.union', false, reason));
+  } else {
+    const u = checks.union;
+    qa.push(
+      check('bridge.union.valid', u.closed && u.oriented && u.volumeMm3 > 0 && u.degenerateTriangles === 0, 'The merged bridge is a closed, consistently oriented solid with positive volume'),
+      check('bridge.union.printable', u.printable && u.selfIntersections === 0, 'The merged bridge has no self-intersections', u.selfIntersections, 0),
+      check('bridge.union.components', u.components === 1, 'The merged bridge is one connected solid', u.components, 1),
+      check('bridge.union.genus', u.genus === 0, 'The merged bridge has no through-holes (genus 0)', u.genus, 0),
+    );
+  }
+
+  for (const connector of result.connectors) {
+    const [a, b] = connector.between;
+    const id = `bridge.connector.${a}-${b}`;
+    if (checks) {
+      const c = checks.connectors.find((m) => m.between[0] === a && m.between[1] === b);
+      if (!c) {
+        qa.push(check(`${id}.measured`, false, `Connector ${a}–${b} was not measured on the merged bridge`));
+      } else {
+        const areaLimit = Math.max(c.targetAreaMm2, c.minAreaMm2);
+        const height = Math.min(c.measured.heightMm, c.designedHeightMm);
+        qa.push(
+          check(`${id}.area`, c.measured.minAreaMm2 >= areaLimit, `Connector ${a}–${b}: smallest measured section ≥ the designed area and the material minimum (mm²)`, c.measured.minAreaMm2, round(areaLimit)),
+          check(`${id}.height`, height >= c.minHeightMm, `Connector ${a}–${b}: height ≥ the minimum (mm)`, height, c.minHeightMm),
+        );
+      }
+    }
+    for (const f of connector.failures) qa.push(check(`${id}.${f.code}`, false, f.message, f.valueMm, round(f.limitMm)));
+  }
+
+  for (const s of checks?.seating ?? []) {
+    const change = Math.max(s.deltaMeanMm, s.deltaMaxMm);
+    const ok = s.onUnion.samples > 0 && s.deltaMeanMm <= SEATING_TOLERANCE_MM && s.deltaMaxMm <= SEATING_TOLERANCE_MM;
+    qa.push(check(`bridge.seating.${s.fdi}`, ok, `Retainer ${s.fdi}: seating unchanged in the merged bridge (largest change of the cement gap, mm)`, change, SEATING_TOLERANCE_MM, 4));
+  }
+  for (const p of checks?.ponticBase ?? []) {
+    const limit = p.targetMm - PONTIC_BASE_TOLERANCE_MM;
+    const ok = p.samples > 0 && p.minGapMm >= limit && p.meanGapMm >= limit;
+    qa.push(check(`bridge.ponticBase.${p.fdi}`, ok, `Pontic ${p.fdi}: smallest gap from the base to the ridge (mm)`, p.minGapMm, round(limit)));
+  }
+  return qa;
 }
 
 export const passed = (qa: readonly QaCheck[]): boolean => qa.every((c) => c.passed);

@@ -16,7 +16,7 @@ import { CommandError } from '../design/reducer';
 import { useDesignStore } from '../design/store';
 import { crownTool } from '../tools/crownTool';
 import { designMetrics } from './metrics';
-import { agentSystemPrompt, MAX_AGENT_ACTIONS } from './prompts';
+import { agentSystemPrompt, bridgePromptContext, MAX_AGENT_ACTIONS } from './prompts';
 
 export type LlmFn = (request: LlmRequest) => Promise<LlmResponse>;
 
@@ -146,7 +146,7 @@ export async function runAgent(opts: {
   const maxTurns = opts.maxTurns ?? 12;
   const { doc, activeFdi } = useDesignStore.getState();
   const tooth = doc.teeth.find((t) => t.fdi === activeFdi);
-  const system = agentSystemPrompt({ fdi: activeFdi, crownProposed: Boolean(tooth?.crown) });
+  const system = agentSystemPrompt({ fdi: activeFdi, crownProposed: Boolean(tooth?.crown), bridge: bridgePromptContext(doc, activeFdi) });
   const tools = agentToolDefs();
   const messages: LlmMessage[] = [...(opts.history ?? []), { role: 'user', content: [text(opts.instruction)] }];
   const usage = { inputTokens: 0, outputTokens: 0 };

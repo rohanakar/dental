@@ -1,5 +1,8 @@
+import type { QaCheck } from '@dcad/shared';
 import { describe, expect, it } from 'vitest';
-import { adaptGate, axisGate, crownGate, marginGate, passed, sharpestTurnDeg } from './qa';
+import type { BridgeChecks, ConnectorCheck } from '../geometry/bridgeUnion';
+import type { ConnectorFailure } from '../geometry/connectors';
+import { adaptGate, axisGate, bridgeGate, crownGate, marginGate, passed, sharpestTurnDeg } from './qa';
 
 type V3 = [number, number, number];
 const circle = (r: number, n: number, jitter = 0): V3[] =>
@@ -34,7 +37,7 @@ describe('QA gates', () => {
     expect(sharpestTurnDeg(spiked)).toBeGreaterThan(120);
   });
 
-  it('axis, crown and adapt: fail on undercut or tilt, an unprintable or thin crown, a conflict or an open contact', () => {
+  it('axis, crown, adapt and bridge: fail on undercut or tilt, an unprintable or thin crown, a conflict or an open contact, a weak connector, a split union or moved seating', () => {
     expect(passed(axisGate({ marginUndercutCount: 0, angleFromOcclusalDeg: 3, prepClosed: true }))).toBe(true);
     expect(passed(axisGate({ marginUndercutCount: 4, angleFromOcclusalDeg: 3, prepClosed: true }))).toBe(false);
     expect(passed(axisGate({ marginUndercutCount: 0, angleFromOcclusalDeg: 30, prepClosed: true }))).toBe(false);
@@ -50,5 +53,30 @@ describe('QA gates', () => {
     expect(passed(adaptGate({ adapt: { occlusion: conflict } }))).toBe(false);
     const open = { ...reached, minClearanceMm: 0.91, open: { clearanceMm: 0.91 } };
     expect(passed(adaptGate({ adapt: { mesial: reached, distal: open } }))).toBe(false);
+
+    // Bridge 35–[36]–37: connectors measured on the union, one solid, seating unchanged, pontic base on the ridge.
+    const failedIds = (qa: QaCheck[]) => qa.filter((c) => !c.passed).map((c) => c.id);
+    const measured = { minAreaMm2: 9.004, heightMm: 3.39, widthMm: 3.38, at: [0, 0, 0] as V3, planes: 25 };
+    const connector = (between: [number, number]): ConnectorCheck => ({ between, targetAreaMm2: 9, minAreaMm2: 9, designedHeightMm: 3.39, minHeightMm: 3, measured, failures: [], areaOk: true, heightOk: true, ok: true });
+    const gap = { samples: 120, meanErrorMm: 0.002, maxErrorMm: 0.009 };
+    const checks: BridgeChecks = {
+      union: { triangles: 9000, vertices: 4502, volumeMm3: 820, closed: true, oriented: true, degenerateTriangles: 0, selfIntersections: 0, printable: true, components: 1, genus: 0, euler: 2, ok: true },
+      connectors: [connector([35, 36]), connector([36, 37])],
+      seating: [35, 37].map((fdi) => ({ fdi, own: gap, onUnion: gap, deltaMeanMm: 0, deltaMaxMm: 0, ok: true })),
+      ponticBase: [{ fdi: 36, samples: 80, minGapMm: -0.0002, meanGapMm: 0.01, targetMm: 0, ok: true }],
+      failures: [],
+      ok: true,
+    };
+    const bridge = { connectors: checks.connectors.map((c) => ({ between: c.between, failures: [] as ConnectorFailure[] })), union: { checks } };
+    expect(passed(bridgeGate(bridge))).toBe(true);
+    const withConnector = (c: ConnectorCheck) => ({ ...bridge, union: { checks: { ...checks, connectors: [c, checks.connectors[1]!] } } });
+    expect(failedIds(bridgeGate(withConnector({ ...connector([35, 36]), measured: { ...measured, minAreaMm2: 8.2 } })))).toEqual(['bridge.connector.35-36.area']);
+    expect(failedIds(bridgeGate(withConnector({ ...connector([35, 36]), measured: { ...measured, heightMm: 2.6 } })))).toEqual(['bridge.connector.35-36.height']);
+    const tooLow: ConnectorFailure = { code: 'insufficient-height', message: 'insufficient connector height', valueMm: 2.4, limitMm: 3 };
+    expect(failedIds(bridgeGate({ ...bridge, connectors: [{ between: [35, 36], failures: [tooLow] }, bridge.connectors[1]!] }))).toEqual(['bridge.connector.35-36.insufficient-height']);
+    expect(failedIds(bridgeGate({ ...bridge, union: { checks: { ...checks, union: { ...checks.union, components: 2 } } } }))).toEqual(['bridge.union.components']);
+    const moved = { ...checks.seating[1]!, deltaMaxMm: 0.03 };
+    expect(failedIds(bridgeGate({ ...bridge, union: { checks: { ...checks, seating: [checks.seating[0]!, moved] } } }))).toEqual(['bridge.seating.37']);
+    expect(failedIds(bridgeGate({ connectors: bridge.connectors, unionError: 'not manifold' }))).toEqual(['bridge.union']);
   });
 });

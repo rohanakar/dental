@@ -1,9 +1,9 @@
-import type { DesignDocument, ToothDesign } from '@dcad/shared';
+import type { DesignDocument, ProximalSide, ToothDesign, UnitKind } from '@dcad/shared';
 import { activeAdapt, adaptationStale } from '../design/adaptation';
 import { crownCentre, templateHeight } from '../design/clinical';
 import { useDesignStore } from '../design/store';
 import { crownTool } from '../tools/crownTool';
-import type { CrownResult } from '../workers/analysisTypes';
+import type { BridgeResultView, CrownResult } from '../workers/analysisTypes';
 
 type V3 = readonly [number, number, number];
 
@@ -72,6 +72,19 @@ export function reduceCrownMaps(input: {
   return { minOcclusalClearanceMm: fin(occl), mesialContactMm: fin(mes), distalContactMm: fin(dis) };
 }
 
+/** Stored adaptation of a tooth: applied, stale (a later edit switched it off) or none. */
+const adaptationOf = (tooth: ToothDesign | undefined): DesignMetrics['adaptation'] =>
+  tooth?.crown ? (activeAdapt(tooth) ? 'applied' : adaptationStale(tooth) ? 'stale' : 'none') : 'none';
+
+/** Adaptation problems of an evaluated crown or bridge unit: conflicts and open contacts. */
+function adaptProblems(adapt: CrownResult['adapt']): string[] {
+  return Object.entries(adapt ?? {}).flatMap(([kind, r]) => {
+    if (r?.conflict) return [`${kind}: ${r.conflict.kind} (${r.conflict.vertices} vertices, ${r.conflict.minClearanceMm.toFixed(2)} mm)`];
+    if (r?.open) return [`${kind}: open (${Number.isFinite(r.open.clearanceMm) ? `${r.open.clearanceMm.toFixed(2)} mm` : 'nothing within reach'})`];
+    return [];
+  });
+}
+
 /** Assemble metrics from the document and an evaluated crown (pure). */
 export function metricsFrom(tooth: ToothDesign, result: CrownResult | null): DesignMetrics {
   const marginLengthMm = tooth.margin ? round(closedLength(tooth.margin.points)) : null;
@@ -85,7 +98,7 @@ export function metricsFrom(tooth: ToothDesign, result: CrownResult | null): Des
     marginLengthMm,
     printable: null,
     conflicts: [],
-    adaptation: tooth.crown ? (activeAdapt(tooth) ? 'applied' : adaptationStale(tooth) ? 'stale' : 'none') : 'none',
+    adaptation: adaptationOf(tooth),
   };
   if (!result || !tooth.frame) return base;
   const shellStart = (result as CrownResult & { shellStart?: number }).shellStart ?? result.intaglioVertices;
@@ -98,17 +111,135 @@ export function metricsFrom(tooth: ToothDesign, result: CrownResult | null): Des
     centre,
     mesial: tooth.frame.mesial,
   });
-  const conflicts = Object.entries(result.adapt ?? {}).flatMap(([kind, r]) => {
-    if (r?.conflict) return [`${kind}: ${r.conflict.kind} (${r.conflict.vertices} vertices, ${r.conflict.minClearanceMm.toFixed(2)} mm)`];
-    if (r?.open) return [`${kind}: open (${Number.isFinite(r.open.clearanceMm) ? `${r.open.clearanceMm.toFixed(2)} mm` : 'nothing within reach'})`];
-    return [];
-  });
   return {
     ...base,
     ...reduced,
     minThicknessMm: round(result.thickness?.minMm ?? result.minAxialThicknessMm),
     printable: result.validation.printable ?? result.validation.ok,
-    conflicts,
+    conflicts: adaptProblems(result.adapt),
+  };
+}
+
+/** Agent-facing metrics of one bridge unit, in mm. null = not applicable / not measured. */
+export interface BridgeUnitMetrics {
+  fdi: number;
+  /** abutment = a crown on a prep (retainer); pontic = replaces a missing tooth. */
+  kind: UnitKind;
+  /** The unit has a stored crown (otherwise its pose is only a proposal). */
+  crownProposed: boolean;
+  /** Smallest clearance to the antagonist (negative = penetration). */
+  minOcclusalClearanceMm: number | null;
+  /** Free sides only: a side facing a connected unit has a connector, not a contact (null there). */
+  mesialContactMm: number | null;
+  distalContactMm: number | null;
+  connectedSides: ProximalSide[];
+  /** Retainers only (a pontic is solid). */
+  minThicknessMm: number | null;
+  /** Pontics only: the smallest gap from the base to the ridge (measured on the union when merged), and its target. */
+  ponticBaseGapMm: number | null;
+  ponticBaseTargetMm: number | null;
+  printable: boolean | null;
+  conflicts: string[];
+  adaptation: DesignMetrics['adaptation'];
+}
+
+/** Agent-facing metrics of one connector: what set_connector changes, and what the union measured. */
+export interface ConnectorMetrics {
+  between: [number, number];
+  /** Stored settings: the designed cross-section, and the offsets from the automatic position. */
+  designedAreaMm2: number;
+  buccalMm: number;
+  occlusalMm: number;
+  /** Smallest cross-section measured across the gap on the merged bridge (null until merged). */
+  measuredAreaMm2: number | null;
+  /** Designed height, and the height measured on the union (null until merged). */
+  heightMm: number;
+  measuredHeightMm: number | null;
+  /** Height available between the gingiva (hygiene clearance) and the occlusal embrasure. */
+  availableHeightMm: number;
+  /** The material minimum cross-section and the minimum height. */
+  minAreaMm2: number;
+  minHeightMm: number;
+  /** Design failures (insufficient height, too wide) and measured shortfalls. */
+  failures: string[];
+}
+
+export interface BridgeMetrics {
+  /** Units in arch order. */
+  teeth: number[];
+  units: BridgeUnitMetrics[];
+  connectors: ConnectorMetrics[];
+  /** The merged solid (null until merged). */
+  union: { printable: boolean; components: number; genus: number; seatingUnchanged: boolean } | null;
+  /** Why the units could not be merged into one solid. */
+  unionError: string | null;
+}
+
+/**
+ * Reduce a designed bridge to agent-facing metrics (pure). Design it with the maps 'occlusion', 'proximal' and
+ * 'thickness', and with `union: true` for the measured values. `teeth` are the document's tooth designs (for the
+ * stored crown and adaptation state).
+ */
+export function bridgeMetricsFrom(
+  result: Pick<BridgeResultView, 'units' | 'connectors' | 'unionError'> & { union?: Pick<NonNullable<BridgeResultView['union']>, 'checks'> },
+  teeth: readonly ToothDesign[],
+): BridgeMetrics {
+  const checks = result.union?.checks;
+  const units = result.units.map((u): BridgeUnitMetrics => {
+    const tooth = teeth.find((t) => t.fdi === u.fdi);
+    const reduced = reduceCrownMaps({
+      positions: u.positions,
+      shellStart: u.shellStart ?? u.intaglioVertices,
+      occlusion: u.maps?.occlusion,
+      proximal: u.maps?.proximal,
+      centre: crownCentre(u.pose, templateHeight(u.fdi)),
+      mesial: u.frame.mesial,
+    });
+    const base = u.kind === 'pontic' ? (checks?.ponticBase.find((p) => p.fdi === u.fdi) ?? u.base) : undefined;
+    return {
+      fdi: u.fdi,
+      kind: u.kind,
+      crownProposed: Boolean(tooth?.crown),
+      minOcclusalClearanceMm: reduced.minOcclusalClearanceMm,
+      mesialContactMm: u.connectedSides.includes('mesial') ? null : reduced.mesialContactMm,
+      distalContactMm: u.connectedSides.includes('distal') ? null : reduced.distalContactMm,
+      connectedSides: u.connectedSides,
+      minThicknessMm: u.kind === 'abutment' ? round(u.thickness?.minMm ?? u.minAxialThicknessMm) : null,
+      ponticBaseGapMm: base ? round(base.minGapMm) : null,
+      ponticBaseTargetMm: base ? base.targetMm : null,
+      printable: u.validation.printable ?? u.validation.ok,
+      conflicts: adaptProblems(u.adapt),
+      adaptation: adaptationOf(tooth),
+    };
+  });
+  const connectors = result.connectors.map((c): ConnectorMetrics => {
+    const [a, b] = c.between;
+    const m = checks?.connectors.find((x) => x.between[0] === a && x.between[1] === b);
+    const failures = c.failures.map((f) => f.message);
+    if (m && !m.areaOk) failures.push(`smallest section ${m.measured.minAreaMm2.toFixed(2)} mm² is below ${m.targetAreaMm2} mm²`);
+    if (m && !m.heightOk) failures.push(`height ${Math.min(m.measured.heightMm, m.designedHeightMm).toFixed(2)} mm is below ${m.minHeightMm} mm`);
+    return {
+      between: [a, b],
+      designedAreaMm2: c.settings.areaMm2,
+      buccalMm: c.settings.buccalMm,
+      occlusalMm: c.settings.occlusalMm,
+      measuredAreaMm2: m ? round(m.measured.minAreaMm2) : null,
+      heightMm: round(c.heightMm) ?? 0,
+      measuredHeightMm: m ? round(m.measured.heightMm) : null,
+      availableHeightMm: round(c.available.heightMm) ?? 0,
+      minAreaMm2: c.minAreaMm2,
+      minHeightMm: c.minHeightMm,
+      failures,
+    };
+  });
+  return {
+    teeth: result.units.map((u) => u.fdi),
+    units,
+    connectors,
+    union: checks
+      ? { printable: checks.union.printable, components: checks.union.components, genus: checks.union.genus, seatingUnchanged: checks.seating.every((s) => s.ok) }
+      : null,
+    unionError: result.unionError ?? null,
   };
 }
 
