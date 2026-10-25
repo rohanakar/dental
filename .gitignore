@@ -16,3 +16,7 @@ infra/volumes/
 out/
 # agent git worktrees (Claude Code)
 .claude/worktrees/
+
+# impeccable scratch: review screenshots and live-mode sessions
+**/.impeccable/review/
+**/.impeccable/live/

@@ -1,0 +1,1265 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-25T17:15:17.874Z",
+  "title": "Design System: DentalCAD (working name)",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Instrument Blue",
+        "canonical": "#2f6fde",
+        "tonalRamp": [
+          "#000825",
+          "#001f59",
+          "#013994",
+          "#1959c6",
+          "#417ee7",
+          "#71a4fc",
+          "#accafe",
+          "#e6effe"
+        ]
+      },
+      "accent-strong": {
+        "role": "primary",
+        "displayName": "Deep Instrument Blue",
+        "canonical": "#1f56b8",
+        "tonalRamp": [
+          "#000825",
+          "#011f5a",
+          "#063a92",
+          "#245bbd",
+          "#497fdf",
+          "#77a5f4",
+          "#accafe",
+          "#e6effe"
+        ]
+      },
+      "render-ground": {
+        "role": "neutral",
+        "displayName": "Viewport Grey",
+        "canonical": "#e9ecf0",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#242527",
+          "#404245",
+          "#5f6165",
+          "#808286",
+          "#a3a5a8",
+          "#c8c9cb",
+          "#eeeeef"
+        ]
+      },
+      "fail-red": {
+        "role": "status",
+        "displayName": "Fail Red",
+        "canonical": "#b42318",
+        "tonalRamp": [
+          "#1f0000",
+          "#4d0100",
+          "#800301",
+          "#b12015",
+          "#d64f40",
+          "#f08070",
+          "#feb3a7",
+          "#ffe9e5"
+        ]
+      },
+      "landing-ink": {
+        "role": "neutral",
+        "displayName": "Deep Navy Ink",
+        "canonical": "#0f1b2d",
+        "tonalRamp": [
+          "#070b13",
+          "#1c2533",
+          "#364356",
+          "#546278",
+          "#758399",
+          "#9aa6b8",
+          "#c2cad6",
+          "#eceff3"
+        ]
+      },
+      "landing-ink-2": {
+        "role": "neutral",
+        "displayName": "Slate Ink",
+        "canonical": "#3a4658",
+        "tonalRamp": [
+          "#070b12",
+          "#1d2532",
+          "#384353",
+          "#556275",
+          "#778396",
+          "#9ba6b6",
+          "#c2cad4",
+          "#eceff2"
+        ]
+      },
+      "landing-ink-3": {
+        "role": "neutral",
+        "displayName": "Muted Slate",
+        "canonical": "#5d6878",
+        "tonalRamp": [
+          "#080b11",
+          "#1f252f",
+          "#394350",
+          "#576272",
+          "#788393",
+          "#9da6b3",
+          "#c3cad3",
+          "#edeff1"
+        ]
+      },
+      "landing-line": {
+        "role": "neutral",
+        "displayName": "Cool Hairline",
+        "canonical": "#e4e8ee",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232528",
+          "#3f4247",
+          "#5e6167",
+          "#7f8388",
+          "#a2a5a9",
+          "#c7c9cc",
+          "#eeeeef"
+        ]
+      },
+      "landing-field-border": {
+        "role": "neutral",
+        "displayName": "Field Grey",
+        "canonical": "#8792a2",
+        "tonalRamp": [
+          "#080b10",
+          "#1f252f",
+          "#3a4350",
+          "#586271",
+          "#798392",
+          "#9da6b2",
+          "#c4cad2",
+          "#edeff1"
+        ]
+      },
+      "landing-surface": {
+        "role": "neutral",
+        "displayName": "White Ground",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "landing-surface-2": {
+        "role": "neutral",
+        "displayName": "Cool Mist",
+        "canonical": "#f5f7fa",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#414244",
+          "#606164",
+          "#818285",
+          "#a4a5a7",
+          "#c8c9ca",
+          "#eeeeef"
+        ]
+      },
+      "landing-accent-hover": {
+        "role": "primary",
+        "displayName": "Hover Blue",
+        "canonical": "#2560c8",
+        "tonalRamp": [
+          "#000825",
+          "#001f5a",
+          "#013995",
+          "#1f5ac1",
+          "#467fe3",
+          "#74a4f8",
+          "#abcaff",
+          "#e6efff"
+        ]
+      },
+      "landing-accent-tint": {
+        "role": "primary",
+        "displayName": "Blue Wash (landing)",
+        "canonical": "#e8effc",
+        "tonalRamp": [
+          "#090b0f",
+          "#21252c",
+          "#3d424c",
+          "#5c616c",
+          "#7d838d",
+          "#a0a5af",
+          "#c6c9cf",
+          "#edeef0"
+        ]
+      },
+      "landing-ok": {
+        "role": "status",
+        "displayName": "Pass Green (landing)",
+        "canonical": "#1d7f4e",
+        "tonalRamp": [
+          "#000f05",
+          "#022e18",
+          "#02502d",
+          "#087444",
+          "#419666",
+          "#75b68e",
+          "#acd5ba",
+          "#e5f2e9"
+        ]
+      },
+      "landing-error-tint": {
+        "role": "status",
+        "displayName": "Fail Wash",
+        "canonical": "#fdeceb",
+        "tonalRamp": [
+          "#0f0a0a",
+          "#2b2322",
+          "#4b3f3e",
+          "#6c5d5c",
+          "#8d7e7e",
+          "#aea2a1",
+          "#cfc7c6",
+          "#f0eeed"
+        ]
+      },
+      "editor-bg": {
+        "role": "neutral",
+        "displayName": "Bench Grey",
+        "canonical": "#f4f5f7",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242526",
+          "#414243",
+          "#606163",
+          "#818284",
+          "#a4a5a6",
+          "#c8c9ca",
+          "#eeeeef"
+        ]
+      },
+      "editor-panel": {
+        "role": "neutral",
+        "displayName": "Panel White",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "editor-panel-2": {
+        "role": "neutral",
+        "displayName": "Control Grey",
+        "canonical": "#f0f2f5",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#414244",
+          "#606164",
+          "#818285",
+          "#a4a5a7",
+          "#c8c9ca",
+          "#eeeeef"
+        ]
+      },
+      "editor-border": {
+        "role": "neutral",
+        "displayName": "Panel Hairline",
+        "canonical": "#dde1e6",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232528",
+          "#3f4246",
+          "#5e6266",
+          "#7f8387",
+          "#a2a5a9",
+          "#c7c9cc",
+          "#eeeeef"
+        ]
+      },
+      "editor-field-border": {
+        "role": "neutral",
+        "displayName": "Field Outline",
+        "canonical": "#7b8591",
+        "tonalRamp": [
+          "#080b0f",
+          "#20262d",
+          "#3b434d",
+          "#59626e",
+          "#7a838f",
+          "#9ea6af",
+          "#c4cad0",
+          "#edeff1"
+        ]
+      },
+      "editor-field-bg": {
+        "role": "neutral",
+        "displayName": "Field Ground",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "editor-text": {
+        "role": "neutral",
+        "displayName": "Graphite",
+        "canonical": "#1b1f24",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#222529",
+          "#3e4248",
+          "#5d6268",
+          "#7e8389",
+          "#a1a5aa",
+          "#c7c9cd",
+          "#eeeef0"
+        ]
+      },
+      "editor-text-muted": {
+        "role": "neutral",
+        "displayName": "Muted Graphite",
+        "canonical": "#5f6b7a",
+        "tonalRamp": [
+          "#080b10",
+          "#1e262f",
+          "#394350",
+          "#576271",
+          "#788492",
+          "#9ca6b3",
+          "#c3cad2",
+          "#eceff1"
+        ]
+      },
+      "editor-accent-tint": {
+        "role": "primary",
+        "displayName": "Blue Wash (editor)",
+        "canonical": "color-mix(in srgb, #2f6fde 12%, #ffffff)",
+        "tonalRamp": [
+          "#090b0f",
+          "#21252c",
+          "#3c424c",
+          "#5b626d",
+          "#7c838e",
+          "#a0a5af",
+          "#c5c9d0",
+          "#edeef0"
+        ]
+      },
+      "editor-accent-text": {
+        "role": "neutral",
+        "displayName": "On-Accent",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "editor-ok": {
+        "role": "status",
+        "displayName": "Pass Green (editor)",
+        "canonical": "#177245",
+        "tonalRamp": [
+          "#000f05",
+          "#012e18",
+          "#00502c",
+          "#197346",
+          "#489568",
+          "#79b58f",
+          "#aed4bb",
+          "#e6f2ea"
+        ]
+      },
+      "editor-warn-icon": {
+        "role": "status",
+        "displayName": "Stale Amber",
+        "canonical": "#a86400",
+        "tonalRamp": [
+          "#150800",
+          "#381e01",
+          "#603702",
+          "#8a5204",
+          "#b37226",
+          "#cf9861",
+          "#e6c29f",
+          "#f8ece1"
+        ]
+      },
+      "editor-warn-bg": {
+        "role": "status",
+        "displayName": "Amber Wash",
+        "canonical": "#fff6e0",
+        "tonalRamp": [
+          "#0e0b05",
+          "#2a2518",
+          "#484131",
+          "#68614e",
+          "#89826f",
+          "#aba595",
+          "#cdc9be",
+          "#f0eeeb"
+        ]
+      },
+      "editor-warn-text": {
+        "role": "status",
+        "displayName": "Amber Ink",
+        "canonical": "#7a5300",
+        "tonalRamp": [
+          "#120900",
+          "#342100",
+          "#593c02",
+          "#80590b",
+          "#a17b3c",
+          "#c09f6e",
+          "#dbc6a6",
+          "#f4ede3"
+        ]
+      },
+      "editor-dark-bg": {
+        "role": "neutral",
+        "displayName": "Bench Grey (dark)",
+        "canonical": "#15181c",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232528",
+          "#3f4247",
+          "#5e6266",
+          "#7f8388",
+          "#a2a5a9",
+          "#c7c9cc",
+          "#eeeeef"
+        ]
+      },
+      "editor-dark-panel": {
+        "role": "neutral",
+        "displayName": "Panel (dark)",
+        "canonical": "#1c2026",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#22252a",
+          "#3e4249",
+          "#5d6269",
+          "#7e838a",
+          "#a1a5ab",
+          "#c7c9cd",
+          "#eeeef0"
+        ]
+      },
+      "editor-dark-panel-2": {
+        "role": "neutral",
+        "displayName": "Control Grey (dark)",
+        "canonical": "#242a31",
+        "tonalRamp": [
+          "#090b0e",
+          "#21252b",
+          "#3d434a",
+          "#5b626a",
+          "#7c838b",
+          "#a0a6ac",
+          "#c6c9ce",
+          "#edeef0"
+        ]
+      },
+      "editor-dark-border": {
+        "role": "neutral",
+        "displayName": "Panel Hairline (dark)",
+        "canonical": "#2e353e",
+        "tonalRamp": [
+          "#090b0f",
+          "#21252c",
+          "#3c434b",
+          "#5a626c",
+          "#7b838d",
+          "#9fa6ae",
+          "#c5c9cf",
+          "#edeef0"
+        ]
+      },
+      "editor-dark-field-border": {
+        "role": "neutral",
+        "displayName": "Field Outline (dark)",
+        "canonical": "#6b7684",
+        "tonalRamp": [
+          "#080b10",
+          "#1f262e",
+          "#3a434f",
+          "#586270",
+          "#798391",
+          "#9da6b1",
+          "#c4cad1",
+          "#edeff1"
+        ]
+      },
+      "editor-dark-field-bg": {
+        "role": "neutral",
+        "displayName": "Field Ground (dark)",
+        "canonical": "#15181c",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232528",
+          "#3f4247",
+          "#5e6266",
+          "#7f8388",
+          "#a2a5a9",
+          "#c7c9cc",
+          "#eeeeef"
+        ]
+      },
+      "editor-dark-text": {
+        "role": "neutral",
+        "displayName": "Graphite (dark)",
+        "canonical": "#e6e9ed",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#242527",
+          "#404245",
+          "#5f6165",
+          "#808286",
+          "#a3a5a8",
+          "#c8c9cb",
+          "#eeeeef"
+        ]
+      },
+      "editor-dark-text-muted": {
+        "role": "neutral",
+        "displayName": "Muted Graphite (dark)",
+        "canonical": "#9aa5b1",
+        "tonalRamp": [
+          "#080c0f",
+          "#1f262d",
+          "#3a434c",
+          "#58626d",
+          "#7a848e",
+          "#9ea6af",
+          "#c4cad0",
+          "#edeff1"
+        ]
+      },
+      "editor-dark-accent": {
+        "role": "primary",
+        "displayName": "Night Blue",
+        "canonical": "#5b8ef0",
+        "tonalRamp": [
+          "#000727",
+          "#021e5c",
+          "#113a8d",
+          "#2c5bb8",
+          "#507fda",
+          "#7ca4f0",
+          "#aecafc",
+          "#e6effe"
+        ]
+      },
+      "editor-dark-accent-strong": {
+        "role": "primary",
+        "displayName": "Pale Instrument Blue",
+        "canonical": "#9bbcf7",
+        "tonalRamp": [
+          "#030a1c",
+          "#122446",
+          "#28416f",
+          "#446095",
+          "#6582b7",
+          "#8da6d2",
+          "#b9cae7",
+          "#e9eff8"
+        ]
+      },
+      "editor-dark-accent-tint": {
+        "role": "primary",
+        "displayName": "Blue Wash (dark)",
+        "canonical": "color-mix(in srgb, #5b8ef0 12%, #1c2026)",
+        "tonalRamp": [
+          "#080b12",
+          "#1f2531",
+          "#394253",
+          "#576275",
+          "#788396",
+          "#9da5b6",
+          "#c3c9d4",
+          "#eceef2"
+        ]
+      },
+      "editor-dark-accent-text": {
+        "role": "neutral",
+        "displayName": "On-Accent (dark)",
+        "canonical": "#0b1220",
+        "tonalRamp": [
+          "#080b11",
+          "#1f2530",
+          "#3a4252",
+          "#586173",
+          "#798394",
+          "#9da5b4",
+          "#c4c9d3",
+          "#edeef2"
+        ]
+      },
+      "editor-dark-ok": {
+        "role": "status",
+        "displayName": "Pass Green (dark)",
+        "canonical": "#3cc47c",
+        "tonalRamp": [
+          "#000f05",
+          "#012e17",
+          "#02502c",
+          "#067443",
+          "#029b5a",
+          "#5fbb84",
+          "#a1d9b4",
+          "#e2f4e8"
+        ]
+      },
+      "editor-dark-warn-icon": {
+        "role": "status",
+        "displayName": "Stale Amber (dark)",
+        "canonical": "#e0a325",
+        "tonalRamp": [
+          "#120900",
+          "#332100",
+          "#583c00",
+          "#7f5903",
+          "#a97805",
+          "#ca9d4b",
+          "#e2c494",
+          "#f7edde"
+        ]
+      },
+      "editor-dark-warn-bg": {
+        "role": "status",
+        "displayName": "Amber Wash (dark)",
+        "canonical": "#3a2f12",
+        "tonalRamp": [
+          "#0f0b03",
+          "#2c2410",
+          "#4b4126",
+          "#6c6042",
+          "#8d8164",
+          "#aea48c",
+          "#cfc9b9",
+          "#f0eee9"
+        ]
+      },
+      "editor-dark-warn-text": {
+        "role": "status",
+        "displayName": "Amber Ink (dark)",
+        "canonical": "#f3d48a",
+        "tonalRamp": [
+          "#100a00",
+          "#302301",
+          "#533f03",
+          "#795d05",
+          "#9a7f3a",
+          "#b9a36d",
+          "#d7c8a6",
+          "#f3eee3"
+        ]
+      },
+      "editor-dark-error": {
+        "role": "status",
+        "displayName": "Fail Red (dark)",
+        "canonical": "#ff8a80",
+        "tonalRamp": [
+          "#1e0001",
+          "#4c0105",
+          "#791717",
+          "#a33733",
+          "#c65e56",
+          "#e28980",
+          "#f4b8b1",
+          "#fde9e7"
+        ]
+      },
+      "editor-dark-viewport": {
+        "role": "neutral",
+        "displayName": "Viewport Grey (dark)",
+        "canonical": "#20242a",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#22252a",
+          "#3e4248",
+          "#5d6269",
+          "#7e838a",
+          "#a1a5ab",
+          "#c7c9cd",
+          "#eeeef0"
+        ]
+      },
+      "map-penetration": {
+        "role": "data",
+        "displayName": "Penetration Red",
+        "canonical": "#c0392b",
+        "tonalRamp": [
+          "#1e0100",
+          "#4d0100",
+          "#800601",
+          "#ae261b",
+          "#d25343",
+          "#ed8272",
+          "#fcb5a8",
+          "#fee9e5"
+        ]
+      },
+      "map-penetration-soft": {
+        "role": "data",
+        "displayName": "Salmon",
+        "canonical": "#f39c6b",
+        "tonalRamp": [
+          "#180600",
+          "#3e1901",
+          "#6a2e01",
+          "#964811",
+          "#b96c3e",
+          "#d5936f",
+          "#ebbea7",
+          "#faebe3"
+        ]
+      },
+      "map-contact": {
+        "role": "data",
+        "displayName": "Contact Bone",
+        "canonical": "#f4f1ea",
+        "tonalRamp": [
+          "#0c0b09",
+          "#262521",
+          "#44423d",
+          "#63615b",
+          "#85827c",
+          "#a7a5a0",
+          "#cac9c6",
+          "#efeeed"
+        ]
+      },
+      "map-gap": {
+        "role": "data",
+        "displayName": "Gap Sky",
+        "canonical": "#7fb3e0",
+        "tonalRamp": [
+          "#000c19",
+          "#032741",
+          "#164569",
+          "#34668f",
+          "#5887b0",
+          "#83aacc",
+          "#b3cde3",
+          "#e7f0f7"
+        ]
+      },
+      "map-ample": {
+        "role": "data",
+        "displayName": "Ample Blue",
+        "canonical": "#2e6bb5",
+        "tonalRamp": [
+          "#000b1f",
+          "#01244d",
+          "#024081",
+          "#2461aa",
+          "#4b84cc",
+          "#79a8e4",
+          "#adccf4",
+          "#e5f0fd"
+        ]
+      },
+      "map-just-enough": {
+        "role": "data",
+        "displayName": "Just-Enough Straw",
+        "canonical": "#f2e394",
+        "tonalRamp": [
+          "#0e0b00",
+          "#2c2501",
+          "#4d4202",
+          "#706105",
+          "#91833a",
+          "#b1a66d",
+          "#d1caa6",
+          "#f1efe3"
+        ]
+      },
+      "map-mid": {
+        "role": "data",
+        "displayName": "Mid Teal",
+        "canonical": "#7fd1c4",
+        "tonalRamp": [
+          "#000f0c",
+          "#022c27",
+          "#014d45",
+          "#137066",
+          "#459287",
+          "#77b2a9",
+          "#add2cb",
+          "#e6f1ef"
+        ]
+      },
+      "map-undercut-none": {
+        "role": "data",
+        "displayName": "Seated Green",
+        "canonical": "#3d9a5b",
+        "tonalRamp": [
+          "#001004",
+          "#012e12",
+          "#025024",
+          "#067538",
+          "#41975c",
+          "#74b785",
+          "#abd6b4",
+          "#e5f3e8"
+        ]
+      },
+      "map-undercut-slight": {
+        "role": "data",
+        "displayName": "Lime",
+        "canonical": "#a7c94a",
+        "tonalRamp": [
+          "#080d00",
+          "#1f2a00",
+          "#394901",
+          "#556b03",
+          "#729001",
+          "#97b157",
+          "#c0d29a",
+          "#ebf2e0"
+        ]
+      },
+      "map-undercut-moderate": {
+        "role": "data",
+        "displayName": "Amber",
+        "canonical": "#f2c94c",
+        "tonalRamp": [
+          "#100a00",
+          "#2f2400",
+          "#514003",
+          "#775e01",
+          "#9f7e00",
+          "#c0a24a",
+          "#dbc893",
+          "#f4eede"
+        ]
+      },
+      "map-undercut-deep": {
+        "role": "data",
+        "displayName": "Orange",
+        "canonical": "#f08a3c",
+        "tonalRamp": [
+          "#160700",
+          "#3c1b01",
+          "#673100",
+          "#944a04",
+          "#c26614",
+          "#de905a",
+          "#f1bd9b",
+          "#fcebe0"
+        ]
+      },
+      "map-undercut-blocked": {
+        "role": "data",
+        "displayName": "Blocked Red",
+        "canonical": "#d64545",
+        "tonalRamp": [
+          "#1f0001",
+          "#4c0107",
+          "#800112",
+          "#b11d27",
+          "#d64e4c",
+          "#f07f79",
+          "#ffb3ac",
+          "#ffe9e6"
+        ]
+      },
+      "axis-occlusal": {
+        "role": "data",
+        "displayName": "Occlusal Axis",
+        "canonical": "#4c8dff",
+        "tonalRamp": [
+          "#000825",
+          "#001f5a",
+          "#013994",
+          "#1959c6",
+          "#427ee8",
+          "#71a4fc",
+          "#accafe",
+          "#e6effe"
+        ]
+      },
+      "axis-mesial": {
+        "role": "data",
+        "displayName": "Mesial Axis",
+        "canonical": "#2fbf71",
+        "tonalRamp": [
+          "#000f05",
+          "#012e16",
+          "#015029",
+          "#05753f",
+          "#089b56",
+          "#5dbc80",
+          "#a0d9b1",
+          "#e2f4e7"
+        ]
+      },
+      "axis-buccal": {
+        "role": "data",
+        "displayName": "Buccal Axis",
+        "canonical": "#f0a030",
+        "tonalRamp": [
+          "#130900",
+          "#361f01",
+          "#5d3902",
+          "#875504",
+          "#b37203",
+          "#d3974d",
+          "#e9c194",
+          "#f9ecde"
+        ]
+      },
+      "axis-distal": {
+        "role": "data",
+        "displayName": "Distal Axis",
+        "canonical": "#a970ff",
+        "tonalRamp": [
+          "#110027",
+          "#31005e",
+          "#540f96",
+          "#7536c2",
+          "#955fe4",
+          "#b48cf9",
+          "#d1bcfe",
+          "#f1ebfe"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "landing-display": {
+        "displayName": "Display",
+        "purpose": "The landing hero headline only: two lines, the second in Instrument Blue."
+      },
+      "landing-headline": {
+        "displayName": "Headline",
+        "purpose": "Landing section titles and the closing call to action."
+      },
+      "landing-title": {
+        "displayName": "Title",
+        "purpose": "Sub-heads within a landing section (Today, Not yet)."
+      },
+      "landing-lede": {
+        "displayName": "Lede",
+        "purpose": "The hero subhead, 34em max; section intros run at 1.125rem, 62ch max."
+      },
+      "landing-body": {
+        "displayName": "Body",
+        "purpose": "Landing paragraphs, 36em max in two-column sections."
+      },
+      "landing-small": {
+        "displayName": "Small",
+        "purpose": "Nav links, form notes, captions, checks-panel rows, step descriptions."
+      },
+      "landing-label": {
+        "displayName": "Label",
+        "purpose": "Form labels; a parenthesised hint follows at 400 in Muted Slate."
+      },
+      "landing-micro": {
+        "displayName": "Micro",
+        "purpose": "Table heads, scale labels, the checks panel case line, step numbers."
+      },
+      "landing-figure": {
+        "displayName": "Figure",
+        "purpose": "Measured values: tabular, with unit and limit."
+      },
+      "landing-button": {
+        "displayName": "Button",
+        "purpose": "Landing button labels."
+      },
+      "editor-title": {
+        "displayName": "Editor title",
+        "purpose": "The step title, the one heading in the side panel (--fs-title)."
+      },
+      "editor-body": {
+        "displayName": "Editor body",
+        "purpose": "The editor default, buttons included (--fs-body); tabular figures throughout."
+      },
+      "editor-label": {
+        "displayName": "Editor label",
+        "purpose": "Section labels inside a step and the legend title, sentence case, Muted Graphite (--fs-small)."
+      },
+      "editor-small": {
+        "displayName": "Editor small",
+        "purpose": "Field labels, hints, read-outs, legend text, warnings."
+      },
+      "editor-micro": {
+        "displayName": "Editor micro",
+        "purpose": "Badges, step notes, the tooth chart jaw labels and key (--fs-micro)."
+      }
+    },
+    "shadows": [
+      {
+        "name": "landing-frame",
+        "value": "0 0 0 1px rgb(15 27 45 / 0.07), 0 1px 2px rgb(15 27 45 / 0.06), 0 18px 40px -18px rgb(15 27 45 / 0.28)",
+        "purpose": "Framed product shots and the gate table; the 1px ring is the hairline edge (--shadow)."
+      },
+      {
+        "name": "landing-overlay",
+        "value": "0 1px 2px rgb(15 27 45 / 0.08), 0 24px 48px -20px rgb(15 27 45 / 0.35)",
+        "purpose": "The checks panel where it overlaps the hero render."
+      },
+      {
+        "name": "landing-inset-card",
+        "value": "0 1px 2px rgb(15 27 45 / 0.08), 0 12px 28px -12px rgb(15 27 45 / 0.3)",
+        "purpose": "The draft-review crop that sits inside the hero render."
+      },
+      {
+        "name": "editor-none",
+        "value": "none",
+        "purpose": "The editor is flat: tone and 1px hairlines carry depth. The tooth chart inset ring (inset 0 0 0 2px) marks the active tooth and is not elevation."
+      }
+    ],
+    "motion": [
+      {
+        "name": "landing-ease-out",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Landing state transitions: buttons 160ms (background, border, transform), pass ticks 240ms fill and 320ms stroke draw after 80ms."
+      },
+      {
+        "name": "landing-count-in",
+        "value": "320ms exponential ease-out per value; rows 360ms apart from 450ms",
+        "purpose": "The checks panel runs once on load, from each gate threshold to its measured value, then holds still. Skipped under reduced motion."
+      },
+      {
+        "name": "landing-field",
+        "value": "160ms ease-out",
+        "purpose": "Input border colour on hover and focus."
+      },
+      {
+        "name": "editor-standard",
+        "value": "0.15s ease",
+        "purpose": "Editor background, border and colour changes on buttons, dropzone and chart keys."
+      },
+      {
+        "name": "editor-spinner",
+        "value": "0.8s linear infinite (2.4s under reduced motion)",
+        "purpose": "The 12px loading ring."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "transition-duration: 0ms; scroll-behavior: auto",
+        "purpose": "Landing under prefers-reduced-motion: final values, no count-in, no smooth scroll."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "landing-tablet",
+        "value": "1080px"
+      },
+      {
+        "name": "landing-phone",
+        "value": "760px"
+      },
+      {
+        "name": "landing-narrow",
+        "value": "420px"
+      },
+      {
+        "name": "editor-stack",
+        "value": "720px"
+      },
+      {
+        "name": "session-narrow",
+        "value": "640px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Landing Primary Button",
+      "kind": "button",
+      "refersTo": "landing-button-primary",
+      "description": "The main action on the landing page: Create lab account (or Open your cases when signed in).",
+      "html": "<button class=\"ds-landing-btn-primary\" type=\"button\">Create lab account</button>",
+      "css": ".ds-landing-btn-primary { display: inline-flex; align-items: center; justify-content: center; height: 46px; padding: 0 20px; border: 1px solid transparent; border-radius: 8px; background: #2f6fde; color: #fff; font: 560 1rem/1 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: -0.005em; cursor: pointer; transition: background-color 160ms cubic-bezier(0.16, 1, 0.3, 1), transform 160ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-landing-btn-primary:hover { background: var(--accent-hover, #2560c8); } .ds-landing-btn-primary:active { transform: translateY(1px); } .ds-landing-btn-primary:focus-visible { outline: 2px solid #2f6fde; outline-offset: 3px; }"
+    },
+    {
+      "name": "Landing Secondary Button",
+      "kind": "button",
+      "refersTo": "landing-button-secondary",
+      "description": "The second action beside a primary, such as Open the demo case.",
+      "html": "<button class=\"ds-landing-btn-secondary\" type=\"button\">Open the demo case</button>",
+      "css": ".ds-landing-btn-secondary { display: inline-flex; align-items: center; justify-content: center; height: 46px; padding: 0 20px; border: 1px solid #8792a2; border-radius: 8px; background: var(--surface, #ffffff); color: var(--ink, #0f1b2d); font: 560 1rem/1 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: -0.005em; cursor: pointer; transition: border-color 160ms cubic-bezier(0.16, 1, 0.3, 1), transform 160ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-landing-btn-secondary:hover { border-color: var(--ink, #0f1b2d); } .ds-landing-btn-secondary:active { transform: translateY(1px); } .ds-landing-btn-secondary:focus-visible { outline: 2px solid #2f6fde; outline-offset: 3px; }"
+    },
+    {
+      "name": "Landing Field",
+      "kind": "input",
+      "refersTo": "landing-input",
+      "description": "A sign-up field: label above, 46px input, blue focus outline, Fail Red border when invalid.",
+      "html": "<label class=\"ds-landing-field\"><span>Password <em>(10+ characters)</em></span><input type=\"password\" autocomplete=\"new-password\"></label>",
+      "css": ".ds-landing-field { display: flex; flex-direction: column; gap: 6px; max-width: 280px; font-family: 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; } .ds-landing-field span { font-size: 0.875rem; font-weight: 520; color: var(--ink, #0f1b2d); } .ds-landing-field em { font-style: normal; font-weight: 400; color: var(--ink-3, #5d6878); } .ds-landing-field input { height: 46px; padding: 0 14px; border: 1px solid #8792a2; border-radius: 8px; background: var(--surface, #ffffff); color: var(--ink, #0f1b2d); font: 400 1rem 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; transition: border-color 160ms ease-out; } .ds-landing-field input:hover { border-color: var(--ink-2, #3a4658); } .ds-landing-field input:focus-visible { outline: 2px solid #2f6fde; outline-offset: 0; border-color: #2f6fde; } .ds-landing-field input[aria-invalid='true'] { border-color: var(--error, #b42318); }"
+    },
+    {
+      "name": "Checks Panel",
+      "kind": "custom",
+      "refersTo": "landing-checks-panel",
+      "description": "The landing signature: measured gate values with units, limits and SVG pass ticks, overlapping the hero render.",
+      "html": "<figure class=\"ds-checks\"><div class=\"ds-checks-head\"><strong>Checks</strong><span class=\"ds-checks-count\">5 of 5 passed</span><span class=\"ds-checks-case\">Synthetic case · tooth 36 · zirconia</span></div><ol><li><span>Closed margin</span><span class=\"ds-checks-value\">28.1 mm</span><svg class=\"ds-tick\" viewBox=\"0 0 16 16\" role=\"img\" aria-label=\"passed\"><circle cx=\"8\" cy=\"8\" r=\"8\"/><path d=\"M4.5 8.3l2.2 2.2 4.8-4.9\"/></svg></li><li><span>Minimum thickness</span><span class=\"ds-checks-value\">1.01 mm <small>min 0.50</small></span><svg class=\"ds-tick\" viewBox=\"0 0 16 16\" role=\"img\" aria-label=\"passed\"><circle cx=\"8\" cy=\"8\" r=\"8\"/><path d=\"M4.5 8.3l2.2 2.2 4.8-4.9\"/></svg></li><li><span>Occlusal clearance</span><span class=\"ds-checks-value\">0.05 mm</span><svg class=\"ds-tick\" viewBox=\"0 0 16 16\" role=\"img\" aria-label=\"passed\"><circle cx=\"8\" cy=\"8\" r=\"8\"/><path d=\"M4.5 8.3l2.2 2.2 4.8-4.9\"/></svg></li></ol></figure>",
+      "css": ".ds-checks { margin: 0; width: 340px; padding: 16px 18px 10px; border-radius: 12px; background: var(--surface, #ffffff); color: var(--ink-2, #3a4658); box-shadow: 0 1px 2px rgb(15 27 45 / 0.08), 0 24px 48px -20px rgb(15 27 45 / 0.35); font: 400 0.9375rem/1.6 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; } .ds-checks-head { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 2px 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line, #e4e8ee); color: var(--ink, #0f1b2d); } .ds-checks-count { color: #1d7f4e; font-size: 0.875rem; font-weight: 560; font-variant-numeric: tabular-nums; } .ds-checks-case { grid-column: 1 / -1; color: var(--ink-3, #5d6878); font-size: 0.8125rem; } .ds-checks ol { list-style: none; margin: 0; padding: 0; } .ds-checks li { display: grid; grid-template-columns: 1fr auto 18px; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line, #e4e8ee); } .ds-checks li:last-child { border-bottom: 0; } .ds-checks-value { color: var(--ink, #0f1b2d); font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; } .ds-checks-value small { color: var(--ink-3, #5d6878); font-size: 0.8125rem; font-weight: 400; } .ds-tick { width: 18px; height: 18px; } .ds-tick circle { fill: #1d7f4e; } .ds-tick path { fill: none; stroke: #fff; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }"
+    },
+    {
+      "name": "Map Scale",
+      "kind": "custom",
+      "refersTo": "map-scale-bar",
+      "description": "A colour-map scale transcribed from the engine: occlusal clearance, neutral at 0 mm contact (solid tick), target 0.05 mm (dotted tick).",
+      "html": "<span class=\"ds-scale\" role=\"img\" aria-label=\"Scale from 0.2 mm penetration to a gap of 0.5 mm or more; contact at 0 mm, target 0.05 mm.\"><span class=\"ds-scale-bar\"><i class=\"ds-scale-tick\" style=\"--at: 28.57%\"></i><i class=\"ds-scale-tick ds-dotted\" style=\"--at: 35.71%\"></i></span><span class=\"ds-scale-ends\"><span>−0.2 mm penetration</span><span>≥ 0.5 mm gap</span></span><span class=\"ds-scale-keys\"><span><i class=\"ds-key\"></i>0 mm contact</span><span><i class=\"ds-key ds-dotted\"></i>0.05 mm target</span></span></span>",
+      "css": ".ds-scale { display: block; max-width: 420px; font: 400 0.8125rem/1.6 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; font-variant-numeric: tabular-nums; color: var(--ink-3, #5d6878); } .ds-scale-bar { position: relative; display: block; height: 10px; border-radius: 3px; background: linear-gradient(to right, #c0392b 0%, #f39c6b 14.29%, #f4f1ea 28.57%, #7fb3e0 64.29%, #2e6bb5 100%); } .ds-scale-tick { position: absolute; left: var(--at); top: -3px; bottom: -3px; width: 0; border-left: 2px solid var(--ink, #0f1b2d); transform: translateX(-1px); } .ds-scale-ends, .ds-scale-keys { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; } .ds-scale-keys { justify-content: flex-start; gap: 18px; } .ds-key { display: inline-block; width: 0; height: 10px; margin-right: 6px; border-left: 2px solid var(--ink, #0f1b2d); vertical-align: -1px; } .ds-dotted { border-left-style: dotted; }"
+    },
+    {
+      "name": "Editor Button",
+      "kind": "button",
+      "refersTo": "editor-button",
+      "description": "The default editor control: Control Grey on a hairline, 28px, accent-tinted border on hover.",
+      "html": "<button class=\"ds-ed-btn\" type=\"button\">Fit</button>",
+      "css": ".ds-ed-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--control-h, 28px); padding: 0 10px; border: 1px solid var(--border, #dde1e6); border-radius: var(--radius-sm, 6px); background: var(--panel-2, #f0f2f5); color: var(--text, #1b1f24); font: 400 var(--fs-body, 13px)/1.2 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; cursor: pointer; transition: background-color 0.15s, border-color 0.15s, color 0.15s; } .ds-ed-btn:hover { border-color: color-mix(in srgb, var(--accent, #2f6fde) 55%, var(--border, #dde1e6)); } .ds-ed-btn:active { background: color-mix(in srgb, var(--text, #1b1f24) 8%, var(--panel-2, #f0f2f5)); } .ds-ed-btn:focus-visible { outline: 2px solid var(--focus-ring, #2f6fde); outline-offset: 2px; } .ds-ed-btn:disabled { opacity: 0.5; cursor: default; }"
+    },
+    {
+      "name": "Editor Primary Button",
+      "kind": "button",
+      "refersTo": "editor-button-primary",
+      "description": "The one filled style: the main action of a step (Propose crown, Accept, Export STL, Next).",
+      "html": "<button class=\"ds-ed-btn-primary\" type=\"button\">Propose crown</button>",
+      "css": ".ds-ed-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--control-h, 28px); padding: 0 10px; border: 1px solid var(--accent, #2f6fde); border-radius: var(--radius-sm, 6px); background: var(--accent, #2f6fde); color: var(--accent-text, #ffffff); font: 500 var(--fs-body, 13px)/1.2 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; cursor: pointer; transition: background-color 0.15s, border-color 0.15s; } .ds-ed-btn-primary:hover { background: color-mix(in srgb, var(--accent, #2f6fde) 86%, #000); border-color: color-mix(in srgb, var(--accent, #2f6fde) 86%, #000); } .ds-ed-btn-primary:focus-visible { outline: 2px solid var(--focus-ring, #2f6fde); outline-offset: 2px; } .ds-ed-btn-primary:disabled { opacity: 0.5; cursor: default; }"
+    },
+    {
+      "name": "Editor Segmented Toggle",
+      "kind": "button",
+      "refersTo": "editor-button-pressed",
+      "description": "Views and projection as one hairline group; the pressed segment takes the Blue Wash, never the primary fill.",
+      "html": "<div class=\"ds-ed-seg\" role=\"group\" aria-label=\"Standard views\"><button type=\"button\" aria-pressed=\"true\">Occlusal</button><button type=\"button\" aria-pressed=\"false\">Mesial</button><button type=\"button\" aria-pressed=\"false\">Buccal</button></div>",
+      "css": ".ds-ed-seg { display: inline-flex; border: 1px solid var(--border, #dde1e6); border-radius: var(--radius-sm, 6px); background: var(--panel, #ffffff); } .ds-ed-seg button { min-height: 26px; padding: 0 9px; border: 0; border-radius: 0; background: transparent; color: var(--text, #1b1f24); font: 400 var(--fs-body, 13px)/1.2 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; cursor: pointer; transition: background-color 0.15s, color 0.15s; } .ds-ed-seg button + button { border-left: 1px solid var(--border, #dde1e6); } .ds-ed-seg button:first-child { border-radius: 5px 0 0 5px; } .ds-ed-seg button:last-child { border-radius: 0 5px 5px 0; } .ds-ed-seg button:hover { background: var(--panel-2, #f0f2f5); } .ds-ed-seg button[aria-pressed='true'] { background: var(--accent-tint, #e6eefb); color: var(--accent-strong, #1f56b8); font-weight: 500; } .ds-ed-seg button:focus-visible { position: relative; z-index: 1; outline: 2px solid var(--focus-ring, #2f6fde); outline-offset: 2px; }"
+    },
+    {
+      "name": "Editor Quiet Icon Button",
+      "kind": "button",
+      "refersTo": "editor-button-quiet",
+      "description": "Toolbar history and file actions: transparent until hover, a 16px authored SVG icon, named by aria-label.",
+      "html": "<button class=\"ds-ed-btn-quiet\" type=\"button\" aria-label=\"Undo\"><svg viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M6 3.5 3 6.5l3 3\"/><path d=\"M3 6.5h6.5a3.5 3.5 0 0 1 0 7H7\"/></svg></button>",
+      "css": ".ds-ed-btn-quiet { display: inline-flex; align-items: center; justify-content: center; width: var(--control-h, 28px); min-height: var(--control-h, 28px); padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm, 6px); background: transparent; color: var(--text, #1b1f24); cursor: pointer; transition: background-color 0.15s, border-color 0.15s; } .ds-ed-btn-quiet svg { width: 16px; height: 16px; } .ds-ed-btn-quiet:hover { background: var(--panel-2, #f0f2f5); border-color: var(--border, #dde1e6); } .ds-ed-btn-quiet:focus-visible { outline: 2px solid var(--focus-ring, #2f6fde); outline-offset: 2px; }"
+    },
+    {
+      "name": "Editor Parameter Field",
+      "kind": "input",
+      "refersTo": "editor-input",
+      "description": "A 28px number field with its unit inside the right edge and a muted 12px label.",
+      "html": "<label class=\"ds-ed-field\"><span>Cement gap</span><span class=\"ds-ed-unit\"><input type=\"number\" value=\"0.03\" step=\"0.01\"><em>mm</em></span></label>",
+      "css": ".ds-ed-field { display: grid; grid-template-columns: 1fr 96px; align-items: center; gap: 2px 8px; max-width: 300px; font: 400 var(--fs-body, 13px)/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-variant-numeric: tabular-nums; color: var(--text, #1b1f24); } .ds-ed-unit { position: relative; display: block; } .ds-ed-unit input { width: 100%; min-height: var(--control-h, 28px); padding: 0 30px 0 8px; border: 1px solid var(--field-border, #7b8591); border-radius: var(--radius-sm, 6px); background: var(--field-bg, #ffffff); color: inherit; font: inherit; text-align: right; } .ds-ed-unit input:focus-visible { outline: 2px solid var(--focus-ring, #2f6fde); outline-offset: 2px; } .ds-ed-unit input[aria-invalid='true'] { border-color: var(--error-text, #b42318); } .ds-ed-unit em { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-style: normal; font-size: var(--fs-small, 12px); color: var(--text-muted, #5f6b7a); pointer-events: none; }"
+    },
+    {
+      "name": "Editor Step Nav",
+      "kind": "nav",
+      "refersTo": "editor-step-active",
+      "description": "The wizard rail: numbered rows with status dots (done, out of date, in a draft, not done); the active step is a tint, never an outline.",
+      "html": "<ol class=\"ds-ed-steps\"><li><button type=\"button\" class=\"done\">Margin<span class=\"ds-dot\"></span></button></li><li><button type=\"button\" class=\"stale\">Insertion axis<span class=\"ds-badge ds-stale\">stale</span><span class=\"ds-dot\"></span></button></li><li><button type=\"button\" class=\"draft active\" aria-current=\"step\">Crown proposal<span class=\"ds-badge ds-draft\">draft</span><span class=\"ds-dot\"></span></button></li><li><button type=\"button\">Adapt<span class=\"ds-dot\"></span></button></li></ol>",
+      "css": ".ds-ed-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; width: 316px; counter-reset: step 3; font: 400 var(--fs-body, 13px)/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; } .ds-ed-steps button { counter-increment: step; width: 100%; min-height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border: 0; border-radius: var(--radius-sm, 6px); background: transparent; color: var(--text, #1b1f24); font: inherit; text-align: left; cursor: pointer; } .ds-ed-steps button::before { content: counter(step); width: 12px; text-align: right; font-size: var(--fs-small, 12px); color: var(--text-muted, #5f6b7a); } .ds-ed-steps button:hover { background: var(--panel-2, #f0f2f5); } .ds-ed-steps button.active { background: var(--accent-tint, #e6eefb); color: var(--accent-strong, #1f56b8); font-weight: 600; } .ds-ed-steps button.active::before { color: var(--accent-strong, #1f56b8); } .ds-ed-steps button:focus-visible { outline: 2px solid var(--focus-ring, #2f6fde); outline-offset: 2px; } .ds-dot { margin-left: auto; flex: none; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--text-muted, #5f6b7a); } .ds-badge + .ds-dot { margin-left: 0; } .done .ds-dot { background: var(--ok, #177245); border-color: var(--ok, #177245); } .stale .ds-dot { border-color: var(--warn-icon, #a86400); background: linear-gradient(90deg, var(--warn-icon, #a86400) 50%, transparent 50%); } .draft .ds-dot { border: 1.5px dashed var(--accent, #2f6fde); } .ds-badge { margin-left: auto; display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 999px; font-size: var(--fs-micro, 11px); font-weight: 400; } .ds-stale { background: var(--warn-bg, #fff6e0); color: var(--warn-text, #7a5300); } .ds-draft { background: var(--accent-tint, #e6eefb); color: var(--accent-strong, #1f56b8); }"
+    },
+    {
+      "name": "Editor Badge",
+      "kind": "chip",
+      "refersTo": "editor-badge",
+      "description": "A pill status chip: neutral by default, amber when stale or offline, Blue Wash when in a draft.",
+      "html": "<span class=\"ds-ed-badges\"><span class=\"ds-ed-badge\">upper jaw</span><span class=\"ds-ed-badge ds-ed-badge-stale\">stale</span><span class=\"ds-ed-badge ds-ed-badge-draft\">draft</span></span>",
+      "css": ".ds-ed-badges { display: inline-flex; gap: 6px; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; } .ds-ed-badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border: 1px solid var(--border, #dde1e6); border-radius: 999px; background: var(--panel, #ffffff); color: var(--text-muted, #5f6b7a); font-size: var(--fs-micro, 11px); } .ds-ed-badge-stale { border-color: transparent; background: var(--warn-bg, #fff6e0); color: var(--warn-text, #7a5300); } .ds-ed-badge-draft { border-color: transparent; background: var(--accent-tint, #e6eefb); color: var(--accent-strong, #1f56b8); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Verifiable Instrument",
+    "overview": "DentalCAD is a precision instrument that shows its working. It has two surfaces. The landing page (`apps/web/index.html`) persuades a lab technician or clinician on a first visit. The editor at `/app/` is where they then work all day. Both play the category standard straight, at the craft level of exocad, Dentbird and Linear / Vercel: cool white and blue-grey grounds, a single blue, hairlines instead of boxes, and numbers set as numbers. Every claim on screen is something the user can check: a measured value with its unit, a pass mark, a colour map with its scale.\n\nThe two surfaces share a family, not a stylesheet. The landing world has a white ground, deep navy ink and Hanken Grotesk, tracked tight at display sizes. Its sections breathe, and it shows real captures of the editor in a hairline frame with one soft, navy-tinted shadow. The editor world is dense and flat. It uses the system typeface at instrument sizes (13px body), tonal panels and hairline borders, follows the operating system's light or dark theme, and is built for long sessions zoomed into one tooth. Both use the same blue (#2f6fde) as their only accent. Both use the same Viewport Grey behind the 3D scene, and the same colour-map stops, which the engine owns and every surface copies.\n\nOwnership: the landing sections of this file are recorded from `apps/web/src/landing/landing.css`, and its direction contract is `apps/web/.impeccable/surfaces/index-html.md`. The parts marked \"editor\" are **maintained by the editor polish work** (`specs/2026-10-25-ux-critique-polish.md`), recorded from `apps/web/src/styles.css` and `apps/web/src/ui/**/*.css`. Editor token changes land there first and are recorded here afterwards. The colour-map stops belong to `apps/web/src/engine/colormap.ts` and `apps/web/src/tools/crownLegend.ts`. The confirmed visual rejection (PRODUCT.md, Brand Commitments) is that marketing surfaces carry real product renders, never illustration, a glowing-tooth hero or stock clinic photography.",
+    "keyCharacteristics": [
+      "One blue accent (#2f6fde) on both surfaces. Everything else is a neutral, a status or data.",
+      "Measurements in tabular figures, always with their unit, and their limit where one exists.",
+      "Hairlines and tone for structure. Shadows appear only on the landing page's framed renders and the overlays that sit on them.",
+      "Colour maps are clinical data, transcribed exactly from the engine, never decoration.",
+      "Real product renders, never illustration, on marketing surfaces.",
+      "Dashed and dotted strokes mean not there yet, or a target."
+    ],
+    "rules": [
+      {
+        "name": "The One Accent Rule",
+        "body": "Instrument Blue is the only hue on any surface that is not a status or data colour. There is no second brand colour, no per-section accent and no coloured icon set.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tint Is Not The Fill Rule",
+        "body": "The solid accent marks the main action: one per step, form or page region. Repeating the same action is fine: the nav and the hero form both create a lab account. Pressed toggles, the active step, the current unit and drafts take the Blue Wash with Deep Instrument Blue text. Outside actions, the solid accent fills only the tooth chart's marks for what is in the case: crown teeth and their connectors.",
+        "section": "colors"
+      },
+      {
+        "name": "The Data Is Not Decoration Rule",
+        "body": "A map colour always means a clinical value. Map colours appear on the scan or crown surface, on the legend and on scales transcribed from it, and nowhere else; the axis colours appear only on the viewport's frame arrows and their swatches. Penetration Red (#c0392b) is the crown maps' one warning colour.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Measurement Rule",
+        "body": "Every millimetre, count, threshold and step number is set in tabular figures with its unit. The editor sets `tabular-nums` on the body. The landing page sets it on every measured value, and puts the limit beside the value in the muted ink (1.01 mm, min 0.50).",
+        "section": "typography"
+      },
+      {
+        "name": "The Sentence Case Rule",
+        "body": "Headings, labels, buttons and section labels are in sentence case at normal or negative tracking. Hierarchy comes from weight and the muted ink, never from uppercase or letter-spacing.",
+        "section": "typography"
+      },
+      {
+        "name": "The Navy Shadow Rule",
+        "body": "Landing shadows are tinted with Deep Navy Ink (rgb 15 27 45), never black. They fall straight down with a negative spread and are never offset sideways.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Flat Instrument Rule",
+        "body": "The editor has no drop shadows. Panels sit on the bench by tone and hairline. The legend floats over the viewport on a 94% Panel White with a hairline. The tooth chart's 2px inset ring marks the active tooth; it is not elevation.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Dashed Means Not-There Rule",
+        "body": "Dashed and dotted strokes mark what is not there yet, or not there at all: the dropzone and the drop-to-import overlay, a draft step's dot, a check not yet measured, the first-run empty case list, the placeholder wordmark, a pontic (a missing tooth being replaced), an unavailable connector, and the dotted target tick on a map scale. Solid strokes mean measured or committed, such as the solid tick at contact or at the minimum.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "**Do** use Instrument Blue (#2f6fde) as the only accent, with Deep Instrument Blue (#1f56b8) where blue is text on a tint.",
+      "**Do** set every measurement in tabular figures with its unit, and its limit beside it where one exists (1.01 mm, min 0.50).",
+      "**Do** show the product through real captures of the editor on the synthetic case, framed on Viewport Grey (#e9ecf0) with the Frame shadow, each with its provenance sidecar.",
+      "**Do** copy the colour-map stops, their re-centred positions and the solid and dotted ticks from `colormap.ts` and `crownLegend.ts` whenever a map or scale appears.",
+      "**Do** give each step, form or page region one solid-accent action; pressed, active and draft states take the Blue Wash.",
+      "**Do** separate with hairlines (#e4e8ee on the landing page, #dde1e6 in the editor) before reaching for a box or a shadow.",
+      "**Do** draw icons as authored SVG in `currentColor`, with the control naming the action.",
+      "**Do** build new editor screens from the editor's tokens (`--fs-*`, `--radius-sm`, `--radius`, `--control-h`, `--field-border`, `--field-bg`, `--accent-strong`, `--accent-tint`, `--focus-ring`, `--ok`, `--warn-*`), and give every new colour its dark value alongside the light one.",
+      "**Do** honour reduced motion with the final state: no count-in, no smooth scroll, and 0ms transitions on the landing page."
+    ],
+    "donts": [
+      "**Don't** add a second accent hue, or use a map colour (Penetration Red, Straw, Teal, map Amber) as a UI or brand colour.",
+      "**Don't** put illustration, stock clinic photography or a glowing-tooth hero on a marketing surface.",
+      "**Don't** set labels in uppercase with wide tracking, or add eyebrow or kicker labels above headings; hierarchy comes from weight and the muted ink.",
+      "**Don't** use Unicode glyphs (✓ ✗ ⚠ ↶) as icons or status marks.",
+      "**Don't** mark a callout, card or row with a coloured side stripe; a callout is a tinted ground, with at most a hairline all round.",
+      "**Don't** use gradient text, or blended gradients on buttons, panels or section grounds; the only blended gradient is a colour-map scale.",
+      "**Don't** give editor surfaces drop shadows, and don't use black or sideways-offset shadows on the landing page.",
+      "**Don't** use dashed or dotted strokes as decoration; they mean not there yet, or a target."
+    ]
+  }
+}

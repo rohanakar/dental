@@ -1,0 +1,25 @@
+{
+  "buildPath": "code",
+  "hook": {
+    "enabled": true,
+    "limits": {
+      "maxFindings": 5,
+      "maxChars": 8000
+    }
+  },
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          "apps/web/index.html"
+        ],
+        "createdAt": "2026-10-25T17:18:27.705Z",
+        "reason": "finish reviewer (subagent, 2026-10-25): false positive; section block padding is on section.section and inline padding on its .wrap child, and .table-wrap's caption/th/td carry 16px 20px"
+      }
+    ]
+  }
+}
