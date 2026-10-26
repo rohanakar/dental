@@ -25,6 +25,7 @@ import { isStale } from '../../workers/latestWins';
 import { AlertIcon, CheckIcon, FailIcon, UnknownIcon } from '../icons';
 import { CrownStatusView } from './CrownStatusView';
 import { MapSelect } from './CrownViewControls';
+import { FrameworkFinalize } from './FrameworkPanels';
 import { isReady, millReadiness, type ReadinessItem, type ReadinessStatus, readinessNeeds } from './readiness';
 import { IMPLANT_NEEDS, implantReadiness } from './implantReadiness';
 import { isImplantTooth } from '../../tools/implantTool';
@@ -710,6 +711,7 @@ export function BridgeFinalize() {
         One binary STL in millimetres: retainers, pontics and connectors merged into one solid. Construction info is a JSON file with each unit's
         frame, margin and pose, the common axis, the connectors as designed and as measured, and the checks.
       </p>
+      <FrameworkFinalize teeth={bridge.teeth} />
       <MapSelect />
       <CrownStatusView detailed />
     </div>

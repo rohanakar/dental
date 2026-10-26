@@ -9,6 +9,8 @@ const MATERIAL_LABEL: Record<Material, string> = {
   zirconia: 'Zirconia',
   'lithium-disilicate': 'Lithium disilicate (e.max)',
   pmma: 'PMMA (temporary)',
+  cocr: 'CoCr (metal framework)',
+  titanium: 'Titanium (framework)',
 };
 
 export function NewCaseForm() {

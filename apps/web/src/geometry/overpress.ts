@@ -76,9 +76,11 @@ function components(mesh: IndexedMesh): Component[] {
  * Overpress solid: anatomy − reduced (manifold-3d difference). Components
  * thinner than `minThicknessMm` (2·volume/area) are dropped: slivers where
  * the protection pushed the framework back almost to the anatomy. Both inputs
- * must be closed, outward-oriented solids.
+ * must be closed, outward-oriented solids. `subtract` is taken away as well
+ * (a bridge's connectors), after the reduced unit, whose collar coincides
+ * with the anatomy's exactly.
  */
-export function overpressSolid(anatomy: IndexedMesh, reduced: IndexedMesh, opts: { minThicknessMm?: number } = {}): OverpressResult {
+export function overpressSolid(anatomy: IndexedMesh, reduced: IndexedMesh, opts: { minThicknessMm?: number; subtract?: IndexedMesh } = {}): OverpressResult {
   const timings: Record<string, number> = {};
   let t = performance.now();
   const lap = (name: string) => {
@@ -87,7 +89,8 @@ export function overpressSolid(anatomy: IndexedMesh, reduced: IndexedMesh, opts:
     t = now;
   };
   const min = opts.minThicknessMm ?? OVERPRESS_MIN_THICKNESS_MM;
-  const raw = differenceMeshes(anatomy, reduced);
+  let raw = differenceMeshes(anatomy, reduced);
+  if (opts.subtract && raw.indices.length > 0) raw = differenceMeshes(raw, opts.subtract);
   lap('difference');
   const kept: number[] = [];
   let volume = 0;

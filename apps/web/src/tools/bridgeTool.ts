@@ -24,6 +24,8 @@ import type { BridgeRequest, BridgeResultView, BridgeUnitRequest, BridgeUnitView
 import { analysis } from '../workers/geometryClient';
 import { isStale } from '../workers/latestWins';
 import { errorText, fromMarginPoints } from './context';
+import { frameworkFields, frameworkSidecar } from './frameworkRequest';
+import { cutbackFor } from '../design/framework';
 import { CROWN_MAPS, crownMapLegend } from './crownLegend';
 import { implantMissing, implantRequestOf, isImplantTooth } from './implantTool';
 import { type CrownStatus, type LegendSpec, useToolStore } from './toolStore';
@@ -151,6 +153,7 @@ function buildRequest(ctx: BridgeContext, opts: BridgeRequestOptions): BridgeReq
       ...(t.implant ? { implant: implantRequestOf(t) } : {}),
       ...(opts.withPoses !== false && crown ? { pose: crown.pose } : {}),
       ...(adapt ? { adapt } : {}),
+      ...frameworkFields(doc, t.fdi),
     };
   });
   return {
@@ -204,7 +207,7 @@ function inputsOf(ctx: BridgeContext, map: string): unknown[] {
     ctx.antagonistSha,
     ctx.bridge,
     materialOf(ctx),
-    ...ctx.units.flatMap((t) => [t.frame, t.margin, t.axis, t.params, t.crown, t.steps.adapt, t.implant, t.screwChannel]),
+    ...ctx.units.flatMap((t) => [t.frame, t.margin, t.axis, t.params, t.crown, t.steps.adapt, t.implant, t.screwChannel, cutbackFor(ctx.doc, t.fdi)]),
     map,
   ];
 }
@@ -483,12 +486,13 @@ class BridgeTool {
     if (!result?.union || !teeth) return null;
     const { doc } = useDesignStore.getState();
     const caseRef = (doc.setup.patientRef || useSessionStore.getState().currentCase?.patientRef || 'case').replace(/[^\w.-]+/g, '_');
-    const base = `${caseRef}-${teeth[0]}-${teeth.at(-1)}-bridge`;
+    // With reduced units the merged solid is the framework bridge.
+    const base = `${caseRef}-${teeth[0]}-${teeth.at(-1)}-${result.units.some((u) => u.framework) ? 'framework' : 'bridge'}`;
     if (kind === 'stl') {
       downloadBytes(bridgeStl({ positions: result.union.positions, indices: result.union.indices }), `${base}.stl`, 'model/stl');
       return `${base}.stl`;
     }
-    const info = bridgeConstructionInfo({ doc, teeth, appVersion: APP_VERSION, result });
+    const info = { ...bridgeConstructionInfo({ doc, teeth, appVersion: APP_VERSION, result }), ...frameworkSidecar(result) };
     downloadBytes(JSON.stringify(info, null, 2), `${base}.construction.json`, 'application/json');
     return `${base}.construction.json`;
   }

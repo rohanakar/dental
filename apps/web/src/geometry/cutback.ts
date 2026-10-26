@@ -1,3 +1,5 @@
+// The veneer tolerance (larger protection pushes are shortfalls) and the unsupported-porcelain limit live in shared.
+import { MAX_UNSUPPORTED_VENEER_MM, VENEER_TOLERANCE_MM } from '@dcad/shared';
 import { crownAxes, type CrownDesign, type CrownFrame, type CrownValidation } from './crown';
 import type { CrownTemplate } from './crownTemplate';
 import { MinHeap } from './livewire';
@@ -36,7 +38,9 @@ import { distanceToLoop, enforceThickness, signedIntaglioDistance, thicknessProf
  *   enforceThickness guarantees the profile. That is the "insufficient
  *   veneering space" report.
  * - Repair: where the result still intersects itself, the displacement field
- *   (never the anatomy) is smoothed locally and protected again.
+ *   (never the anatomy) is smoothed locally and protected again; a fold that
+ *   survives (an offset that compresses tiny triangles, e.g. at a saddle whose
+ *   convex radius is close to S) has its framework positions relaxed instead.
  * The veneer is then measured, not assumed: anatomy vertex → framework surface.
  */
 
@@ -59,10 +63,6 @@ export const CUTBACK_FEATHER_MM = 0.5;
 export const CUTBACK_FACIAL_MIN_DOT = 0.3;
 /** facial and occlusal modes: the occlusal (incisal) third, template height fraction at or above this (feathered outward). */
 export const CUTBACK_OCCLUSAL_HEIGHT = 0.7;
-/** Veneer space is checked against the requested thickness within this tolerance; larger protection pushes are shortfalls. */
-export const VENEER_TOLERANCE_MM = 0.05;
-/** Veneer thicker than this is unsupported porcelain (a fracture risk); reported as a warning. */
-export const MAX_UNSUPPORTED_VENEER_MM = 2;
 
 /** Smoothing passes of the outer normals that give the cut direction. */
 const NORMAL_SMOOTHING = 4;
@@ -79,6 +79,12 @@ const BALL_BLEND_MM = 0.02;
 /** Repair: rounds of local displacement-field smoothing around self-intersecting faces, and the rings around them. */
 const FOLD_REPAIR_ROUNDS = 8;
 const FOLD_REPAIR_RINGS = 3;
+/** Repair rounds that smooth the displacement field before the rest relax the framework positions. */
+const FOLD_REPAIR_FIELD_ROUNDS = 4;
+/** Projected or relaxed vertices closer than their veneer minus this (mm) are moved back out to it. */
+const CLEARANCE_TOLERANCE_MM = 0.005;
+/** Passes moving framework triangles that cut a concave crease away from the anatomy. */
+const VENEER_CLEARANCE_PASSES = 3;
 /** Bisection steps of the protection's retraction along the cut (1/2^n of the cut depth). */
 const RETRACT_STEPS = 8;
 /** Mask values below this count as not cut back. */
@@ -104,6 +110,11 @@ export interface CutbackSurface {
   cervicalLoop: ArrayLike<number>;
   /** Per outer vertex (local id): 1 = never cut back, e.g. a pontic's ridge base when it lies in the outer range. */
   keep?: Uint8Array;
+  /**
+   * Also kept at full contour (feathered): the outer surface facing one of these directions (smoothed normal ·
+   * direction ≥ minDot) within a height-fraction band, e.g. a bridge unit's proximal side where a connector joins it.
+   */
+  keepFacing?: Array<{ direction: V3; minDot: number; heightFraction: [number, number] }>;
   /** Unit buccal (labial) direction of the tooth frame, for the facial mode. */
   buccal: V3;
   /** Fitting surface for the thickness protection (crowns). Omitted for pontics: they are solid. */
@@ -169,6 +180,11 @@ export interface CutbackResult {
   requestedMm: Float32Array;
   /** Per outer vertex: measured veneer space (anatomy vertex → framework outer surface); 0 where nothing is cut back. */
   veneerMm: Float32Array;
+  /**
+   * Per outer vertex: 1 where the veneer statistics or the shortfall count it (the full cutback away from the
+   * shoulder), 0 at the collar and over the taper to it (the feather and the veneer measured to the shoulder).
+   */
+  veneerCounted: Uint8Array;
   veneer: VeneerStats;
   /** Present when the framework minimum leaves less than the requested veneer somewhere ("insufficient veneering space"). */
   shortfall?: VeneerShortfall;
@@ -307,8 +323,8 @@ export interface CutbackMask {
  * facial: n·buccal > 0.3 on the smoothed normals, plus the occlusal third;
  * occlusal: height fraction ≥ 0.7). The region's edge is feathered outward
  * over CUTBACK_FEATHER_MM (smoothstep of the geodesic distance from the
- * region); the collar (within collarMm of the cervical loop, geodesic) and
- * `keep` are excluded, the collar's edge feathered inward. So the reduced
+ * region); the collar (within collarMm of the cervical loop, geodesic),
+ * `keep` and `keepFacing` are excluded, feathered inward. So the reduced
  * surface meets the full contour in a smooth shoulder. (Outward, because a
  * library tooth may be coarse just inside the occlusal third: the synthetic
  * posterior template has a 0.6 mm edge from its table rim to the first
@@ -341,12 +357,28 @@ export function cutbackMask(
   }
   const regionDistance = geodesicFrom(inRegion, graph, P, start, n, CUTBACK_FEATHER_MM * 2);
 
+  // Kept at full contour: `keep`, and the surfaces facing a keepFacing direction within its height band; feathered
+  // inward like the collar.
+  const kept: number[] = [];
+  for (let v = 0; v < n; v++) {
+    const h = surface.heightFraction[v]!;
+    const facing = (surface.keepFacing ?? []).some(
+      (k) =>
+        h >= k.heightFraction[0] &&
+        h <= k.heightFraction[1] &&
+        normals[v * 3]! * k.direction[0] + normals[v * 3 + 1]! * k.direction[1] + normals[v * 3 + 2]! * k.direction[2] >= k.minDot,
+    );
+    if (surface.keep?.[v] || facing) kept.push(v);
+  }
+  const keptDistance = kept.length > 0 ? geodesicFrom(kept, graph, P, start, n, CUTBACK_FEATHER_MM * 2) : null;
+
   const mask = new Float32Array(n);
   for (let v = 0; v < n; v++) {
     if (surface.keep?.[v]) continue;
     const collar = smoothstep(settings.collarMm, settings.collarMm + CUTBACK_FEATHER_MM, collarDistanceMm[v]!);
     const region = 1 - smoothstep(0, CUTBACK_FEATHER_MM, regionDistance[v]!);
-    mask[v] = collar * region;
+    const keep = keptDistance ? smoothstep(0, CUTBACK_FEATHER_MM, keptDistance[v]!) : 1;
+    mask[v] = collar * region * keep;
   }
   return { mask, collarDistanceMm };
 }
@@ -404,6 +436,13 @@ export function cutBack(surface: CutbackSurface, settings: CutbackSettings, fram
   const faceNormal = (f: number): V3 => {
     const ia = outerBvhIndices[f * 3]! * 3, ib = outerBvhIndices[f * 3 + 1]! * 3, ic = outerBvhIndices[f * 3 + 2]! * 3;
     return triNormal(A[ia]!, A[ia + 1]!, A[ia + 2]!, A[ib]!, A[ib + 1]!, A[ib + 2]!, A[ic]!, A[ic + 1]!, A[ic + 2]!);
+  };
+  /** q moved out to `depth` from the outer surface (away from its closest point), or null when it is that deep. */
+  const clearance = (q: V3, depth: number): V3 | null => {
+    const cp = outerRay.closestPoint(q, depth);
+    if (!cp || cp.distance >= depth - CLEARANCE_TOLERANCE_MM || cp.distance < 1e-6) return null;
+    const f = depth / cp.distance;
+    return [cp.point[0] + (q[0] - cp.point[0]) * f, cp.point[1] + (q[1] - cp.point[1]) * f, cp.point[2] + (q[2] - cp.point[2]) * f];
   };
   lap('prepare');
 
@@ -510,6 +549,14 @@ export function cutBack(surface: CutbackSurface, settings: CutbackSettings, fram
       }
       full.set(next);
     }
+    // The smoothing rounds the eroded body's concave creases (a fissure) toward the anatomy: move any projected vertex
+    // left closer than S back out to it, away from its closest anatomic point.
+    for (const v of thin) {
+      const o = (start + v) * 3;
+      const q: V3 = [A[o]! + full[v * 3]!, A[o + 1]! + full[v * 3 + 1]!, A[o + 2]! + full[v * 3 + 2]!];
+      const cleared = clearance(q, S);
+      if (cleared) for (let k = 0; k < 3; k++) full[v * 3 + k] = cleared[k]! - A[o + k]!;
+    }
   }
   const Q = new Float64Array(n * 3);
   for (let v = 0; v < n; v++) for (let k = 0; k < 3; k++) Q[v * 3 + k] = A[(start + v) * 3 + k]! + mask[v]! * full[v * 3 + k]!;
@@ -523,18 +570,54 @@ export function cutBack(surface: CutbackSurface, settings: CutbackSettings, fram
   }
 
   // Veneer space, measured: anatomic outer vertex → the framework's outer surface (the outer faces at `at`).
-  const measureVeneer = (at: Float32Array): Float32Array => {
-    const ray = bvhRayCaster(createBvh({ positions: at, indices: outerIndices.slice() }));
+  // `onShoulder` (optional): set to 1 where the closest framework face has a partly cut corner, i.e. the veneer is
+  // measured to the feathered shoulder, which slopes up to the full contour by design.
+  const measureVeneer = (at: Float32Array, onShoulder?: Uint8Array): Float32Array => {
+    const index = outerIndices.slice();
+    const ray = bvhRayCaster(createBvh({ positions: at, indices: index }));
     const out = new Float32Array(n);
     for (let v = 0; v < n; v++) {
       if (requestedMm[v]! <= 0) continue;
       const p: V3 = [A[(start + v) * 3]!, A[(start + v) * 3 + 1]!, A[(start + v) * 3 + 2]!];
       const cp = ray.closestPoint(p, 2 * maxRequested + 2 * rho + 1);
       out[v] = cp ? cp.distance : Number.NaN;
+      if (onShoulder && cp && cp.faceIndex >= 0) {
+        for (let k = 0; k < 3; k++) if (mask[index[cp.faceIndex * 3 + k]! - start]! < 0.999) onShoulder[v] = 1;
+      }
     }
     return out;
   };
-  const unprotectedVeneer = surface.fitting ? measureVeneer(positions.slice()) : undefined;
+
+  // Veneer clearance: across a sharp concave crease of the eroded body (a fissure) the framework's flat triangles cut
+  // the corner, nearer the anatomy than S although their vertices are S deep. Where a fully cut anatomic vertex is
+  // nearer the framework than its veneer, the closest framework triangle moves away from it by the deficit.
+  for (let pass = 0; pass < VENEER_CLEARANCE_PASSES; pass++) {
+    const index = outerIndices.slice();
+    const ray = bvhRayCaster(createBvh({ positions: positions.slice(), indices: index }));
+    const moves = new Map<number, V3>();
+    for (let v = 0; v < n; v++) {
+      const want = requestedMm[v]!;
+      if (mask[v]! < 0.999 || want <= 0) continue;
+      const o = (start + v) * 3;
+      const p: V3 = [A[o]!, A[o + 1]!, A[o + 2]!];
+      const cp = ray.closestPoint(p, want);
+      if (!cp || cp.faceIndex < 0 || cp.distance >= want - CLEARANCE_TOLERANCE_MM || cp.distance < 1e-6) continue;
+      const deficit = want - cp.distance;
+      const dir: V3 = [(cp.point[0] - p[0]) / cp.distance, (cp.point[1] - p[1]) / cp.distance, (cp.point[2] - p[2]) / cp.distance];
+      for (let k = 0; k < 3; k++) {
+        const u = index[cp.faceIndex * 3 + k]! - start;
+        if (!free(u) || mask[u]! < 0.999) continue;
+        const m = moves.get(u);
+        if (!m || deficit > Math.hypot(m[0], m[1], m[2])) moves.set(u, [dir[0] * deficit, dir[1] * deficit, dir[2] * deficit]);
+      }
+    }
+    if (moves.size === 0) break;
+    for (const [u, m] of moves) for (let k = 0; k < 3; k++) positions[(start + u) * 3 + k] = positions[(start + u) * 3 + k]! + m[k]!;
+  }
+  lap('clearance');
+  // Measured to the shoulder before or after the protection (the statistics leave these out; see below).
+  const onShoulder = new Uint8Array(n);
+  const unprotectedVeneer = surface.fitting ? measureVeneer(positions.slice(), onShoulder) : undefined;
 
   // Thickness protection: the framework minimum above the fitting surface wins over the veneer. Each vertex that is
   // too close to the fitting surface is first retracted along its own cut to where the framework profile holds
@@ -619,22 +702,44 @@ export function cutBack(surface: CutbackSurface, settings: CutbackSettings, fram
       }
       region = grow;
     }
+    // The first rounds smooth the displacement field (keeping the anatomy's shape); a fold that survives them sits
+    // where the offset compresses tiny triangles (a saddle whose convex radius is close to the cutback), and the
+    // later rounds relax the framework positions there tangentially (the move toward the neighbours' centroid
+    // without its component along the surface normal), which untangles it without moving the surface itself.
+    const tangential = round >= FOLD_REPAIR_FIELD_ROUNDS;
     for (let pass = 0; pass < 4; pass++) {
       const next = positions.slice(start * 3, surface.outerEnd * 3);
       for (let v = 0; v < n; v++) {
         if (!region[v] || !free(v)) continue;
         const s0 = graph.offsets[v]!, s1 = graph.offsets[v + 1]!;
+        const move: V3 = [0, 0, 0];
         for (let k = 0; k < 3; k++) {
           let sum = 0;
           for (let j = s0; j < s1; j++) {
             const u = graph.neighbors[j]!;
-            sum += positions[(start + u) * 3 + k]! - A[(start + u) * 3 + k]!;
+            sum += positions[(start + u) * 3 + k]! - (tangential ? 0 : A[(start + u) * 3 + k]!);
           }
-          const own = positions[(start + v) * 3 + k]! - A[(start + v) * 3 + k]!;
-          next[v * 3 + k] = A[(start + v) * 3 + k]! + 0.5 * own + (0.5 * sum) / Math.max(1, s1 - s0);
+          const own = positions[(start + v) * 3 + k]! - (tangential ? 0 : A[(start + v) * 3 + k]!);
+          move[k] = 0.5 * (sum / Math.max(1, s1 - s0) - own);
         }
+        if (tangential) {
+          const along = move[0] * normals[v * 3]! + move[1] * normals[v * 3 + 1]! + move[2] * normals[v * 3 + 2]!;
+          for (let k = 0; k < 3; k++) move[k] = move[k]! - along * normals[v * 3 + k]!;
+        }
+        for (let k = 0; k < 3; k++) next[v * 3 + k] = positions[(start + v) * 3 + k]! + move[k]!;
       }
       positions.set(next, start * 3);
+    }
+    {
+      // Smoothing a displacement field whose directions vary shortens it, and relaxation keeps the surface only to
+      // first order: where a fully cut vertex came closer than its veneer, it moves back out (not where the protection
+      // moved it back: the framework minimum wins there).
+      for (let v = 0; v < n; v++) {
+        if (!region[v] || !free(v) || mask[v]! < 0.999 || push[v]! > VENEER_TOLERANCE_MM) continue;
+        const o = (start + v) * 3;
+        const cleared = clearance([positions[o]!, positions[o + 1]!, positions[o + 2]!], requestedMm[v]!);
+        if (cleared) for (let k = 0; k < 3; k++) positions[o + k] = cleared[k]!;
+      }
     }
     protect(region);
     intersections = countSelfIntersections(reduced, { maxPairs: 4096 });
@@ -660,19 +765,14 @@ export function cutBack(surface: CutbackSurface, settings: CutbackSettings, fram
   else if (selfIntersections > 0) warnings.push(`The framework surface intersects itself (${selfIntersections} triangle pairs).`);
   lap('validate');
 
-  const veneerMm = measureVeneer(positions);
+  // The statistics cover the interior of the full cutback: fully cut vertices whose closest framework face is fully
+  // cut too, before and after the protection. Next to the feathered edge the veneer is measured to the shoulder,
+  // which slopes up to the full contour, so it is nearer than the requested thickness by construction (and where the
+  // protection then moved the faces beside the shoulder, the closest face can change to one of those).
+  const veneerMm = measureVeneer(positions, onShoulder);
   const areas = vertexAreas(A, start, n, faces);
-  // The statistics cover the interior of the full cutback: vertices with no partly cut vertex within the thickness
-  // (straight line, so across a curved line angle too). Nearer the feathered edge the shoulder slopes up and the
-  // closest framework point is nearer than the requested thickness by construction.
-  const anatomy64 = new Float64Array(n * 3);
-  const partial = new Uint8Array(n);
-  for (let v = 0; v < n; v++) {
-    for (let k = 0; k < 3; k++) anatomy64[v * 3 + k] = A[(start + v) * 3 + k]!;
-    partial[v] = mask[v]! < 0.999 ? 1 : 0;
-  }
-  const edgeIndex = new BallIndex(anatomy64, partial, 0);
-  const interior = (v: number) => !edgeIndex.anyWithin([anatomy64[v * 3]!, anatomy64[v * 3 + 1]!, anatomy64[v * 3 + 2]!], settings.thicknessMm);
+  const interior = (v: number) => mask[v]! >= 0.999 && !onShoulder[v];
+  const veneerCounted = new Uint8Array(n);
   const short = { vertices: 0, areaMm2: 0, minVeneerMm: Infinity, maxDeficitMm: 0, at: [0, 0, 0] as V3 };
   const stats = { vertices: 0, sum: 0, min: Infinity, max: -Infinity, within: 0, thin: 0, thick: 0, thickArea: 0, maxAnywhere: 0, offset: 0, offsetWithin: 0 };
   for (let v = 0; v < n; v++) {
@@ -689,9 +789,11 @@ export function cutBack(surface: CutbackSurface, settings: CutbackSettings, fram
       short.minVeneerMm = Math.min(short.minVeneerMm, got);
       short.maxDeficitMm = Math.max(short.maxDeficitMm, push[v]!, want - got);
       for (let k = 0; k < 3; k++) short.at[k] = short.at[k]! + areas[v]! * A[(start + v) * 3 + k]!;
+      veneerCounted[v] = 1;
       continue;
     }
     if (!Number.isFinite(got) || !interior(v)) continue;
+    veneerCounted[v] = 1;
     stats.vertices++;
     stats.sum += got;
     stats.min = Math.min(stats.min, got);
@@ -739,6 +841,7 @@ export function cutBack(surface: CutbackSurface, settings: CutbackSettings, fram
     mask,
     requestedMm,
     veneerMm,
+    veneerCounted,
     veneer,
     ...(shortfall ? { shortfall } : {}),
     ...(protection ? { protection } : {}),
@@ -796,24 +899,6 @@ class BallIndex {
    * The balls whose surface gap |p − c_u| − R is within `window` of the
    * smallest, as [id, gap] pairs, the best first (empty if none fits).
    */
-  /** Is any centre within distance r of p? */
-  anyWithin(p: V3, r: number): boolean {
-    if (this.ids.length === 0) return false;
-    const lo = [this.coord(p[0] - r, 0), this.coord(p[1] - r, 1), this.coord(p[2] - r, 2)];
-    const hi = [this.coord(p[0] + r, 0), this.coord(p[1] + r, 1), this.coord(p[2] + r, 2)];
-    for (let x = Math.max(0, lo[0]!); x <= Math.min(this.dims[0] - 1, hi[0]!); x++) {
-      for (let y = Math.max(0, lo[1]!); y <= Math.min(this.dims[1] - 1, hi[1]!); y++) {
-        for (let z = Math.max(0, lo[2]!); z <= Math.min(this.dims[2] - 1, hi[2]!); z++) {
-          const cell = this.cellIndex(x, y, z);
-          for (let k = this.cellStart[cell]!; k < this.cellStart[cell + 1]!; k++) {
-            const u = this.ids[k]!;
-            if (Math.hypot(p[0] - this.centre[u * 3]!, p[1] - this.centre[u * 3 + 1]!, p[2] - this.centre[u * 3 + 2]!) < r) return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
   near(p: V3, window: number): number[] {
     if (this.ids.length === 0) return [];
     const c = [this.coord(p[0], 0), this.coord(p[1], 1), this.coord(p[2], 2)] as const;

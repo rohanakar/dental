@@ -52,7 +52,7 @@ export function facingSide(a: number, b: number): ProximalSide {
   return b % 10 < a % 10 ? 'mesial' : 'distal';
 }
 
-export const RestorationType = z.enum(['anatomic-crown', 'pontic', 'implant-crown']);
+export const RestorationType = z.enum(['anatomic-crown', 'pontic', 'implant-crown', 'reduced-crown', 'reduced-pontic']);
 export type RestorationType = z.infer<typeof RestorationType>;
 
 /** What a unit is in a bridge: an abutment sits on a prep (retainer), a pontic replaces a missing tooth. */
@@ -64,6 +64,8 @@ export interface RestorationRole {
   connectors: boolean;
   /** When set, connectors are permitted only to units of these types. */
   connectsTo?: readonly RestorationType[];
+  /** A reduced (cut-back) unit: designed as the anatomy, then cut back by ToothDesign.cutback (framework.ts). */
+  reduced?: boolean;
 }
 
 /**
@@ -75,12 +77,14 @@ export const RESTORATION_ROLE: Record<RestorationType, RestorationRole> = {
   pontic: { role: 'pontic', connectors: true },
   /** Screw-retained on a library Ti-base: the scan-body match replaces the margin (specs/2026-10-25-implant-bridges.md). */
   'implant-crown': { role: 'abutment', connectors: true },
+  'reduced-crown': { role: 'abutment', connectors: true, reduced: true },
+  'reduced-pontic': { role: 'pontic', connectors: true, reduced: true },
 };
 
 /** Abutments supported by an implant (not a prepared tooth). A bridge may not mix the two supports. */
 export const isImplantRestoration = (restoration: RestorationType): boolean => restoration === 'implant-crown';
 
-export const Material = z.enum(['zirconia', 'lithium-disilicate', 'pmma']);
+export const Material = z.enum(['zirconia', 'lithium-disilicate', 'pmma', 'cocr', 'titanium']);
 export type Material = z.infer<typeof Material>;
 
 export interface BridgePreset {
@@ -100,6 +104,9 @@ export const BRIDGE_PRESETS: Record<Material, BridgePreset> = {
     indication: { maxUnits: 3, maxPosition: 5 },
   },
   pmma: { connectorMinAreaMm2: { anterior: 9, posterior: 12 }, connectorMinHeightMm: 3.0 },
+  // Metal frameworks (cobalt-chromium milled or SLM, titanium): placeholders to confirm with the lab and the alloy IFU.
+  cocr: { connectorMinAreaMm2: { anterior: 4, posterior: 6 }, connectorMinHeightMm: 3.0 },
+  titanium: { connectorMinAreaMm2: { anterior: 6, posterior: 9 }, connectorMinHeightMm: 3.0 },
 };
 
 export const minConnectorAreaMm2 = (material: Material, a: number, b: number): number =>
@@ -162,6 +169,29 @@ export const MATERIAL_PRESETS: Record<Material, DesignParams> = {
     distanceToMarginMm: 1.0,
     marginThicknessMm: 0.2,
     minThicknessMm: 1.0,
+    toolRadiusMm: 0.5,
+    occlusalClearanceMm: 0.05,
+    proximalContactMm: 0.02,
+    ponticRidgeGapMm: 0,
+  },
+  // Metal frameworks: minThicknessMm is the framework minimum under the veneer; cement gap and spacer as for zirconia.
+  cocr: {
+    cementGapMm: 0.03,
+    extraSpacerMm: 0.04,
+    distanceToMarginMm: 1.0,
+    marginThicknessMm: 0.1,
+    minThicknessMm: 0.3,
+    toolRadiusMm: 0.5,
+    occlusalClearanceMm: 0.05,
+    proximalContactMm: 0.02,
+    ponticRidgeGapMm: 0,
+  },
+  titanium: {
+    cementGapMm: 0.03,
+    extraSpacerMm: 0.04,
+    distanceToMarginMm: 1.0,
+    marginThicknessMm: 0.1,
+    minThicknessMm: 0.4,
     toolRadiusMm: 0.5,
     occlusalClearanceMm: 0.05,
     proximalContactMm: 0.02,
@@ -278,7 +308,7 @@ export interface BridgeValidation {
   warnings: BridgeIssue[];
 }
 
-const MATERIAL_LABEL: Record<Material, string> = { zirconia: 'Zirconia', 'lithium-disilicate': 'Lithium disilicate', pmma: 'PMMA' };
+const MATERIAL_LABEL: Record<Material, string> = { zirconia: 'Zirconia', 'lithium-disilicate': 'Lithium disilicate', pmma: 'PMMA', cocr: 'CoCr', titanium: 'Titanium' };
 
 /**
  * Check a setup's bridges. Any span, cantilevers, midline bridges and splinted crowns are valid; the errors are the

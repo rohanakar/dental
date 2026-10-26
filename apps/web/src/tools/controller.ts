@@ -10,6 +10,7 @@ import { crownTool } from './crownTool';
 import { gizmoTool } from './gizmoTool';
 import { errorText, toothContext } from './context';
 import { focusTool } from './focusTool';
+import { frameworkTool } from './frameworkTool';
 import { frameInteraction } from './frameTool';
 import { MARGIN_COLOR, marginTool } from './marginTool';
 import { implantTool, isImplantTooth } from './implantTool';
@@ -63,6 +64,7 @@ class DesignTools {
     axisTool.attach(viewer);
     crownTool.attach(viewer);
     bridgeTool.attach(viewer);
+    frameworkTool.attach(viewer);
     gizmoTool.attach(viewer);
     focusTool.attach(viewer);
     implantTool.attach(viewer);
@@ -76,6 +78,7 @@ class DesignTools {
     axisTool.attach(null);
     crownTool.attach(null);
     bridgeTool.attach(null);
+    frameworkTool.attach(null);
     gizmoTool.attach(null);
     focusTool.attach(null);
     implantTool.attach(null);

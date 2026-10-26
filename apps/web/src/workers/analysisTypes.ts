@@ -1,4 +1,5 @@
-import type { ConnectorDesign, CrownAdapt, DesignParams, Material, Pose, ProximalSide, UnitKind } from '@dcad/shared';
+import type { ConnectorDesign, CrownAdapt, Cutback, DesignParams, Material, Pose, ProximalSide, UnitKind } from '@dcad/shared';
+import type { FrameworkView, OverpressView } from './frameworkTypes';
 import type { BridgeChecks } from '../geometry/bridgeUnion';
 import type { ConnectorEnd, ConnectorFailure } from '../geometry/connectors';
 import type { GapCheck } from '../geometry/intaglio';
@@ -82,6 +83,10 @@ export interface CrownRequest {
   adapt?: CrownAdapt;
   /** Implant crowns: the Ti-base and the scan-body pose (the margin is then unused). */
   implant?: ImplantUnitRequest;
+  /** A reduced crown: its cutback (the result adds `framework`). */
+  cutback?: Cutback;
+  /** With a cutback that has overpress: also make the overpress part (loads the boolean engine). */
+  overpress?: boolean;
 }
 
 export interface AdaptConflict {
@@ -122,6 +127,8 @@ export interface CrownResult {
   ms: number;
   /** Implant crowns: the screw channel, the Ti-base fit and the restoration with the channel. */
   implant?: ImplantResultView;
+  /** A reduced unit: its framework (positions with the same indices) and the cutback report. */
+  framework?: FrameworkView;
 }
 
 /** Jaw faces to draw in focus while the crown is adjusted: the prep region inside the margin. */
@@ -242,6 +249,8 @@ export interface BridgeUnitRequest {
   centre?: V3;
   /** Implant crowns: the Ti-base and the scan-body pose, instead of a margin. */
   implant?: ImplantUnitRequest;
+  /** Reduced units: the cutback; their frameworks join the connectors and the union. */
+  cutback?: Cutback;
 }
 
 /** One bridge, designed in the worker. Units are cached by input hash: moving one unit recomputes it and its connectors. */
@@ -308,6 +317,8 @@ export interface BridgeResultView {
   union?: { positions: Float32Array; indices: Uint32Array; checks: BridgeChecks };
   /** With union: true, when the boolean engine refused the inputs: why (no `union`, nothing to export). */
   unionError?: string;
+  /** With union: true — the overpress part of each reduced unit with overpress. */
+  overpress?: OverpressView[];
   curve: ArchCurveView;
   warnings: string[];
   timingsMs: Record<string, number>;

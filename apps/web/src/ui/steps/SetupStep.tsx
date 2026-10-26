@@ -5,6 +5,7 @@ import {
   type CaseSetup,
   chartAdjacent,
   type FdiPair,
+  isReduced,
   Material,
   MATERIAL_PRESETS,
   normalizeConnections,
@@ -13,17 +14,21 @@ import {
   type RestorationType,
   unitKind,
   validateBridges,
+  withReduced,
 } from '@dcad/shared';
 import { useState } from 'react';
 import { useDesignStore } from '../../design/store';
 import { RxIntake } from '../ai/RxIntake';
 import { connectorState, ToothChart } from '../ToothChart';
+import { ReducedSwitch } from './FrameworkPanels';
 import '../bridge.css';
 
 export const MATERIAL_LABEL: Record<Material, string> = {
   zirconia: 'Zirconia',
   'lithium-disilicate': 'Lithium disilicate (e.max)',
   pmma: 'PMMA (temporary)',
+  cocr: 'CoCr (metal framework)',
+  titanium: 'Titanium (framework)',
 };
 
 // ---- setup edits (pure) -----------------------------------------------------------------------
@@ -125,21 +130,30 @@ export function SetupStep() {
 
   const kindSwitch = (fdi: number) => {
     const pontic = unitKind(setup, fdi) === 'pontic';
-    const implant = setup.teeth.find((t) => t.fdi === fdi)?.restoration === 'implant-crown';
+    const restoration = setup.teeth.find((t) => t.fdi === fdi)?.restoration ?? 'anatomic-crown';
+    const implant = restoration === 'implant-crown';
+    // A reduced unit stays reduced when it switches between crown and pontic.
+    const reduced = isReduced(restoration);
     const set = (restoration: RestorationType) =>
-      commit(setRestoration(setup, fdi, restoration), `${fdi} was not made a ${restoration === 'pontic' ? 'pontic' : restoration === 'implant-crown' ? 'implant crown' : 'crown'}`);
+      commit(
+        setRestoration(setup, fdi, withReduced(restoration, reduced)),
+        `${fdi} was not made a ${restoration === 'pontic' ? 'pontic' : restoration === 'implant-crown' ? 'implant crown' : 'crown'}`,
+      );
     return (
-      <div className="seg" role="group" aria-label={`Restoration for ${fdi}`}>
-        <button type="button" className="btn" aria-pressed={!pontic && !implant} onClick={() => (pontic || implant) && set('anatomic-crown')}>
-          Crown
-        </button>
-        <button type="button" className="btn" aria-pressed={implant} title="Screw-retained on a Ti-base" onClick={() => !implant && set('implant-crown')}>
-          Implant
-        </button>
-        <button type="button" className="btn" aria-pressed={pontic} onClick={() => !pontic && set('pontic')}>
-          Pontic
-        </button>
-      </div>
+      <>
+        <div className="seg" role="group" aria-label={`Restoration for ${fdi}`}>
+          <button type="button" className="btn" aria-pressed={!pontic && !implant} onClick={() => (pontic || implant) && set('anatomic-crown')}>
+            Crown
+          </button>
+          <button type="button" className="btn" aria-pressed={implant} title="Screw-retained on a Ti-base" onClick={() => !implant && set('implant-crown')}>
+            Implant
+          </button>
+          <button type="button" className="btn" aria-pressed={pontic} onClick={() => !pontic && set('pontic')}>
+            Pontic
+          </button>
+        </div>
+        <ReducedSwitch fdi={fdi} onSet={(r) => commit(setRestoration(setup, fdi, r), `${fdi} was not switched`)} />
+      </>
     );
   };
 

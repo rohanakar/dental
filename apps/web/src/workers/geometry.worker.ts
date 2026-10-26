@@ -46,6 +46,7 @@ import type {
   MarginTrace,
   SurfaceInfo,
 } from './analysisTypes';
+import { frameworkView, overpressViews, singleFramework } from './frameworkView';
 import { buildScanPayload, type ScanPayload } from './scanPayload';
 import { createImplantApi } from './implantApi';
 import { ScanRegistry, type RetainedScan } from './scanRegistry';
@@ -269,8 +270,9 @@ const api = {
   },
 
   /** Crown for the current design inputs (intaglio + placed template + margin band), validated. */
-  designCrown(request: CrownRequest): CrownResult {
+  async designCrown(request: CrownRequest): Promise<CrownResult> {
     const t0 = performance.now();
+    if (request.cutback?.overpress && request.overpress) await initMeshBoolean({ wasmUrl: manifoldWasmUrl });
     const scan = registry.get(request.jawSha);
     const antagonist = request.antagonistSha && registry.has(request.antagonistSha) ? registry.get(request.antagonistSha) : null;
     const region = regionFor(scan, request.margin, request.frame.occlusal);
@@ -288,14 +290,20 @@ const api = {
       maps: request.maps,
       adapt: request.adapt,
     });
+    // A reduced crown: its framework (and overpress part), before the crown's buffers are transferred.
+    const frameworkBuffers: ArrayBuffer[] = [];
+    const framework = request.cutback
+      ? singleFramework({ fdi: request.fdi, design, frame: request.frame, cutback: request.cutback, params: request.params, overpress: Boolean(request.overpress), transfer: frameworkBuffers })
+      : undefined;
     const { mesh, ...rest } = design;
-    const result: CrownResult = { ...rest, positions: mesh.positions, indices: mesh.indices, ms: performance.now() - t0 };
+    const result: CrownResult = { ...rest, positions: mesh.positions, indices: mesh.indices, ms: performance.now() - t0, ...(framework ? { framework } : {}) };
     const mapBuffers = Object.values(design.maps ?? {}).map((m) => (m as Float32Array).buffer as ArrayBuffer);
     return Comlink.transfer(result, [
       mesh.positions.buffer as ArrayBuffer,
       mesh.indices.buffer as ArrayBuffer,
       design.moveWeights.buffer as ArrayBuffer,
       ...mapBuffers,
+      ...frameworkBuffers,
     ]);
   },
 
@@ -412,6 +420,7 @@ const api = {
         ...(r.layout ? { layout: r.layout } : {}),
         cached: r.cached,
         ms: r.ms,
+        ...(r.framework ? { framework: frameworkView(r.framework, transfer, true) } : {}),
       };
     });
     const connectorViews = design.connectors.map((c): BridgeConnectorView => {
@@ -425,6 +434,7 @@ const api = {
       connectors: connectorViews,
       ...(union ? { union } : {}),
       ...(design.unionError ? { unionError: design.unionError } : {}),
+      ...(design.overpress ? { overpress: overpressViews(design.overpress, transfer) } : {}),
       curve: design.curve,
       warnings: design.warnings,
       timingsMs: design.timingsMs,

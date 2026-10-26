@@ -34,6 +34,7 @@ import {
   type ProcessedScan,
   type V3,
 } from '@dcad/web/geometry';
+import { caseCutback, frameworkChecks, type FrameworkMetrics } from './frameworkPipeline';
 import type { GoldenCase } from './golden';
 import {
   ADAPT_TOLERANCE_MM,
@@ -142,14 +143,18 @@ export interface BridgeCaseMetrics {
     deltaMaxMm: number;
   }>;
   ponticBase: Array<{ fdi: number; samples: number; minGapMm: number; meanGapMm: number; targetMm: number }>;
+  /** Reduced units: framework, veneer space, shortfall, overpress and reassembly (frameworkPipeline.ts). */
+  framework?: FrameworkMetrics;
   warnings: string[];
   checks: QaCheck[];
 }
 
 export interface BridgeCaseResult {
   metrics: BridgeCaseMetrics;
-  /** Binary STL of the merged bridge. */
+  /** Binary STL of the merged bridge (with reduced units: the framework bridge). */
   bridgeStl: Uint8Array;
+  /** Reduced units with overpress: one binary STL each. */
+  overpressStls?: Array<{ fdi: number; stl: Uint8Array }>;
 }
 
 const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -296,6 +301,9 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
         ...(a.frame.distalContact ? { distal: contactTarget } : {}),
       },
     };
+  }).map((unit) => {
+    const cutback = caseCutback(spec, bridgeSpec.units.find((u) => u.fdi === unit.fdi)!.restoration);
+    return cutback ? { ...unit, cutback } : unit;
   });
   const result = await time('designBridge', () =>
     designBridge({
@@ -417,6 +425,7 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
   for (const p of union.checks.ponticBase) {
     check(`ponticBase.${p.fdi}`, p.ok, `Pontic ${p.fdi}: smallest base gap to the ridge, within the target −0.02/+0.05 mm (mm)`, p.minGapMm, round(p.targetMm - 0.02));
   }
+  const framework = await time('framework', () => frameworkChecks(result, check));
 
   const metrics: BridgeCaseMetrics = {
     id: spec.id,
@@ -489,8 +498,9 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
       deltaMaxMm: round(s.deltaMaxMm, 6),
     })),
     ponticBase: union.checks.ponticBase.map((p) => ({ fdi: p.fdi, samples: p.samples, minGapMm: round(p.minGapMm, 5), meanGapMm: round(p.meanGapMm, 5), targetMm: p.targetMm })),
+    ...(framework ? { framework: framework.metrics } : {}),
     warnings: result.warnings,
     checks,
   };
-  return { metrics, bridgeStl };
+  return { metrics, bridgeStl, ...(framework ? { overpressStls: framework.overpressStls } : {}) };
 }

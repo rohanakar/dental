@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { minConnectorAreaMm2 } from '@dcad/shared';
 import { afterAll, describe, expect, it } from 'vitest';
 import { runBridgeCase } from './bridgePipeline';
+import { writeSyntheticFrameworkCase } from './frameworkGolden';
 import { writeSyntheticBridgeCase, writeSyntheticCase } from './golden';
 import { runCase } from './pipeline';
 import { writeSyntheticImplantCase } from './implantGolden';
@@ -67,6 +68,30 @@ describe('pipeline runner', () => {
       expect(toward).toBeGreaterThan(0.5);
     }
     expect(bridgeStl.byteLength).toBe(84 + 50 * metrics.union!.triangles);
+  });
+
+  // The framework variant of 35–[36]–37: reduced crowns and a reduced pontic in CoCr, cut back 1.0 mm, with overpress.
+  it('passes every check on the synthetic framework bridge (CoCr)', async () => {
+    const spec = writeSyntheticFrameworkCase(join(dir, 'framework'), { along: 600, across: 160 });
+    const { metrics, overpressStls } = await runBridgeCase(spec, join(dir, 'framework'));
+    expect(metrics.checks.filter((c) => !c.passed)).toEqual([]);
+    // The framework bridge is one closed, printable solid; its connectors meet the CoCr minimum.
+    expect(metrics.union).toMatchObject({ closed: true, printable: true, components: 1, genus: 0 });
+    for (const c of metrics.connectors) expect(c.measured!.minAreaMm2).toBeGreaterThanOrEqual(minConnectorAreaMm2('cocr', c.between[0], c.between[1]));
+    // Every unit is reduced: a printable framework at least 0.3 mm thick, veneer never thinner than requested outside
+    // the reported shortfall and 1.0 ± 0.05 mm where offset, and a printable overpress part.
+    const units = metrics.framework!.units;
+    expect(units.map((u) => u.fdi)).toEqual([35, 36, 37]);
+    for (const u of units) {
+      expect(u.framework.printable).toBe(true);
+      expect(u.protection?.minSlackMm ?? 0).toBeGreaterThanOrEqual(-0.02);
+      expect(u.veneer.thinVertices).toBe(0);
+      expect(u.veneer.offsetWithinTolerance).toBeGreaterThanOrEqual(0.99);
+      expect(u.overpress).toMatchObject({ printable: true, components: 1 });
+    }
+    // Framework ∪ overpress gives the anatomy back.
+    expect(metrics.framework!.reassembly!.hausdorffMm).toBeLessThanOrEqual(0.05);
+    expect(overpressStls!.length).toBe(3);
   });
 
   // 35i–[36]–37i on Ti-bases: scan-body registration against the true poses, the common path over 8.7° of divergence,

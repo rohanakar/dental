@@ -9,6 +9,7 @@ import type { AdaptReportView } from '../../workers/analysisTypes';
 import { BridgeConnectors, BridgeResultPanel, connectedTo, useActiveBridge } from './BridgePanels';
 import { CrownStatusView } from './CrownStatusView';
 import { FocusControls, MapSelect, ReadaptNotice } from './CrownViewControls';
+import { CutbackPanel } from './FrameworkPanels';
 import './NudgePad.css';
 
 const SIDES = [
@@ -140,6 +141,7 @@ function AdaptPanel() {
           Reset adaptation{bridge ? ` of ${tooth.fdi}` : ''}
         </button>
       </div>
+      <CutbackPanel />
       <CrownStatusView />
       {bridge && <BridgeConnectors />}
       <fieldset className="view-controls">

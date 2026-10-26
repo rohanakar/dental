@@ -248,3 +248,12 @@ fixture generator runs with tsx. See [2026-10-25-bridge-mode.md](2026-10-25-brid
 - The synthetic library only: no vendor geometry. 104 tests.
 
 See [2026-10-25-implant-bridges.md](2026-10-25-implant-bridges.md).
+
+**2026-10-26: framework bridges.** Reduced (cut-back) crowns and pontics for layering or pressing.
+- CoCr and titanium materials.
+- Veneer space measured, with an insufficient-veneering-space report.
+- Framework bridges joined by connectors.
+- Overpress parts.
+- Framework and overpress export.
+
+105 tests. See [2026-10-25-framework-bridges.md](2026-10-25-framework-bridges.md).

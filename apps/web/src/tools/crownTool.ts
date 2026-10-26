@@ -8,7 +8,9 @@ import { useSessionStore } from '../state/session';
 import type { CrownMapName, CrownRequest, CrownResult } from '../workers/analysisTypes';
 import { analysis } from '../workers/geometryClient';
 import { isStale } from '../workers/latestWins';
+import { cutbackFor } from '../design/framework';
 import { bridgeTool } from './bridgeTool';
+import { frameworkTool } from './frameworkTool';
 import { errorText, fromMarginPoints, toothContext, type ToothContext } from './context';
 import { CROWN_MAPS, crownMapLegend } from './crownLegend';
 import { implantCrownRequest } from './implantTool';
@@ -58,13 +60,16 @@ function request(ctx: ToothContext, withPose: boolean, map: CrownMapName | 'none
     pose: withPose && crown?.kind === 'template' ? crown.pose : undefined,
     maps: map === 'none' ? undefined : [map],
     adapt: withPose ? activeAdapt(ctx.tooth) : undefined,
+    // A reduced crown is cut back on top of its anatomy (frameworkTool shows it).
+    cutback: cutbackFor(useDesignStore.getState().doc, ctx.fdi),
   };
 }
 
 /** Everything the derived crown depends on; a change of any entry recomputes it. */
 function inputsOf(ctx: ToothContext | null): unknown[] {
   const t = ctx?.tooth;
-  return [ctx?.jaw.sha256, ctx?.antagonist?.sha256, t?.frame, t?.margin, t?.axis, t?.params, t?.crown, t?.steps.adapt, useToolStore.getState().crownMap, t?.implant, t?.screwChannel];
+  const cutback = ctx ? cutbackFor(useDesignStore.getState().doc, ctx.fdi) : undefined;
+  return [ctx?.jaw.sha256, ctx?.antagonist?.sha256, t?.frame, t?.margin, t?.axis, t?.params, t?.crown, t?.steps.adapt, useToolStore.getState().crownMap, t?.implant, t?.screwChannel, cutback];
 }
 
 /**
@@ -102,6 +107,7 @@ class CrownTool {
     if (bridgeTool.handles()) {
       this.clear(false);
       bridgeTool.sync(step);
+      frameworkTool.sync(step);
       return;
     }
     bridgeTool.clear();
@@ -117,6 +123,7 @@ class CrownTool {
       this.applyPreview();
     }
     this.applyVisibility(step);
+    frameworkTool.sync(step);
   }
 
   /** Called after each newly displayed crown result. Returns an unsubscribe function. */
@@ -181,12 +188,14 @@ class CrownTool {
     const step = useDesignStore.getState().activeStep;
     if (bridgeTool.handles()) bridgeTool.applyVisibility(step);
     else this.applyVisibility(step);
+    frameworkTool.sync(step);
   }
 
   setOpacity(opacity: number): void {
     useToolStore.getState().set({ crownOpacity: opacity });
     this.viewer?.setObjectOpacity(CROWN_OBJECT_ID, opacity);
     bridgeTool.setOpacity(opacity);
+    frameworkTool.sync(useDesignStore.getState().activeStep);
   }
 
   /**
@@ -202,13 +211,15 @@ class CrownTool {
     const { doc } = useDesignStore.getState();
     const caseRef = (doc.setup.patientRef || useSessionStore.getState().currentCase?.patientRef || 'case').replace(/[^\w.-]+/g, '_');
     const base = `${caseRef}-${ctx.fdi}`;
+    // A reduced crown is delivered as its framework.
+    if (kind === 'stl' && last.framework) return frameworkTool.exportFramework();
     if (kind === 'stl') {
       // An implant crown is exported with its screw channel.
       const solid = last.implant?.cut ?? last;
       downloadBytes(crownStl({ positions: solid.positions, indices: solid.indices }), `${base}.stl`, 'model/stl');
       return `${base}.stl`;
     }
-    const info = constructionInfo({ doc, tooth: ctx.tooth, appVersion: APP_VERSION, result: last });
+    const info = { ...constructionInfo({ doc, tooth: ctx.tooth, appVersion: APP_VERSION, result: last }), ...frameworkTool.sidecar([{ fdi: ctx.fdi, framework: last.framework }]) };
     downloadBytes(JSON.stringify(info, null, 2), `${base}.construction.json`, 'application/json');
     return `${base}.construction.json`;
   }
@@ -238,7 +249,7 @@ class CrownTool {
    * Compute the crown (with maps) for the current document without changing
    * what is displayed, e.g. for design metrics. Null without a crown.
    */
-  async evaluate(maps: CrownMapName[]): Promise<CrownResult | null> {
+  async evaluate(maps: CrownMapName[], extra: Pick<CrownRequest, 'overpress'> = {}): Promise<CrownResult | null> {
     const ctx = toothContext();
     if (!ctx?.tooth.crown) return null;
     if (bridgeTool.handles()) {
@@ -248,7 +259,7 @@ class CrownTool {
     }
     const req = request(ctx, true, 'none');
     if (!req) return null;
-    return analysis.designCrownUnlatched({ ...req, maps });
+    return analysis.designCrownUnlatched({ ...req, maps, ...extra });
   }
 
   /** Current crown mesh (for tests and export); in a bridge, the active unit's. */

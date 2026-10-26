@@ -5,8 +5,11 @@
  *
  * --synthetic first writes the synthetic cases (no patient data) into
  * data/golden: synthetic-36, the bridges synthetic-bridge-35-37 and
- * synthetic-bridge-12-22, and the implant bridge synthetic-implant-bridge-35-37. Each case writes <out>/<id>/metrics.json and
- * crown.stl (a bridge case: bridge.stl). --auto also runs every case with the
+ * synthetic-bridge-12-22, the implant bridge synthetic-implant-bridge-35-37 and
+ * the CoCr framework variant synthetic-framework-35-37. Each case writes
+ * <out>/<id>/metrics.json and crown.stl (a bridge case: bridge.stl; a
+ * framework bridge: framework.stl and overpress-<fdi>.stl). --auto also runs
+ * every case with the
  * automatic margin (classical.margin-ridge) instead of the scripted anchors,
  * writing <out>/<id>-auto/. Exits 1 if any check fails or a case errors.
  */
@@ -15,6 +18,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { runBridgeCase } from './bridgePipeline';
+import { SYNTHETIC_FRAMEWORK_ID, writeSyntheticFrameworkCase } from './frameworkGolden';
 import { GoldenCase, SYNTHETIC_BRIDGES, writeSyntheticBridgeCase, writeSyntheticCase, type SyntheticBridgeKind } from './golden';
 import { runCase } from './pipeline';
 import { GoldenImplantCase, SYNTHETIC_IMPLANT_BRIDGE, writeSyntheticImplantCase } from './implantGolden';
@@ -48,6 +52,10 @@ if (values.synthetic) {
   const t2 = performance.now();
   await writeSyntheticImplantCase(implantDir);
   console.log(`wrote ${implantDir} (${Math.round(performance.now() - t2)} ms)`);
+  const frameworkDir = join(casesDir, SYNTHETIC_FRAMEWORK_ID);
+  const t3 = performance.now();
+  writeSyntheticFrameworkCase(frameworkDir);
+  console.log(`wrote ${frameworkDir} (${Math.round(performance.now() - t3)} ms)`);
 }
 
 if (!existsSync(casesDir)) {
@@ -92,7 +100,9 @@ for (const id of ids) {
       } else if (spec.bridge) {
         const result = await runBridgeCase(spec, dir, { auto });
         metrics = result.metrics;
-        writeFileSync(join(caseOut, 'bridge.stl'), result.bridgeStl);
+        // A framework bridge: the union is the framework, plus one overpress part per unit with overpress.
+        writeFileSync(join(caseOut, result.metrics.framework ? 'framework.stl' : 'bridge.stl'), result.bridgeStl);
+        for (const o of result.overpressStls ?? []) writeFileSync(join(caseOut, `overpress-${o.fdi}.stl`), o.stl);
         title = `bridge ${result.metrics.teeth.join('–')}, ${auto ? 'auto' : 'scripted'} margins`;
       } else {
         const result = await runCase(spec, dir, { auto });

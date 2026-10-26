@@ -299,6 +299,15 @@
   flex: 0 1 auto;
 }
 
+/* With the Anatomic/Reduced switch a unit's row can be wider than the panel: the rest wraps under it. */
+.unit-row {
+  flex-wrap: wrap;
+}
+
+.unit-row .unit-material {
+  flex: 1 1 8em;
+}
+
 /* ---- step list ------------------------------------------------------------- */
 
 .step-note {

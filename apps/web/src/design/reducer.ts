@@ -28,6 +28,7 @@ import {
 } from '@dcad/shared';
 import { axisVector, crownCentre, directionVector, movePose, rotatePose, scaleIndex, scalePose, templateHeight } from './clinical';
 import { newTooth } from './document';
+import { setCutback } from './framework';
 import { requireNaturalPrep, setImplant, setScrewChannel, switchSupport, syncEngaging } from './implant';
 
 export class CommandError extends Error {
@@ -314,6 +315,8 @@ export function applyCommand(doc: DesignDocument, cmd: Command): DesignDocument 
       return invalidateBridge(setImplant(doc, cmd, (d, fdi, f) => updateTooth(d, fdi, f), markDone), cmd.fdi, 'margin');
     case 'setScrewChannel':
       return setScrewChannel(doc, cmd, (d, fdi, f) => updateTooth(d, fdi, f), markStaleFrom);
+    case 'setCutback':
+      return setCutback(doc, cmd, (message) => new CommandError(message));
     case 'runStep':
       throw new CommandError(`Command "${cmd.type}" is not supported yet`);
   }

@@ -5,6 +5,7 @@ import {
   minConnectorAreaMm2,
   type ConnectorDesign,
   type CrownAdapt,
+  type Cutback,
   type DesignParams,
   type Material,
   type Pose,
@@ -17,6 +18,7 @@ import { designConnector, type ConnectorGeometry, type ConnectorUnit } from './c
 import { designCrown, proposeCrownPoseFor, type CrownDesign, type CrownFrame, type CrownInput } from './crown';
 import type { CrownMapName } from './crownMaps';
 import { templateForTooth, type CrownTemplate } from './crownTemplate';
+import { applyFrameworks, assemblyMesh, bridgeOverpress, type UnitFramework, type UnitOverpress } from './framework';
 import type { IndexedMesh } from './mesh';
 import { meshBooleanReady, unionMeshes } from './meshBoolean';
 import type { V3 } from './pca';
@@ -324,6 +326,8 @@ export interface BridgeUnitInput {
   template?: CrownTemplate;
   /** Implant crowns (abutments): the Ti-base, the scan-body pose and the screw channel, instead of a margin. */
   implant?: ImplantUnit;
+  /** Reduced units: the cutback; the framework joins the connectors and the union (framework.ts). */
+  cutback?: Cutback;
 }
 
 export interface BridgeInput {
@@ -363,6 +367,8 @@ export interface BridgeUnitResult {
   connectedSides: ProximalSide[];
   cached: boolean;
   ms: number;
+  /** Reduced units: the framework (the design keeps the anatomy). */
+  framework?: UnitFramework;
 }
 
 export interface BridgeConnectorResult extends ConnectorGeometry {
@@ -381,6 +387,8 @@ export interface BridgeResult {
   union?: { mesh: IndexedMesh; checks: BridgeChecks };
   /** With `union: true`, when the boolean engine refused the inputs: why (there is then no `union`). */
   unionError?: string;
+  /** With `union: true`: the overpress of each reduced unit with `cutback.overpress` (framework.ts). */
+  overpress?: UnitOverpress[];
   curve: { kind: ArchCurve['kind']; lengthMm: number; midlineS: number | null; rmsMm: number };
   warnings: string[];
   timingsMs: Record<string, number>;
@@ -637,6 +645,9 @@ export function designBridge(input: BridgeInput): BridgeResult {
     }
     lap('pontics');
   }
+  // Reduced units: the connectors and the union use their frameworks.
+  applyFrameworks(work, units, cache, warnings);
+  lap('frameworks');
 
   // 3. Connectors.
   const minHeightMm = BRIDGE_PRESETS[material].connectorMinHeightMm;
@@ -653,7 +664,7 @@ export function designBridge(input: BridgeInput): BridgeResult {
     if (!geometry) {
       const unitOf = (w: UnitWork): ConnectorUnit => ({
         fdi: w.result.fdi,
-        mesh: w.result.design.mesh,
+        mesh: assemblyMesh(w.result),
         shellStart: w.result.design.shellStart,
         solid: w.solid,
         inner: w.inner,
@@ -685,11 +696,12 @@ export function designBridge(input: BridgeInput): BridgeResult {
   // 4. Union and checks. A union the engine refuses is reported (unionError), not thrown: nothing is exported then.
   let union: BridgeResult['union'];
   let unionError: string | undefined;
+  let overpress: UnitOverpress[] | undefined;
   if (input.union) {
     if (!meshBooleanReady()) throw new Error('Mesh booleans are not initialized: await initMeshBoolean() before a bridge union');
     let mesh: IndexedMesh | undefined;
     try {
-      mesh = unionMeshes([...unitResults.map((r) => unionMeshOf(r.design)), ...connectors.map((c) => c.mesh)]);
+      mesh = unionMeshes([...unitResults.map((r) => (r.framework ? assemblyMesh(r) : unionMeshOf(r.design))), ...connectors.map((c) => c.mesh)]);
     } catch (error) {
       unionError = `The bridge could not be merged into one solid: ${(error as Error).message}`;
       warnings.push(unionError);
@@ -707,6 +719,8 @@ export function designBridge(input: BridgeInput): BridgeResult {
       warnings.push(...checks.failures.filter((f) => !warnings.includes(f)));
       union = { mesh, checks };
       lap('checks');
+      overpress = bridgeOverpress(unitResults, connectors.map((c) => c.mesh), warnings);
+      lap('overpress');
     }
   }
 
@@ -715,6 +729,7 @@ export function designBridge(input: BridgeInput): BridgeResult {
     connectors,
     ...(union ? { union } : {}),
     ...(unionError ? { unionError } : {}),
+    ...(overpress?.length ? { overpress } : {}),
     curve: { kind: curve.kind, lengthMm: curve.lengthMm, midlineS: curve.midlineS, rmsMm: curve.rmsMm },
     warnings,
     timingsMs: timings,

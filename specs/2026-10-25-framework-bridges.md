@@ -1,6 +1,6 @@
 # Framework bridges (reduced crowns and pontics, overpress, pressed pontics)
 
-Status: **in progress** (2026-10-25). Phase A (cutback and overpress geometry) has landed; phase B (schemas, reducer, metals, worker, UI, runner variant) is next.
+Status: **in progress** (2026-10-26). Phases A and B have landed: reduced crowns, pontics and framework bridges in the editor, the runner and export. The AI items (cutback proposer and gate, agent metrics) are next.
 Depends on: [2026-10-25-bridge-mode.md](2026-10-25-bridge-mode.md) (units, connectors, union, unit kinds).
 
 ## Goal
@@ -227,3 +227,43 @@ Also:
   - The overpress boolean leaves float32 micro-voids, under 1e-6 mm³ (reported, excluded from the Hausdorff).
   - Incisal porcelain of 2.3–2.5 mm needs domain QA.
   - Phase B needs `crown.ts` to expose `outerRing`, the intaglio triangle range and the shell height fractions.
+
+### Phase B (2026-10-26): reduced units in the editor, metals, framework bridges, export
+- **Shared** (`packages/shared/src/framework.ts`, plus additive edits):
+  - `reduced-crown` and `reduced-pontic` types.
+  - The `cocr` and `titanium` materials with placeholder presets.
+  - `ToothDesign.cutback` and the `SetCutback` command (agent tool `set_cutback`).
+- **Reducer:** switching anatomic ↔ reduced keeps the design; `setCutback` leaves the steps unchanged, like
+  connectors do.
+- **Geometry** (`geometry/framework.ts`):
+  - Cutback after the anatomic unit; reduced units in `designBridge` and the union.
+  - Connector-joint keep zones: the proximal face stays at full contour inside a 37° cone over 10–90% of the
+    height, on connected sides.
+  - Overpress = anatomy − its own framework − the connectors.
+  - Repair and veneer statistics refined: a vertex counts as interior only if it and its closest framework face are
+    fully cut, before and after protection.
+- **UI:** an Anatomic/Reduced switch in Setup (hidden for implant crowns); the cutback panel; the Anatomy / Framework
+  / Both view; the veneer colour map; Finalize exports the framework STL, the overpress STLs and a sidecar.
+- **Runner:** `synthetic-framework-35-37` (CoCr), plus one test, "passes every check on the synthetic framework
+  bridge (CoCr)" (104 → 105):
+  - thinVertices 0, offsetWithinTolerance 1.0
+  - printable framework and overpress
+  - union of genus 0
+  - connectors 6.0 mm² against the CoCr minimum of 6
+  - reassembly 0.0002 mm
+- **Verified on the integrated tree:** typecheck, 105 tests, build, runner 5/5 (the existing outputs are
+  byte-identical), and the browser tests `bridge.mjs` 28/28, `ai-bridge.mjs` 16/16 and `implant.mjs` 31/31. The
+  agent's own browser check passes 22 checks: a reduced CoCr single crown and bridge, the views, cutback edits, and
+  the framework and overpress export.
+- **Verification-plan wording** (replaces the phase A "thickness ± 0.05"):
+  - Veneer ≥ S − 0.05 on the full cutback outside the reported shortfall, and S ± 0.05 on ≥ 99% of the offset
+    region.
+  - Veneer over 2 mm is a warning.
+  - The runner never asserts "no shortfall": the synthetic prep walls are thinner than the CoCr minimum, which
+    leaves a 7.7 mm² shortfall on 35.
+- **Open:**
+  - The joint keep-zone cone and height band need lab confirmation.
+  - Reduced implant crowns are not supported.
+  - The framework browser script (agent scratchpad) is not yet in `tools/e2e`.
+  - AI items: the `classical.cutback@1` proposer and gate, agent metrics for veneer and shortfall, a `qa.test.ts`
+    extension, and Rx wording for CoCr and metal-ceramic.

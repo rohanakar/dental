@@ -12,6 +12,7 @@ import {
   type ProximalSide,
   type UnitKind,
 } from './case';
+import { Cutback } from './framework';
 import { MeshRef, Pose, Vec3 } from './geometry';
 
 export const SCHEMA_VERSION = 1 as const;
@@ -164,6 +165,8 @@ export const ToothDesign = z.object({
   /** Implant crowns: the screw channel; omitted = straight. */
   screwChannel: ScrewChannel.optional(),
   steps: z.record(StepId, StepStatus),
+  /** Reduced units: how the anatomy is cut back (omitted = CUTBACK_DEFAULTS). Kept when the unit switches back to anatomic. */
+  cutback: Cutback.optional(),
 });
 export type ToothDesign = z.infer<typeof ToothDesign>;
 

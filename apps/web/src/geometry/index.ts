@@ -48,6 +48,7 @@ export * from './tiBase';
 // Framework bridges: cutback (reduced units) and overpress (needs the boolean engine).
 export * from './cutback';
 export * from './overpress';
+export * from './framework';
 
 // Implant crowns and bridges: emergence on the Ti-base, screw channels, the common path over implant axes.
 export * from './implantCrown';

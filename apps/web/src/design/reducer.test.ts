@@ -1,5 +1,5 @@
 import type { Command, Crown, InsertionAxis, MarginLine, Pose, ScanRef, ToothFrame } from '@dcad/shared';
-import { MATERIAL_PRESETS } from '@dcad/shared';
+import { CUTBACK_DEFAULTS, MATERIAL_PRESETS } from '@dcad/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { activeAdapt, adaptationStale, readaptCommands } from './adaptation';
 import { newDocument } from './document';
@@ -137,6 +137,17 @@ describe('applyCommand', () => {
     doc = applyCommand(doc, { type: 'setCaseSetup', setup: { ...doc.setup, teeth: doc.setup.teeth.filter((t) => t.fdi !== 37) } });
     expect(doc.bridges).toEqual([{ teeth: [35, 36], connectors: [{ between: [35, 36], areaMm2: 12, ...offsets }] }]);
     expect(tooth(35).steps.axis).toBe('stale');
+
+    // Switching to a reduced (framework) unit keeps the whole design. The cutback applies to reduced units only and,
+    // derived on top of the adapted unit like a connector, leaves every step as it is.
+    const anatomic = tooth(35);
+    const reduced = doc.setup.teeth.map((t) => (t.fdi === 35 ? { ...t, restoration: 'reduced-crown' as const } : t));
+    doc = applyCommand(doc, { type: 'setCaseSetup', setup: { ...doc.setup, teeth: reduced } });
+    expect(tooth(35)).toEqual(anatomic);
+    expect(() => applyCommand(doc, { type: 'setCutback', fdi: 36, thicknessMm: 1.2 })).toThrow(CommandError);
+    doc = applyCommand(doc, { type: 'setCutback', fdi: 35, mode: 'facial', thicknessMm: 1.2 });
+    expect(tooth(35).cutback).toEqual({ ...CUTBACK_DEFAULTS, mode: 'facial', thicknessMm: 1.2 });
+    expect(tooth(35).steps).toEqual(anatomic.steps);
 
     // Implant bridges: no bridge on both implants and prepared teeth; an implant unit's position step holds its
     // scan-body match (never a margin), on a non-engaging Ti-base; its screw channel stays within the library maximum.

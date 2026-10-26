@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Fdi, FdiPair, jawOf, Material, RestorationType, Vec3 } from '@dcad/shared';
+import { Cutback, Fdi, FdiPair, jawOf, Material, RestorationType, Vec3 } from '@dcad/shared';
 import { syntheticArch, syntheticPrepMargin, syntheticPrepSeed, writeBinaryStl } from '@dcad/web/geometry';
 import { z } from 'zod';
 
@@ -56,6 +56,8 @@ export const GoldenCase = z.object({
     .object({
       units: z.array(GoldenBridgeUnit).min(2),
       connections: z.array(FdiPair).min(1),
+      /** Reduced units (reduced-crown, reduced-pontic): their cutback; omitted = CUTBACK_DEFAULTS. */
+      cutback: Cutback.optional(),
     })
     .optional(),
 });
