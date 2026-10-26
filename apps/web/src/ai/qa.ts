@@ -1,4 +1,5 @@
 import type { DesignParams, QaCheck } from '@dcad/shared';
+import { MARGIN_LENGTH_MM, MARGIN_MAX_TURN_DEG, MARGIN_MAX_WANDER, sharpestTurnDeg } from '../geometry/marginShape';
 import type { BridgeChecks } from '../geometry/bridgeUnion';
 import type { ConnectorFailure } from '../geometry/connectors';
 import type { ScrewChannelReport } from '../geometry/implantCrown';
@@ -24,48 +25,23 @@ const check = (id: string, passed: boolean, message: string, value?: number, thr
 /** Thickness is measured on the mesh: a wall this much under the material minimum still passes. */
 export const THICKNESS_TOLERANCE_MM = 0.02;
 
-/** Sharpest turn (degrees) between consecutive segments of a closed polyline. */
-/**
- * Sharpest turn (degrees) between chords spanning about `strideMm` before
- * and after each point of a closed curve. Measuring over a stride (not
- * between adjacent 0.2 mm segments) ignores sub-stride jitter from snapping
- * to scan vertices, while a live-wire that doubles back (a millimetre-scale
- * reversal) still shows up as a turn near 180°.
- */
-export function sharpestTurnDeg(points: ReadonlyArray<V3>, strideMm = 0.6): number {
-  const n = points.length;
-  if (n < 3) return 0;
-  let length = 0;
-  for (let i = 0; i < n; i++) {
-    const a = points[i]!, b = points[(i + 1) % n]!;
-    length += Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
-  }
-  const k = Math.max(1, Math.min(Math.floor(n / 4), Math.round(strideMm / (length / n))));
-  let worst = 0;
-  for (let i = 0; i < n; i++) {
-    const a = points[(i - k + n) % n]!, b = points[i]!, c = points[(i + k) % n]!;
-    const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-    const v = [c[0] - b[0], c[1] - b[1], c[2] - b[2]];
-    const lu = Math.hypot(u[0]!, u[1]!, u[2]!), lv = Math.hypot(v[0]!, v[1]!, v[2]!);
-    if (lu < 1e-9 || lv < 1e-9) continue;
-    const cos = (u[0]! * v[0]! + u[1]! * v[1]! + u[2]! * v[2]!) / (lu * lv);
-    worst = Math.max(worst, (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI);
-  }
-  return worst;
-}
+export { sharpestTurnDeg };
 
 /**
  * Margin: traced and closed, plausible length, no kinks. `points` is the
  * dense resampled margin (~0.2 mm); a turn sharper than 120° over a ~0.6 mm
  * stride means the live-wire doubled back.
  */
-export function marginGate(input: { points: ReadonlyArray<V3>; lengthMm: number; prepClosed?: boolean; confidence?: number }): QaCheck[] {
+export function marginGate(input: { points: ReadonlyArray<V3>; lengthMm: number; prepClosed?: boolean; confidence?: number; wander?: number }): QaCheck[] {
   const turn = sharpestTurnDeg(input.points);
   const checks = [
-    check('margin.length', input.lengthMm >= 8 && input.lengthMm <= 60, 'Margin length within 8–60 mm', input.lengthMm, undefined, { unit: 'mm' }),
-    check('margin.smooth', turn <= 120, 'No kinks: sharpest bend in the margin line', turn, 120, { unit: 'deg', bound: 'max' }),
+    check('margin.length', input.lengthMm >= MARGIN_LENGTH_MM[0] && input.lengthMm <= MARGIN_LENGTH_MM[1], 'Margin length within 8–60 mm', input.lengthMm, undefined, { unit: 'mm' }),
+    check('margin.smooth', turn <= MARGIN_MAX_TURN_DEG, 'No kinks: sharpest bend in the margin line', turn, MARGIN_MAX_TURN_DEG, { unit: 'deg', bound: 'max' }),
   ];
   if (input.prepClosed !== undefined) checks.unshift(check('margin.closed', input.prepClosed, 'The margin is closed all the way round the prep'));
+  if (input.wander !== undefined) {
+    checks.push(check('margin.wander', input.wander <= MARGIN_MAX_WANDER, 'No detours: traced length over the length round its anchors', input.wander, MARGIN_MAX_WANDER, { bound: 'max' }));
+  }
   if (input.confidence !== undefined) checks.push(check('margin.ridge', input.confidence >= 0.75, 'The margin edge shows clearly around the prep: share of the way round', input.confidence, 0.75, { unit: 'fraction', bound: 'min' }));
   return checks;
 }

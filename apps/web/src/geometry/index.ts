@@ -23,6 +23,8 @@ export * from './crownMaps';
 export * from './adapt';
 export * from './selfIntersect';
 export * from './autoMargin';
+export * from './marginShape';
+export * from './marginRefine';
 // Bridge building blocks: booleans (manifold-3d, lazy WASM), plane sections, arch curve. Topology is in meshValidate.
 export * from './meshBoolean';
 export * from './sectionArea';

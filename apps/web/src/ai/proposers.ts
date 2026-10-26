@@ -232,8 +232,8 @@ export const marginProposer: Proposer = {
     return {
       proposerId: this.id,
       output: { commands: [{ type: 'setMargin', fdi: ctx.fdi, margin }], artifact: { anchors: trace.anchors, points: points.map((m) => m.p) } },
-      qa: marginGate({ points: points.map((m) => m.p), lengthMm: trace.lengthMm, prepClosed: region.prepClosed, confidence: trace.confidence }),
-      rationale: `The margin follows the prep's finish line, the sharpest edge below its walls, found in ${Math.round(trace.confidence * 16)} of 16 directions around the tooth (${trace.lengthMm.toFixed(1)} mm long).`,
+      qa: marginGate({ points: points.map((m) => m.p), lengthMm: trace.lengthMm, prepClosed: region.prepClosed, confidence: trace.confidence, wander: trace.wander }),
+      rationale: `The margin follows the prep's finish line, the sharpest edge below its walls, found in ${Math.round(trace.confidence * 100)}% of the directions around the tooth (${trace.lengthMm.toFixed(1)} mm long; ${trace.method}).`,
     };
   },
 };

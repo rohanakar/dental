@@ -23,7 +23,7 @@ import { proposeWingOutline } from '../geometry/wingOutline';
 import { processScan } from '../geometry/processScan';
 import { bvhRayCaster, type RayCaster } from '../geometry/raycast';
 import { analyzeSurface, smoothVertexNormals, type SurfaceAnalysis } from '../geometry/surface';
-import { proposeMarginAnchors } from '../geometry/autoMargin';
+import { refineMargin } from '../geometry/marginRefine';
 import { designCrown } from '../geometry/crown';
 import type { PreopScan } from '../geometry/inlay';
 import { designInlayUnit } from '../geometry/inlayUnit';
@@ -250,25 +250,21 @@ const api = {
     const t0 = performance.now();
     const scan = registry.get(request.jawSha);
     const ray = rayOf(scan);
-    const proposal = proposeMarginAnchors({ positions: scan.positions, indices: scan.indices, ray, frame: request.frame });
-    if (proposal.anchors.length < 3) throw new Error('No margin ridge found around the prep (check the tooth frame)');
-    const trace = marginFromAnchors({
-      positions: scan.positions,
-      indices: scan.indices,
-      graph: surfaceOf(scan).graph,
-      weight: weightOf(scan),
-      ray,
-      anchors: proposal.anchors,
-    });
+    // The refiner's best candidate (geometry/marginRefine.ts): it includes the plain 16-profile trace, and repairs a
+    // noisy scan's false edges and jitter.
+    const best = refineMargin({ positions: scan.positions, indices: scan.indices, ray, graph: surfaceOf(scan).graph, weight: weightOf(scan), frame: request.frame });
+    if (!best) throw new Error('No margin ridge found around the prep (check the tooth frame)');
     const result: AutoMarginResult = {
-      points: trace.points,
-      anchorVertices: trace.anchorVertices,
-      lengthMm: trace.lengthMm,
-      anchors: proposal.anchors,
-      confidence: proposal.confidence,
+      points: best.points,
+      anchorVertices: best.anchorVertices,
+      lengthMm: best.lengthMm,
+      anchors: best.anchors,
+      confidence: best.confidence,
+      wander: best.wander,
+      method: best.name,
       ms: performance.now() - t0,
     };
-    return Comlink.transfer(result, [trace.points.buffer as ArrayBuffer]);
+    return Comlink.transfer(result, [best.points.buffer as ArrayBuffer]);
   },
 
   /** Automatic Maryland wing outline (classical.wing-outline): the lingual band around the click, closed by the live-wire. */

@@ -1,4 +1,5 @@
 import type { IndexedMesh } from './mesh';
+import { computeVertexNormals } from './normals';
 import { carveTooth, cavityContour, cavityShape, resampleContour, type CavityShape, type SyntheticCavity } from './syntheticCavity';
 
 /**
@@ -439,4 +440,27 @@ export function toSoup(mesh: IndexedMesh): Float32Array {
     out[k * 3 + 2] = mesh.positions[v + 2]!;
   }
   return out;
+}
+
+/**
+ * A copy of `mesh` with scanner-like noise: every vertex moved along its normal by a Gaussian of `sigmaMm`
+ * (deterministic for a `seed`). Intraoral scans carry a few hundredths of a millimetre; at 0.04–0.05 mm the
+ * automatic margin's radial profiles start picking false edges (specs/2026-10-26-margin-ai.md).
+ */
+export function withScanNoise(mesh: IndexedMesh, sigmaMm: number, seed: number): IndexedMesh {
+  const normals = computeVertexNormals(mesh);
+  let a = seed >>> 0;
+  const uniform = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const positions = mesh.positions.slice();
+  for (let i = 0; i < positions.length; i += 3) {
+    const d = Math.sqrt(-2 * Math.log(uniform() + 1e-12)) * Math.cos(2 * Math.PI * uniform()) * sigmaMm;
+    for (let k = 0; k < 3; k++) positions[i + k] = positions[i + k]! + normals[i + k]! * d;
+  }
+  return { ...mesh, positions };
 }

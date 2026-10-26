@@ -6,7 +6,8 @@
   "scripts": {
     "run": "tsx src/cli.ts",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "margin-eval": "tsx src/marginEval.ts"
   },
   "dependencies": {
     "@dcad/shared": "workspace:*",

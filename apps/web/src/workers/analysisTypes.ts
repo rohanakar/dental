@@ -174,6 +174,10 @@ export interface AutoMarginResult extends MarginTrace {
   anchors: V3[];
   /** Fraction of radial profiles that found the ridge (0..1). */
   confidence: number;
+  /** Traced length over the anchor ring's perimeter (marginRefine.ts: a detour shows above MARGIN_MAX_WANDER). */
+  wander: number;
+  /** Which refiner candidate won (profile count, ring-consistent anchors, smoothing). */
+  method: string;
   ms: number;
 }
 
