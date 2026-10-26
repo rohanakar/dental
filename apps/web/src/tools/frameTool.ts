@@ -9,17 +9,18 @@ import { isStale } from '../workers/latestWins';
 import { frameView } from './bridgeTool';
 import { errorText, fromMarginPoints, toothContext } from './context';
 import { missesDemoPrep } from './demoPrep';
+import { prepWarning } from './prepRing';
 import { PREP_MARGIN } from './marginView';
-import { useToolStore, type V3 } from './toolStore';
+import { useToolStore, type ToolState, type V3 } from './toolStore';
 
 const neg = (v: readonly number[]): V3 => [-v[0]!, -v[1]!, -v[2]!];
 
-/** Estimate the tooth frame from a click on the prep (auto source). */
-export async function estimateFrameAt(seed: V3): Promise<void> {
+/** Estimate the tooth frame from a click on the prep (auto source); `message` goes to the status line meanwhile. */
+export async function estimateFrameAt(seed: V3, message: ToolState['message'] = null): Promise<void> {
   const ctx = toothContext();
   const tools = useToolStore.getState();
   if (!ctx) return;
-  tools.set({ busy: 'Estimating the tooth frame…', message: null });
+  tools.set({ busy: 'Estimating the tooth frame…', message });
   try {
     const restoration = useDesignStore.getState().doc.setup.teeth.find((t) => t.fdi === ctx.fdi)?.restoration;
     const est = await analysis.estimateFrame({
@@ -154,13 +155,15 @@ export function frameInteraction(jawRole: string): InteractionHandler {
         set({ message: { kind: 'warning', text: `That is not tooth ${activeFdi}. Click the prepared tooth inside the blue ring.` } });
         return;
       }
+      // On a real scan a click far from every prep found is only warned about: the finding can miss a prep.
+      const warning = framePick === 'seed' ? prepWarning(point) : null;
       if (framePick === 'seed' && autoArmed) {
-        set({ autoArmed: false, message: null });
+        set({ autoArmed: false, message: warning });
         void runAutoDesign({ seed: point });
         return;
       }
       if (framePick === 'seed') {
-        void estimateFrameAt(point);
+        void estimateFrameAt(point, warning);
         return;
       }
       updateFrame((f) => ({ ...f, [framePick]: point }));

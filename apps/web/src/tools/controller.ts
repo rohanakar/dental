@@ -21,7 +21,8 @@ import { implantTool, isImplantTooth } from './implantTool';
 import { MARGIN_VIEW_DISTANCE_MM, marginView, PREP_MARGIN } from './marginView';
 import { useToolStore } from './toolStore';
 import { isWing } from './wing';
-import { DEMO_PREP_RADIUS_MM, demoPrep, ringPoints } from './demoPrep';
+import { DEMO_PREP_RADIUS_MM, ringPoints } from './demoPrep';
+import { onPrepsFound, prepRing } from './prepRing';
 
 export const FRAME_COLORS = AXIS_COLORS;
 const AXIS_COLOR = '#b07cff';
@@ -63,6 +64,8 @@ class DesignTools {
     });
     // The screw channel follows each new crown or bridge result.
     crownTool.onResult(() => implantTool.sync(useDesignStore.getState().activeStep, crownTool.current()));
+    // The preps found on a scan arrive from the worker after the Tooth frame step is drawn: ring the prep then.
+    onPrepsFound(() => this.sync());
   }
 
   attachViewer(viewer: Viewer): void {
@@ -264,8 +267,8 @@ class DesignTools {
     const otherTeeth = (bridge?.teeth ?? []).filter((f) => f !== tooth?.fdi).map((f) => doc.teeth.find((t) => t.fdi === f));
     const others = step === 'frame' ? otherTeeth.map((t) => t?.frame) : [];
     const otherMargins = SHOW_MARGIN.includes(step) ? otherTeeth.map((t) => t?.margin) : [];
-    // The demo knows where its prep is: a ring marks it until the tooth has a frame.
-    const prep = step === 'frame' && tooth && !tooth.frame ? demoPrep() : null;
+    // A ring marks the prep until the tooth has a frame: the demo's known prep, or the one found on the scan.
+    const prep = step === 'frame' && tooth && !tooth.frame ? prepRing() : null;
     const inputs = [step, tooth?.frame, tooth?.margin, tooth?.axis, prep, ...others, ...otherMargins];
     if (inputs.length === this.drawn.length && inputs.every((x, i) => x === this.drawn[i])) return;
     this.drawn = inputs;

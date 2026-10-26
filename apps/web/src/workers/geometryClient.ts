@@ -1,5 +1,6 @@
 import * as Comlink from 'comlink';
 import type { BufferGeometry } from 'three';
+import type { PrepFinding } from '../geometry/prepFinder';
 import type { GeometryWorkerApi } from './geometry.worker';
 import type {
   AutoMarginRequest,
@@ -86,6 +87,8 @@ export const cancelImport = (key: string): void => latest.cancel(key);
  */
 export const analysis = {
   analyzeSurface: (sha: string): Promise<SurfaceInfo> => geometryWorker().analyzeSurface(sha),
+  /** Crown preps on a jaw scan, computed once per scan in the worker (never superseded). */
+  findPreps: (jawSha: string, antagonistSha?: string): Promise<PrepFinding> => geometryWorker().findPreps(jawSha, antagonistSha),
   estimateFrame: (request: FrameRequest): Promise<FrameEstimate> => latest.run('frame', () => geometryWorker().estimateFrame(request)),
   /** Live-wire shortest-path tree from one vertex: predecessor per vertex (-1 = none). */
   liveWireTree: (sha: string, source: number): Promise<Int32Array> => latest.run('livewire', () => geometryWorker().liveWireTree(sha, source)),

@@ -229,6 +229,22 @@ if (ONLY !== 'anterior') {
   expect(JSON.stringify(bridges.map((b) => b.teeth)) === '[[35,36,37]]' && bridges[0].connectors.length === 2, 'setup: 35–[36]–37 with two connectors', JSON.stringify(bridges));
 
   await loadScans(h, ['lower-bridge.stl', 'upper.stl']);
+  // Not the demo's scan: the prep of 35 is found on it and ringed (specs/2026-10-26-prep-finder.md).
+  await h.step('Tooth frame');
+  await h.selectTooth(35);
+  const ringed = await h.waitFor(() => window.__dcad.viewer.overlays.has('demo:prep'), null, 60000).then(
+    () =>
+      h.state(async (along) => {
+        const { syntheticPrepSeed } = await import('/src/geometry/synthetic.ts');
+        const ring = window.__dcad.viewer.overlays.items.get('demo:prep').geometry;
+        ring.computeBoundingSphere();
+        const c = ring.boundingSphere.center;
+        const top = syntheticPrepSeed({ fdi: 35, along });
+        return Math.hypot(c.x - top[0], c.y - top[1], c.z - top[2]);
+      }, ALONG),
+    () => Infinity,
+  );
+  expect(ringed < 1, 'a scan that is not the demo rings the prep of 35', `${ringed.toFixed(2)} mm from its top`);
   await frameAbutments(h, [35, 37]);
   await h.shot('01-frames');
 

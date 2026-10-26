@@ -14,8 +14,9 @@ import {
   traceClosedLoop,
   type EdgeWeight,
 } from '../geometry/livewire';
-import type { V3 } from '../geometry/pca';
+import { principalAxes, type V3 } from '../geometry/pca';
 import { writePly } from '../geometry/ply';
+import { findPreps, type PrepFinding } from '../geometry/prepFinder';
 import { prepRegion, prepSeedVertex, type PrepRegion } from '../geometry/prepRegion';
 import { wingRegion } from '../geometry/wingUnit';
 import { proposeWingOutline } from '../geometry/wingOutline';
@@ -202,6 +203,24 @@ const api = {
       ray: rayOf(jaw),
       prep: request.prep ?? true,
     }) as FrameEstimate;
+  },
+
+  /**
+   * Crown preps on a jaw scan (prepFinder.ts), once per scan and antagonist: the Tooth frame step rings the active
+   * tooth's prep on any scan (specs/2026-10-26-prep-finder.md).
+   */
+  findPreps(jawSha: string, antagonistSha?: string): PrepFinding {
+    const jaw = registry.get(jawSha);
+    const antagonist = antagonistSha && registry.has(antagonistSha) ? registry.get(antagonistSha) : null;
+    return registry.cached(jaw, `preps:${antagonist?.sha256 ?? ''}`, () =>
+      findPreps({
+        positions: jaw.positions,
+        normals: jaw.normals,
+        indices: jaw.indices,
+        ray: rayOf(jaw),
+        ...(antagonist ? { antagonistCentroid: principalAxes(antagonist.positions, 20_000).centroid } : {}),
+      }),
+    );
   },
 
   /** Bounded live-wire tree from one vertex; the main thread looks up paths to the cursor in it. */
