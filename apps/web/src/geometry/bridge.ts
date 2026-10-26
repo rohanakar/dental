@@ -22,11 +22,11 @@ import { templateForTooth, type CrownTemplate } from './crownTemplate';
 import { applyFrameworks, assemblyMesh, bridgeOverpress, type UnitFramework, type UnitOverpress } from './framework';
 import type { IndexedMesh } from './mesh';
 import { meshBooleanReady, unionMeshes } from './meshBoolean';
-import type { V3 } from './pca';
+import { principalAxes, type V3 } from './pca';
 import { designPontic, proposePonticPose, type PonticBaseGap } from './pontic';
 import { bvhRayCaster, createBvh, type RayCaster } from './raycast';
 import type { IntaglioSurface } from './thickness';
-import { findNeighbourContacts, mesialFromBuccal } from './toothFrame';
+import { findNeighbourContacts, isFrontTooth, mesialFromBuccal } from './toothFrame';
 import { designWingUnit, type WingUnitReport } from './wingUnit';
 import { implantRetainer, implantUnitWidths, unionMeshOf, channelCount } from './implantBridge';
 import type { ImplantUnit } from './implantCrown';
@@ -61,8 +61,15 @@ const pointAt = (a: Float32Array, i: number): V3 => [a[i * 3]!, a[i * 3 + 1]!, a
  * buccal directions (not one frame's: on a straight quadrant scan the hint
  * decides which side is buccal, so one flipped frame must not decide it).
  * Fit unhinted and orient per call (orientArchCurve) when the fit is cached.
+ *
+ * A front-tooth frame (`fdi` at positions 1–3) leans with its prep
+ * (estimateToothFrame), so with one among the frames and the jaw's
+ * `positions` given, the occlusal is the jaw's occlusal-plane normal instead:
+ * the whole-jaw PCA least-variance axis (the one the jaw-level frame starts
+ * from), oriented along the mean, when it is within 35° of it. Without a
+ * front tooth the mean stays, so posterior bridges are unchanged.
  */
-export function archFitDirections(frames: ReadonlyArray<{ occlusal: V3; buccal: V3 }>): { occlusal: V3; buccalHint?: V3 } {
+export function archFitDirections(frames: ReadonlyArray<{ occlusal: V3; buccal: V3; fdi?: number }>, positions?: Float32Array): { occlusal: V3; buccalHint?: V3 } {
   if (frames.length === 0) throw new Error('A bridge needs an abutment frame to fit the arch curve');
   let occlusal: V3 = [0, 0, 0];
   let buccal: V3 = [0, 0, 0];
@@ -70,7 +77,13 @@ export function archFitDirections(frames: ReadonlyArray<{ occlusal: V3; buccal: 
     occlusal = add(occlusal, normalize(f.occlusal));
     buccal = add(buccal, normalize(f.buccal));
   }
-  return { occlusal: normalize(occlusal), ...(Math.hypot(...buccal) > 1e-6 ? { buccalHint: normalize(buccal) } : {}) };
+  occlusal = normalize(occlusal);
+  if (positions && frames.some((f) => f.fdi !== undefined && isFrontTooth(f.fdi))) {
+    const plane = principalAxes(positions, 50_000).axes[2];
+    const along = dot(plane, occlusal);
+    if (Math.abs(along) >= Math.cos((35 * Math.PI) / 180)) occlusal = along >= 0 ? plane : scale(plane, -1);
+  }
+  return { occlusal, ...(Math.hypot(...buccal) > 1e-6 ? { buccalHint: normalize(buccal) } : {}) };
 }
 
 // ---- Pontic layout ---------------------------------------------------------------
@@ -127,10 +140,11 @@ function sideToward(fdi: number, after: boolean): ProximalSide {
  * - a cantilever run starts at its unit's facing edge, one nominal width per
  *   pontic, shortened to the natural neighbour if the contact search finds
  *   one closer;
- * - occlusal = mean of the neighbouring units' occlusal directions, buccal =
- *   the curve's outward normal, mesial from FDI handedness; origin = the ridge
- *   under the centre (ray cast along −occlusal); a centre override replaces
- *   the arch position;
+ * - occlusal = mean of the neighbouring units' occlusal directions (next to
+ *   a front tooth, whose frame leans with its prep: their mean labial lean
+ *   along the pontic's own labial direction), buccal = the curve's outward
+ *   normal, mesial from FDI handedness; origin = the ridge under the centre
+ *   (ray cast along −occlusal); a centre override replaces the arch position;
  * - contacts: the neighbouring units' facing edges (or the split points between
  *   pontics), and natural teeth on free sides.
  */
@@ -190,6 +204,12 @@ export function layoutPontics(input: { curve: ArchCurve; jaw: RayCaster; units: 
     let occlusal: V3 = neighbours.length ? [0, 0, 0] : curve.occlusal;
     for (const u of neighbours) occlusal = add(occlusal, normalize(u.frame!.occlusal));
     occlusal = normalize(occlusal);
+    // Front-tooth neighbours lean labially with their preps (estimateToothFrame). When they do (over 2°), a pontic
+    // leans by their mean labial lean along its own labial direction (the curve's normal where it sits), not along a
+    // neighbour's. Upright neighbours keep the mean occlusal.
+    const lean = neighbours.some((u) => isFrontTooth(u.fdi)) ? meanLabialLean(curve, neighbours) : 0;
+    const occlusalAt = (s: number): V3 =>
+      Math.abs(lean) <= MIN_PONTIC_LEAN ? occlusal : normalize(add(scale(curve.occlusal, Math.cos(lean)), scale(curve.normalAt(s), Math.sin(lean))));
     const runWarnings: string[] = [];
     const label = run.map((u) => u.fdi).join(', ');
 
@@ -218,8 +238,9 @@ export function layoutPontics(input: { curve: ArchCurve; jaw: RayCaster; units: 
       const from = outward ? startS + sign * 0.5 : endS - sign * 0.5;
       const dir = along(from, outward);
       const origin = curve.pointAt(from);
-      const buccal = normalize(reject(curve.normalAt(from), occlusal));
-      const found = findNeighbourContacts({ origin, occlusal, mesial: dir, buccal, ray: jaw, maxDistanceMm: total * 1.3 + 2 }).mesial;
+      const occlusalFrom = occlusalAt(from);
+      const buccal = normalize(reject(curve.normalAt(from), occlusalFrom));
+      const found = findNeighbourContacts({ origin, occlusal: occlusalFrom, mesial: dir, buccal, ray: jaw, maxDistanceMm: total * 1.3 + 2 }).mesial;
       if (found) {
         const s = curve.project(found.point);
         const reach = outward ? sign * (s - startS) : sign * (endS - s);
@@ -245,6 +266,7 @@ export function layoutPontics(input: { curve: ArchCurve; jaw: RayCaster; units: 
         s = curve.project(u.centre);
         above = u.centre;
       }
+      const occlusal = occlusalAt(s);
       const buccal = normalize(reject(curve.normalAt(s), occlusal));
       const mesial = mesialFromBuccal(u.fdi, occlusal, buccal);
       const ridge = jaw.first(add(above, scale(occlusal, 10)), scale(occlusal, -1), 40);
@@ -273,6 +295,19 @@ export function layoutPontics(input: { curve: ArchCurve; jaw: RayCaster; units: 
     });
   }
   return layouts;
+}
+
+/** Below this mean labial lean of the neighbours (rad), a pontic keeps their mean occlusal direction. */
+const MIN_PONTIC_LEAN = (2 * Math.PI) / 180;
+
+/** The mean labial lean (rad) of units' occlusal directions: from the curve's occlusal toward its normal where each sits. */
+function meanLabialLean(curve: ArchCurve, units: readonly LayoutUnit[]): number {
+  let sum = 0;
+  for (const u of units) {
+    const o = normalize(u.frame!.occlusal);
+    sum += Math.atan2(dot(o, curve.normalAt(curve.project(u.frame!.origin))), dot(o, curve.occlusal));
+  }
+  return sum / units.length;
 }
 
 /**
@@ -524,7 +559,7 @@ export function designBridge(input: BridgeInput): BridgeResult {
   const common = [input.scanKey ?? '', Boolean(antagonist), axis, input.maps ?? []];
 
   // Arch curve: fit once per scan (callers pass it in); here from the abutment frames.
-  const curve = input.curve ?? fitArchCurve({ positions: jaw.positions, ...archFitDirections(abutments.flatMap((u) => (u.frame ? [u.frame] : []))) });
+  const curve = input.curve ?? fitArchCurve({ positions: jaw.positions, ...archFitDirections(abutments.flatMap((u) => (u.frame ? [{ ...u.frame, fdi: u.fdi }] : [])), jaw.positions) });
   lap('curve');
 
   const work = new Map<number, UnitWork>();

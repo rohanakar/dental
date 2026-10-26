@@ -1,8 +1,8 @@
 // Two single crowns on upper front teeth plus a bridge, offline in headless Chrome
 // (specs/2026-10-26-anterior-margin-and-export-all.md):
 // 1. Setup: 11 and 21 as crowns and 35–[36]–37 as a bridge; the hint says 11 and 21 stay separate.
-// 2. Margin view on 11 of a proclined upper arch (incisors leaning 25° labially, as on real teeth): every margin point
-//    is reachable by a click from the step's view, against the old view along the frame's occlusal direction.
+// 2. Margin view on 11 of a proclined upper arch (front teeth leaning 25° labially, as on real teeth): every margin
+//    point is reachable by a click from the step's view, against the old view along the occlusal-plane normal.
 // 3. A margin traced in the old view (as the user did) is flagged in the Margin step (warning plus kink marker) and in
 //    the Proposal step; "Fix the margin" leads back, and a margin traced in the new view passes.
 // 4. Crowns on 11 and 21, the bridge, then Finalize → Export all: one zip with both crowns and the merged bridge (each
@@ -23,6 +23,7 @@ mkdirSync(OUT, { recursive: true });
 const DATA = `${ROOT}data/synthetic/`;
 const APP_URL = process.env.APP_URL ?? 'http://localhost:5173/app/';
 const ALONG = 1000; // the fixtures' resolution (tools/fixtures/generate.mts)
+/** The upper front teeth lean this far labially (syntheticArch's anteriorLeanDeg), as real upper incisors do (15–30°). */
 const PROCLINE_DEG = 25;
 const log = (...a) => console.log('[anterior]', ...a);
 const failures = [];
@@ -32,22 +33,6 @@ const expect = (ok, what, detail = '') => {
 };
 if (!existsSync(`${DATA}lower-bridge.stl`)) throw new Error(`Missing ${DATA}lower-bridge.stl: run pnpm --filter @dcad/web fixtures`);
 
-/**
- * Lean the upper front teeth labially: the tooth part (below the gum line at z = 14.3) is sheared outward along the
- * arch by tan(deg) per mm of height, fading out past the laterals. The synthetic arch's teeth are upright; real upper
- * incisors lean 15–30° from the occlusal-plane normal.
- */
-const PROCLINE = `(${String((p, deg) => {
-  const h = 14.3 - p[2];
-  if (h <= 0) return p;
-  const theta = Math.atan2(p[0] / 24, p[1] / 26);
-  const a = Math.abs(theta);
-  const w = a <= 0.6 ? 1 : a >= 0.95 ? 0 : 0.5 + 0.5 * Math.cos((Math.PI * (a - 0.6)) / 0.35);
-  const n = [Math.sin(theta) * 26, Math.cos(theta) * 24];
-  const l = Math.hypot(n[0], n[1]);
-  const k = Math.tan((deg * Math.PI) / 180) * h * w;
-  return [p[0] + (k * n[0]) / l, p[1] + (k * n[1]) / l, p[2]];
-})})`;
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const errors = [];
@@ -69,17 +54,16 @@ const settle = async () => {
   await page.waitForTimeout(200);
 };
 const idle = () => waitFor(() => !window.__dcad.tools.getState().busy && !window.__dcad.tools.getState().crown?.computing, null, 120000);
-/** Points of a synthetic helper, sheared like the scan for upper teeth. */
+/** Points of a synthetic helper, leaning like the scan for upper teeth. */
 const synthetic = (fn, arg) =>
   page.evaluate(
-    async ([f, a, src, deg]) => {
-      const lean = (0, eval)(src);
-      const out = (await import('/src/geometry/synthetic.ts'))[f](a);
+    async ([f, a, deg]) => {
+      const out = (await import('/src/geometry/synthetic.ts'))[f](Math.floor(a.fdi / 10) <= 2 ? { ...a, anteriorLeanDeg: deg } : a);
       const pts = [];
       for (let i = 0; i < out.length; i += 3) pts.push([out[i], out[i + 1], out[i + 2]]);
-      return Math.floor(a.fdi / 10) <= 2 ? pts.map((p) => lean(p, deg)) : pts;
+      return pts;
     },
-    [fn, arg, PROCLINE, PROCLINE_DEG],
+    [fn, arg, PROCLINE_DEG],
   );
 const clickWorld = async (p) => {
   const s = await state((q) => window.__dcad.viewer.project(q), p);
@@ -154,19 +138,17 @@ await shot('01-setup-hint');
 await step('Scans');
 // The proclined upper arch is generated in the page (the app's own generator) and dropped on the file input.
 await state(
-  async ([along, src, deg]) => {
-    const lean = (0, eval)(src);
+  async ([along, deg]) => {
     const { syntheticArch } = await import('/src/geometry/synthetic.ts');
     const { writeBinaryStl } = await import('/src/geometry/stl.ts');
-    const mesh = syntheticArch({ jaw: 'upper', along, across: along / 2, preps: [11, 21] });
-    for (let i = 0; i < mesh.positions.length; i += 3) mesh.positions.set(lean([mesh.positions[i], mesh.positions[i + 1], mesh.positions[i + 2]], deg), i);
+    const mesh = syntheticArch({ jaw: 'upper', along, across: along / 2, preps: [11, 21], anteriorLeanDeg: deg });
     const input = document.querySelector('input[type=file][accept=".stl,.ply"]');
     const files = new DataTransfer();
     files.items.add(new File([writeBinaryStl(mesh)], 'upper-proclined.stl'));
     input.files = files.files;
     input.dispatchEvent(new Event('change', { bubbles: true }));
   },
-  [ALONG, PROCLINE, PROCLINE_DEG],
+  [ALONG, PROCLINE_DEG],
 );
 await page.locator('input[type=file][accept=".stl,.ply"]').setInputFiles([`${DATA}lower-bridge.stl`]);
 await waitFor(() => window.__dcad.design.getState().doc.scans.length === 2 && window.__dcad.scene.getState().objects.filter((o) => o.phase === 'ready').length === 2, null, 300000);
@@ -182,12 +164,20 @@ const reachNew = await reachable(ring64, 'upper');
 const viewDir = await state(() => window.__dcad.viewer.viewDirection().toArray());
 await shot('02-margin-11-new-view');
 const frame11 = (await tooth(11)).frame;
-await state((f) => window.__dcad.viewer.focus(f.origin, f.occlusal, 32), frame11);
+// The old view: along the jaw's occlusal-plane normal (−z for the synthetic upper jaw), which was the frame occlusal
+// of every tooth before the front-tooth frame (specs/2026-10-26-anterior-tooth-frame.md).
+const PLANE_NORMAL = [0, 0, -1];
+await state(([f, n]) => window.__dcad.viewer.focus(f.origin, n, 32), [frame11, PLANE_NORMAL]);
 await settle();
 const reachOld = await reachable(ring64, 'upper');
 await shot('03-margin-11-old-view');
-const tilt = (Math.acos(-viewDir.reduce((s, x, k) => s + x * frame11.occlusal[k], 0)) * 180) / Math.PI;
-expect(reachNew === 64, 'Margin view on proclined 11: every margin point reachable by a click', `${reachNew}/64 (old view along the frame occlusal: ${reachOld}/64), view ${tilt.toFixed(1)}° from the frame occlusal`);
+const angle = (a, b) => (Math.acos(Math.min(1, a.reduce((s, x, k) => s + x * b[k], 0))) * 180) / Math.PI;
+const tilt = angle(viewDir.map((x) => -x), frame11.occlusal);
+expect(
+  reachNew === 64,
+  'Margin view on proclined 11: every margin point reachable by a click',
+  `${reachNew}/64 (old view along the occlusal-plane normal: ${reachOld}/64), view ${tilt.toFixed(1)}° from the frame occlusal, frame ${angle(frame11.occlusal, PLANE_NORMAL).toFixed(1)}° from the plane normal`,
+);
 
 // ---- 3. A kinked margin is flagged before the crown -----------------------------------------------------------------
 

@@ -276,3 +276,13 @@ See [2026-10-26-anterior-margin-and-export-all.md](2026-10-26-anterior-margin-an
 - The bridge auto-design E2E is now immune to a view-change race.
 
 108 tests. See [2026-10-25-maryland-bridges.md](2026-10-25-maryland-bridges.md).
+
+**2026-10-26: front-tooth frame from the prep axis.**
+- On leaning incisors the tooth frame follows the prep's own wall axis: 1.5–2° from the true axis, instead of 13–29°.
+  Crowns no longer stand upright on leaning preps.
+- Posterior teeth are unchanged (hashes identical).
+- Synthetic arches can lean their incisors (`anteriorLeanDeg`).
+- The E2E click race is guarded in every script, and a framework E2E is added.
+- 109 tests.
+
+See [2026-10-26-anterior-tooth-frame.md](2026-10-26-anterior-tooth-frame.md).

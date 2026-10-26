@@ -234,16 +234,18 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
       .map((u) => {
         if (!u.seed || !u.marginAnchors) throw new Error(`Case ${spec.id}: abutment ${u.fdi} needs a seed and margin anchors`);
         const frame = estimateToothFrame({
-          jaw: { positions, normals },
+          jaw: { positions, normals, indices },
           antagonist: antagonist ? { positions: antagonist.mesh.positions } : undefined,
           seed: u.seed,
           fdi: u.fdi,
           ray,
+          // A crown prep (not a wing's natural tooth): a front tooth's frame follows the prep's own axis.
+          prep: u.restoration === 'anatomic-crown' || u.restoration === 'reduced-crown',
         });
         return { u, marginAnchors: u.marginAnchors, frame };
       }),
   );
-  const curve = await time('archCurve', () => fitArchCurve({ positions, ...archFitDirections(estimates.map((e) => e.frame)) }));
+  const curve = await time('archCurve', () => fitArchCurve({ positions, ...archFitDirections(estimates.map((e) => ({ ...e.frame, fdi: e.u.fdi })), positions) }));
 
   // Abutments: margin and prep region, as for a single crown.
   const abutments = await time('abutments', () =>

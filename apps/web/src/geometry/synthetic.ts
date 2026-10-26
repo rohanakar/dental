@@ -30,6 +30,12 @@ export interface ArchOptions {
    * for the lower jaw when it would otherwise default to the 36 prep.
    */
   cavities?: SyntheticCavity[];
+  /**
+   * Lean the front teeth (incisors and canines, FDI positions 1–3) labially by this many degrees, as real front teeth
+   * lean 15–30° from the occlusal-plane normal (anteriorLean). Default 0: upright, as before. Pass the same value to
+   * syntheticPrepMargin and syntheticPrepSeed.
+   */
+  anteriorLeanDeg?: number;
   colors?: boolean;
 }
 
@@ -142,6 +148,20 @@ function toothHeight(m: number, b: number, type: number, prep: boolean): number 
 }
 
 const gumHeight = (s: number) => 1.5 * (1 - s * s) - 1.5;
+
+/** Last tooth type (canine) that leans with ArchOptions.anteriorLeanDeg. */
+const LAST_LEANING_TYPE = 2;
+
+/**
+ * The across-band coordinate of a front-tooth point leaned labially: a point z mm above the gum line (z > 0 only on
+ * the tooth) moves tan(lean)·z outward along the arch's normal. So each front tooth is sheared: its centre line tilts
+ * by the lean, the gum and the tooth's foot stay put (z ≤ 0 there), and the prep top stays parallel to the occlusal
+ * plane. Other teeth, and lean 0, keep s exactly.
+ */
+function anteriorLean(s: number, z: number, type: number, leanDeg: number): number {
+  if (!leanDeg || type < 0 || type > LAST_LEANING_TYPE || z <= 0) return s;
+  return s + (Math.tan((leanDeg * Math.PI) / 180) * z) / HALF_WIDTH;
+}
 
 /** Arc-length layout of the arch at a grid resolution (the mesh and the analytic helpers share it). */
 interface ArchLayout {
@@ -265,7 +285,7 @@ export function syntheticArch(options: ArchOptions = {}): IndexedMesh {
       }
       const z = gum + Math.max(0, tooth);
       const v = i * (across + 1) + j;
-      const [x, y] = bandPoint(theta, s);
+      const [x, y] = bandPoint(theta, anteriorLean(s, z, type, options.anteriorLeanDeg ?? 0));
       positions[v * 3] = x;
       positions[v * 3 + 1] = y;
       positions[v * 3 + 2] = jaw === 'lower' ? z : 2 * 7 + OCCLUSAL_GAP - z;
@@ -306,7 +326,7 @@ export function syntheticArch(options: ArchOptions = {}): IndexedMesh {
  * footprint centre, at `height` above the gum curve; matches syntheticArch
  * generated with the same `along`.
  */
-function toothPoint(layout: ArchLayout, tooth: SyntheticTooth, u: number, w: number, height: number): [number, number, number] {
+function toothPoint(layout: ArchLayout, tooth: SyntheticTooth, u: number, w: number, height: number, leanDeg = 0): [number, number, number] {
   const { thetas, arc, mid, starts, scale } = layout;
   const type = tooth.type;
   const half = (TOOTH_WIDTHS[type]! * scale) / 2;
@@ -323,8 +343,8 @@ function toothPoint(layout: ArchLayout, tooth: SyntheticTooth, u: number, w: num
   const t = (target - arc[lo]!) / (arc[hi]! - arc[lo]!);
   const theta = thetas[lo]! + t * (thetas[hi]! - thetas[lo]!);
   const s = w / HALF_WIDTH;
-  const [x, y] = bandPoint(theta, s);
   const z = gumHeight(s) + height;
+  const [x, y] = bandPoint(theta, anteriorLean(s, z, type, leanDeg));
   return [x, y, tooth.jaw === 'lower' ? z : 2 * 7 + OCCLUSAL_GAP - z];
 }
 
@@ -333,9 +353,9 @@ function toothPoint(layout: ArchLayout, tooth: SyntheticTooth, u: number, w: num
  * distal; b bucco-lingual, positive buccal; both -1…1) of a synthetic tooth,
  * matching syntheticArch generated with the same `along` and the tooth in `preps`.
  */
-function prepPoint(layout: ArchLayout, tooth: SyntheticTooth, m: number, b: number): [number, number, number] {
+function prepPoint(layout: ArchLayout, tooth: SyntheticTooth, m: number, b: number, leanDeg = 0): [number, number, number] {
   const half = (TOOTH_WIDTHS[tooth.type]! * layout.scale) / 2;
-  return toothPoint(layout, tooth, m * half, b * BL_HALF[tooth.type]!, prepHeight(footprintR(m, b), tooth.type <= LAST_ROUNDED_TYPE));
+  return toothPoint(layout, tooth, m * half, b * BL_HALF[tooth.type]!, prepHeight(footprintR(m, b), tooth.type <= LAST_ROUNDED_TYPE), leanDeg);
 }
 
 /**
@@ -344,7 +364,7 @@ function prepPoint(layout: ArchLayout, tooth: SyntheticTooth, m: number, b: numb
  * same `along` as the syntheticArch it is compared against, generated with
  * this tooth in `preps`.
  */
-export function syntheticPrepMargin(options: { fdi?: number; along?: number; samples?: number } = {}): Float32Array {
+export function syntheticPrepMargin(options: { fdi?: number; along?: number; samples?: number; anteriorLeanDeg?: number } = {}): Float32Array {
   const tooth = syntheticTooth(options.fdi ?? SYNTHETIC_PREP_FDI);
   const layout = archLayout(options.along ?? 400);
   const n = options.samples ?? 64;
@@ -356,14 +376,14 @@ export function syntheticPrepMargin(options: { fdi?: number; along?: number; sam
     // Superellipse |m|^4 + |b|^4 = R^4.
     const m = PREP_MARGIN_R * Math.sign(c) * Math.sqrt(Math.abs(c));
     const b = PREP_MARGIN_R * Math.sign(s) * Math.sqrt(Math.abs(s));
-    out.set(prepPoint(layout, tooth, m, b), i * 3);
+    out.set(prepPoint(layout, tooth, m, b, options.anteriorLeanDeg), i * 3);
   }
   return out;
 }
 
 /** A point on the occlusal top of a synthetic prep (default FDI 36), e.g. the user's "click the prep". */
-export function syntheticPrepSeed(options: { fdi?: number; along?: number } = {}): [number, number, number] {
-  return prepPoint(archLayout(options.along ?? 400), syntheticTooth(options.fdi ?? SYNTHETIC_PREP_FDI), 0, 0);
+export function syntheticPrepSeed(options: { fdi?: number; along?: number; anteriorLeanDeg?: number } = {}): [number, number, number] {
+  return prepPoint(archLayout(options.along ?? 400), syntheticTooth(options.fdi ?? SYNTHETIC_PREP_FDI), 0, 0, options.anteriorLeanDeg);
 }
 
 /** The cavity of a synthetic tooth (its kind and analytic shape) at a grid resolution. */

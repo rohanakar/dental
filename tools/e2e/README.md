@@ -23,20 +23,36 @@ These scripts drive the real web app in headless Chrome (Playwright, `channel: '
   events per unit and step) → the agent's bridge metrics → Finalize "Ready to mill"; then the one-click bridge (a
   click on each prep starts the run). Screenshots go to `out/e2e/ai-bridge/` (`E2E_OUT`). Exits non-zero on a failed
   check.
-- `anterior-export.mjs` (offline): crowns on 11 and 21 of an upper arch whose incisors lean 25° labially (generated in
-  the page) plus the bridge 35–[36]–37 on `lower-bridge.stl`. The setup hint for the separate crowns; every margin
-  point of 11 reachable from the Margin step's view (against the old view along the frame occlusal); a margin traced
-  from the old view flagged in the Margin step (warning and kink marker) and in Crown proposal, "Fix the margin";
-  crowns and the bridge; Finalize → Export all, with the zip unzipped in Node (each STL a closed solid, the manifest).
-  Screenshots go to `out/e2e/anterior/` (`E2E_OUT`). Exits non-zero on a failed check.
+- `anterior-export.mjs` (offline): crowns on 11 and 21 of an upper arch whose front teeth lean 25° labially (generated
+  in the page with `syntheticArch`'s `anteriorLeanDeg`) plus the bridge 35–[36]–37 on `lower-bridge.stl`. The setup
+  hint for the separate crowns; every margin point of 11 reachable from the Margin step's view (against the old view
+  along the occlusal-plane normal); a margin traced from the old view flagged in the Margin step (warning and kink
+  marker) and in Crown proposal, "Fix the margin"; crowns and the bridge; Finalize → Export all, with the zip unzipped
+  in Node (each STL a closed solid, the manifest). Screenshots go to `out/e2e/anterior/` (`E2E_OUT`). Exits non-zero
+  on a failed check.
+- `framework.mjs` (offline): a reduced CoCr single crown on 36 (demo scans) and a reduced CoCr bridge 35–[36]–37 on
+  `lower-bridge.stl`. The Setup switch (Reduced, CoCr); frame, margin, axis and the proposal (a printable framework
+  with its veneering space); the Adapt cutback panel with the Framework and Both views, the veneer-space map and a
+  cutback edit (1.2 mm, overpress on; overpress on every bridge unit); Check bridge (one framework solid of genus 0,
+  connectors at the CoCr area, three overpress parts); Finalize exports of the framework and overpress STLs, each
+  parsed in Node as a closed solid, and the sidecar's framework section. Screenshots and downloads go to
+  `out/e2e/framework/` (`E2E_OUT`); `E2E_ONLY=single|bridge` runs one part. Exits non-zero on a failed check.
 - `maryland.mjs` (offline): the Maryland bridge 11w–[12] on the golden case `synthetic-maryland-11-12` (write it with
   `pnpm --filter @dcad/pipeline-runner run --synthetic`): setup (Wing on 11), the frame click on the palatal surface,
   the "Wing outline" live-wire, the common axis, Propose bridge, the Adapt wing panel and Check bridge, Finalize and
   the export (one closed solid of genus 0; the sidecar carries the wing). Screenshots go to `out/e2e/maryland/`.
 
+Clicks on the scan (`clickWorld` in `ai-bridge.mjs`, `bridge.mjs`, `implant.mjs` and `framework.mjs`) wait until the
+surface under the projected point is the target, within 0.3 mm. In headless Chrome with SwiftShader a frame of a
+1M-triangle scan can take longer than the 250 ms between two camera samples, so a click right after a view change
+could land on whatever hid the point in the previous view. For the same reason `settle()` in `bridge.mjs`,
+`implant.mjs` and `framework.mjs` also waits for three rendered frames in a row with the camera unchanged.
+camera-controls' `active` is no idle signal: a move that ends in one step (a jump, or one long frame) goes to sleep
+without a 'rest' event and leaves it true.
+
 ```bash
 pnpm dev:web                          # terminal 1 (and pnpm dev:api + Postgres for the online script)
-pnpm --filter @dcad/e2e offline       # or: online, move, bridge, ai-bridge, implant, anterior
+pnpm --filter @dcad/e2e offline       # or: online, move, bridge, ai-bridge, implant, anterior, framework, maryland
 ```
 
 Day 7 turns these into `@playwright/test` specs.

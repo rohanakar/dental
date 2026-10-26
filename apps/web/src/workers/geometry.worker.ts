@@ -108,12 +108,13 @@ const implants = createImplantApi({ registry, rayOf, initBooleans: () => initMes
 const bridgeCache = new BridgeCache(64);
 
 /**
- * The jaw's arch curve: fitted once per scan and occlusal direction (the mean of its abutments' occlusal) without a
- * buccal hint, then oriented per call by the abutments' buccal directions. The hint is not part of the cached fit, so
- * a flipped frame never gets a stale orientation.
+ * The jaw's arch curve: fitted once per scan and occlusal direction (the mean of its abutments' occlusal, or the
+ * jaw's occlusal-plane normal with a front-tooth abutment: archFitDirections) without a buccal hint, then oriented per
+ * call by the abutments' buccal directions. The hint is not part of the cached fit, so a flipped frame never gets a
+ * stale orientation.
  */
-function archCurveOf(scan: RetainedScan, frames: Array<{ occlusal: V3; buccal: V3 }>): ArchCurve {
-  const { occlusal, buccalHint } = archFitDirections(frames);
+function archCurveOf(scan: RetainedScan, frames: Array<{ occlusal: V3; buccal: V3; fdi: number }>): ArchCurve {
+  const { occlusal, buccalHint } = archFitDirections(frames, scan.positions);
   const fit = registry.cached(scan, `arch:${occlusal.map((x) => x.toFixed(2)).join(',')}`, () => fitArchCurve({ positions: scan.positions, occlusal }));
   return orientArchCurve(fit, buccalHint);
 }
@@ -181,11 +182,12 @@ const api = {
     const jaw = registry.get(request.jawSha);
     const antagonist = request.antagonistSha && registry.has(request.antagonistSha) ? registry.get(request.antagonistSha) : null;
     return estimateToothFrame({
-      jaw: { positions: jaw.positions, normals: jaw.normals },
+      jaw: { positions: jaw.positions, normals: jaw.normals, indices: jaw.indices },
       antagonist: antagonist ? { positions: antagonist.positions } : undefined,
       seed: request.seed,
       fdi: request.fdi,
       ray: rayOf(jaw),
+      prep: request.prep ?? true,
     }) as FrameEstimate;
   },
 
@@ -358,7 +360,7 @@ const api = {
     const t0 = performance.now();
     const scan = registry.get(request.jawSha);
     const ray = rayOf(scan);
-    const frames = request.units.flatMap((u) => (u.kind !== 'pontic' && u.frame ? [u.frame] : []));
+    const frames = request.units.flatMap((u) => (u.kind !== 'pontic' && u.frame ? [{ ...u.frame, fdi: u.fdi }] : []));
     const curve = archCurveOf(scan, frames);
     const abutments = request.units.flatMap((u) => {
       if (u.kind === 'pontic' || !u.frame) return [];
@@ -404,7 +406,7 @@ const api = {
       units,
       connectors: request.connectors,
       material: request.material,
-      curve: archCurveOf(scan, request.units.flatMap((u) => (u.kind !== 'pontic' && u.frame ? [u.frame] : []))),
+      curve: archCurveOf(scan, request.units.flatMap((u) => (u.kind !== 'pontic' && u.frame ? [{ ...u.frame, fdi: u.fdi }] : []))),
       maps: request.maps,
       union: request.union,
       cache: bridgeCache,

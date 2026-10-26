@@ -1,5 +1,11 @@
+import { MATERIAL_PRESETS } from '@dcad/shared';
 import { describe, expect, it } from 'vitest';
+import { marginUndercut, searchInsertionAxis } from './axis';
+import { designCrown } from './crown';
+import { liveWireWeight, marginFromAnchors } from './livewire';
 import type { V3 } from './pca';
+import { prepRegion, prepSeedVertex } from './prepRegion';
+import { analyzeSurface, smoothVertexNormals } from './surface';
 import { mesialFromBuccal, estimateToothFrame } from './toothFrame';
 import { syntheticArch, syntheticPrepMargin, syntheticPrepSeed } from './synthetic';
 import { prepareMesh } from './testUtils';
@@ -54,5 +60,59 @@ describe('tooth frame', () => {
     expect(Math.abs(dot(frame.occlusal, frame.mesial))).toBeLessThan(1e-6);
     expect(Math.abs(dot(frame.occlusal, frame.buccal))).toBeLessThan(1e-6);
     expect(Math.abs(dot(frame.mesial, frame.buccal))).toBeLessThan(1e-6);
+  });
+
+  it('follows the prep axis on leaning front teeth (the crown on it is printable); upright ones keep the jaw frame', () => {
+    // 600 × 300: below that the small incisor prep's crown can fold at its rounded line angle, leaning or not.
+    const along = 600;
+    const LEAN = 25;
+    const deg = (a: V3, b: V3) => (Math.acos(Math.min(1, Math.max(-1, dot(unit(a), unit(b))))) * 180) / Math.PI;
+    const upper = prepareMesh(syntheticArch({ jaw: 'upper', along, across: 300, preps: [11, 21], anteriorLeanDeg: LEAN }));
+    const frames = [11, 21].map((fdi) => {
+      const seed = syntheticPrepSeed({ fdi, along, anteriorLeanDeg: LEAN });
+      // The sheared tooth's centre line: tan(lean) labially per mm toward the antagonist (−z for the upper jaw).
+      const upright = syntheticPrepSeed({ fdi, along });
+      const labial = unit([seed[0] - upright[0], seed[1] - upright[1], 0]);
+      const t = Math.tan((LEAN * Math.PI) / 180);
+      const truth = unit([t * labial[0], t * labial[1], -1]);
+      const input = { jaw: upper, seed, fdi, ray: upper.ray };
+      const frame = estimateToothFrame({ ...input, prep: true });
+      expect(deg(frame.occlusal, truth)).toBeLessThan(4);
+      expect(deg(estimateToothFrame(input).occlusal, truth)).toBeGreaterThan(20); // the jaw-level frame stands upright
+      // FDI handedness: mesial toward the midline (11 sits at +x, 21 at −x), buccal labial; orthonormal.
+      expect(frame.mesial[0] * Math.sign(seed[0])).toBeLessThan(-0.9);
+      expect(dot(frame.buccal, labial)).toBeGreaterThan(0.85);
+      expect(Math.abs(dot(frame.occlusal, frame.mesial)) + Math.abs(dot(frame.occlusal, frame.buccal)) + Math.abs(dot(frame.mesial, frame.buccal))).toBeLessThan(1e-6);
+      expect(frame.warnings).toEqual([]);
+      return frame;
+    });
+
+    // The crown on 21 along the least-undercut axis from its frame: no margin point in undercut, a printable solid.
+    const frame = frames[1]!;
+    const surface = analyzeSurface(upper);
+    const ring = syntheticPrepMargin({ fdi: 21, along, samples: 8, anteriorLeanDeg: LEAN });
+    const anchors = Array.from({ length: 8 }, (_, i): V3 => [ring[i * 3]!, ring[i * 3 + 1]!, ring[i * 3 + 2]!]);
+    const trace = marginFromAnchors({ ...upper, graph: surface.graph, weight: liveWireWeight(surface.curvature), anchors });
+    const seedVertex = prepSeedVertex({ ...upper, loopVertices: trace.loopVertices, occlusal: frame.occlusal })!;
+    const region = prepRegion({ ...upper, graph: surface.graph, loopVertices: trace.loopVertices, seedVertex });
+    expect(region.closed).toBe(true);
+    const axis = searchInsertionAxis({ ...upper, faceMask: region.faceMask, center: frame.occlusal });
+    expect(axis.angleFromCenterDeg).toBeLessThan(2); // the jaw-level frame needs 6.9° here
+    expect(marginUndercut({ points: trace.points, axis: axis.direction, ray: upper.ray, faceMask: region.faceMask }).count).toBe(0);
+    const crown = designCrown({
+      fdi: 21,
+      jaw: { ...upper, graph: surface.graph, smoothNormals: smoothVertexNormals(upper.normals, surface.graph, 3) },
+      region: { ...region, loopVertices: trace.loopVertices },
+      frame,
+      margin: trace.points,
+      axis: axis.direction,
+      params: MATERIAL_PRESETS.zirconia,
+    });
+    expect(crown.validation).toMatchObject({ closed: true, ok: true, selfIntersections: 0, printable: true });
+
+    // Gate: on the upright arch the front-tooth rule leaves the jaw-level frame exactly as it was.
+    const straight = prepareMesh(syntheticArch({ jaw: 'upper', along, across: 300, preps: [11] }));
+    const input = { jaw: straight, seed: syntheticPrepSeed({ fdi: 11, along }), fdi: 11, ray: straight.ray };
+    expect(estimateToothFrame({ ...input, prep: true })).toEqual(estimateToothFrame(input));
   });
 });

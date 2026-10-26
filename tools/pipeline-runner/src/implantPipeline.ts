@@ -145,7 +145,7 @@ export async function runImplantBridgeCase(spec: GoldenImplantCase, baseDir: str
     }),
   );
   const estimates = registered.map((r) => estimateToothFrame({ jaw: { positions, normals }, seed: r.u.click!, fdi: r.u.fdi, ray }));
-  const curve = await time('archCurve', () => fitArchCurve({ positions, ...archFitDirections(estimates) }));
+  const curve = await time('archCurve', () => fitArchCurve({ positions, ...archFitDirections(estimates.map((e, i) => ({ ...e, fdi: registered[i]!.u.fdi })), positions) }));
   const frames = await time('frames', () =>
     registered.map((r, i) => {
       const aligned = archAlignedFrame({ frame: estimates[i]!, fdi: r.u.fdi, curve, ray });

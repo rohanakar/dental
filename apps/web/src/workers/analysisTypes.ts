@@ -28,6 +28,11 @@ export interface FrameRequest {
   antagonistSha?: string;
   seed: V3;
   fdi: number;
+  /**
+   * The click is on a crown prep, so a front tooth's frame follows the prep's own axis (estimateToothFrame). Default
+   * true; false for restorations without a prepared stump (implant crowns, wings, inlays and onlays).
+   */
+  prep?: boolean;
 }
 
 export interface SurfaceInfo {

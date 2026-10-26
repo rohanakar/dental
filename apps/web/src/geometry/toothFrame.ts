@@ -1,4 +1,5 @@
 import { principalAxes, symmetricEigen3, type V3 } from './pca';
+import { findPrepStump, stumpWallAxis } from './prepAxis';
 import type { RayCaster } from './raycast';
 
 const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -46,7 +47,29 @@ export function mesialFromBuccal(fdi: number, occlusal: V3, buccal: V3): V3 {
   return normalize(q === 1 || q === 3 ? cross(buccal, occlusal) : cross(occlusal, buccal));
 }
 
-const COS_25 = Math.cos((25 * Math.PI) / 180);
+const DEG = Math.PI / 180;
+const COS_25 = Math.cos(25 * DEG);
+
+/** Front teeth (FDI positions 1–3: incisors and canines) lean; their prep's frame follows the prep's own axis. */
+export const isFrontTooth = (fdi: number) => fdi % 10 >= 1 && fdi % 10 <= 3;
+
+/**
+ * The front-tooth rule: how far the frame's occlusal turns from the jaw's occlusal toward the prep's wall axis, for a
+ * tilt of `tiltDeg` between them. Up to 5° none (an upright prep keeps the jaw frame; the estimate spreads 2–2.5° on
+ * upright synthetic incisors), from 10° to 40° the whole tilt, a continuous ramp θ·(θ − 5°)/5° in between, and none
+ * beyond 40° (no front tooth leans that far: the estimate is wrong).
+ */
+export function frontToothTiltDeg(tiltDeg: number): number {
+  if (tiltDeg <= 5 || tiltDeg > 40) return 0;
+  return tiltDeg >= 10 ? tiltDeg : (tiltDeg * (tiltDeg - 5)) / 5;
+}
+
+/** Rotate v about unit axis k by angle a (Rodrigues). */
+function rotate(v: V3, k: V3, a: number): V3 {
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  return add(add(scale(v, c), scale(cross(k, v), s)), scale(k, dot(k, v) * (1 - c)));
+}
 
 /**
  * Tooth-local frame from a click on the prep.
@@ -58,14 +81,26 @@ const COS_25 = Math.cos((25 * Math.PI) / 180);
  * - mesial-distal line: major axis of crown points (within 12 mm, no lower
  *   than 1.5 mm below the prep top) projected on the occlusal plane.
  * - buccal: away from the arch centroid; mesial from FDI handedness.
+ * - front-tooth preps (`prep` with the jaw's triangles, FDI positions 1–3):
+ *   the occlusal then turns toward the prep's own axis (the axis of its
+ *   walls, stumpWallAxis), gated by frontToothTiltDeg, by one rotation of the
+ *   whole frame; the origin is cast again along the new occlusal. Front teeth
+ *   lean 15–30° labially, and a crown posed along the jaw's occlusal stands
+ *   upright on a leaning prep (specs/2026-10-26-anterior-tooth-frame.md).
  * - contacts: see findNeighbourContacts.
  */
 export function estimateToothFrame(input: {
-  jaw: { positions: Float32Array; normals: Float32Array };
+  /** The jaw scan; `indices` (triangles, any order) are needed for the front-tooth rule. */
+  jaw: { positions: Float32Array; normals: Float32Array; indices?: ArrayLike<number> };
   antagonist?: { positions: Float32Array };
   seed: V3;
   fdi: number;
   ray: RayCaster;
+  /**
+   * The click is on a crown prep (not a scan body, a natural tooth for a wing, a cavity or a ridge): on a front tooth
+   * the occlusal follows the prep's own axis. Default false (the jaw-level frame).
+   */
+  prep?: boolean;
 }): ToothFrameEstimate {
   const { jaw, seed, fdi, ray } = input;
   const warnings: string[] = [];
@@ -96,7 +131,7 @@ export function estimateToothFrame(input: {
   // Prep top under the seed.
   const down = scale(occlusal, -1);
   const topHit = ray.first(add(seed, scale(occlusal, 15)), down, 30);
-  const origin: V3 = topHit ? topHit.point : seed;
+  let origin: V3 = topHit ? topHit.point : seed;
 
   // Mesial-distal line from crown points around the prep.
   const e1 = normalize(cross(occlusal, Math.abs(occlusal[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0]));
@@ -137,8 +172,26 @@ export function estimateToothFrame(input: {
   const bLine = normalize(cross(mdLine, occlusal));
   const outward = reject(reject(sub(origin, pca.centroid), occlusal), mdLine);
   if (norm(outward) < 1) warnings.push('Could not tell buccal from lingual (prep is near the scan centre); check the frame or flip it.');
-  const buccal = dot(bLine, outward) >= 0 ? bLine : scale(bLine, -1);
-  const mesial = mesialFromBuccal(fdi, occlusal, buccal);
+  let buccal = dot(bLine, outward) >= 0 ? bLine : scale(bLine, -1);
+  let mesial = mesialFromBuccal(fdi, occlusal, buccal);
+
+  // Front-tooth prep: turn the frame toward the prep's own axis.
+  if (input.prep && jaw.indices && isFrontTooth(fdi)) {
+    const stump = findPrepStump({ positions: P, indices: jaw.indices, frame: { origin, mesial, buccal }, occlusal });
+    const axis = stump && stumpWallAxis(stump, occlusal);
+    const tiltDeg = axis ? Math.acos(Math.min(1, Math.max(-1, dot(axis, occlusal)))) / DEG : 0;
+    const applied = frontToothTiltDeg(tiltDeg);
+    if (!axis || tiltDeg > 40) {
+      warnings.push(`Could not find the axis of the prep${axis ? ` (${tiltDeg.toFixed(0)}° from the occlusal plane normal)` : ''}: the frame follows the occlusal plane. Check that the click is on the prep.`);
+    } else if (applied > 0) {
+      const k = normalize(cross(occlusal, axis));
+      occlusal = normalize(rotate(occlusal, k, applied * DEG));
+      buccal = normalize(reject(rotate(buccal, k, applied * DEG), occlusal));
+      mesial = mesialFromBuccal(fdi, occlusal, buccal);
+      const hit = ray.first(add(seed, scale(occlusal, 15)), scale(occlusal, -1), 30);
+      if (hit) origin = hit.point;
+    }
+  }
 
   const contacts = findNeighbourContacts({ origin, occlusal, mesial, buccal, ray });
   if (!contacts.mesial) warnings.push('No mesial neighbour found within 10 mm.');

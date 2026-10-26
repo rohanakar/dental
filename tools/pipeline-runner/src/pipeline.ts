@@ -174,11 +174,12 @@ export async function runCase(spec: GoldenCase, baseDir: string, options: RunOpt
 
   const frame = await time('frame', () =>
     estimateToothFrame({
-      jaw: { positions, normals },
+      jaw: { positions, normals, indices },
       antagonist: scans[antagonistJaw] ? { positions: scans[antagonistJaw].mesh.positions } : undefined,
       seed: spec.seed,
       fdi: spec.fdi,
       ray,
+      prep: true,
     }),
   );
 

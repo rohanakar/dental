@@ -1,4 +1,4 @@
-import { bridgeOf, type RestorationType, type ScanRole, type StepId, unitKind } from '@dcad/shared';
+import { bridgeOf, type ScanRole, type StepId, unitKind } from '@dcad/shared';
 import type { MeshBVH } from 'three-mesh-bvh';
 import { useDesignStore } from '../design/store';
 import type { Viewer } from '../engine/Viewer';
@@ -17,7 +17,7 @@ import { frameInteraction } from './frameTool';
 import { marginProblems } from './marginCheck';
 import { MARGIN_COLOR, marginTool } from './marginTool';
 import { implantTool, isImplantTooth } from './implantTool';
-import { MARGIN_VIEW_DISTANCE_MM, marginView } from './marginView';
+import { MARGIN_VIEW_DISTANCE_MM, marginView, PREP_MARGIN } from './marginView';
 import { useToolStore } from './toolStore';
 import { isWing } from './wing';
 
@@ -27,12 +27,6 @@ const AXIS_COLOR = '#b07cff';
 const HIDE_ANTAGONIST: readonly StepId[] = ['frame', 'margin', 'axis'];
 /** Steps after which the accepted margin stays visible. */
 const SHOW_MARGIN: readonly StepId[] = ['margin', 'axis'];
-/**
- * Restorations whose Margin step traces the finish line of a prepared stump: the step's view follows the prep's own
- * axis (marginView.ts). Others keep the frame's occlusal view: an implant crown's step places the scan body, and
- * types without a stump (wings, cavities) have their own outline.
- */
-const PREP_MARGIN: readonly RestorationType[] = ['anatomic-crown', 'reduced-crown'];
 /** Steps that show the restorations: a click on a bridge unit makes it the active tooth. */
 const PICK_UNIT: readonly StepId[] = ['params', 'proposal', 'adapt', 'finalize'];
 

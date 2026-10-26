@@ -48,17 +48,60 @@ async function openApp(name) {
     state: (fn, arg) => page.evaluate(fn, arg),
     waitFor: (fn, arg, timeout = 240000) => page.waitForFunction(fn, arg, { timeout, polling: 150 }),
     step: (label) => page.getByRole('navigation', { name: 'Design steps' }).getByRole('button', { name: label }).first().click(),
+    /**
+     * Until the camera stops: two equal camera samples 250 ms apart, then three rendered frames in a row with the
+     * camera unchanged (a SwiftShader frame of a 1M-triangle scan can take longer than 250 ms). camera-controls'
+     * `active` is no idle signal: a move that ends in one step (a jump, or a long frame) goes to sleep without 'rest'
+     * and leaves it true.
+     */
     settle: async () => {
       let last = '';
       for (let i = 0; i < 200; i++) {
         const now = await page.evaluate(() => window.__dcad.viewer.controls.camera.position.toArray().map((x) => x.toFixed(3)).join());
-        if (now === last) return;
+        if (now === last) break;
         last = now;
         await page.waitForTimeout(250);
       }
+      await page.evaluate(
+        () =>
+          new Promise((done) => {
+            const camera = window.__dcad.viewer.controls.camera;
+            let previous = '';
+            let same = 0;
+            let frames = 0;
+            const tick = () => {
+              const now = [...camera.position.toArray(), ...camera.quaternion.toArray()].map((x) => x.toFixed(4)).join();
+              same = now === previous ? same + 1 : 0;
+              previous = now;
+              if (same >= 3 || ++frames > 600) done();
+              else requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
+          }),
+      );
     },
     project: (p) => page.evaluate((q) => window.__dcad.viewer.project(q), p),
-    clickWorld: async (p) => {
+    /**
+     * Click a world point once the view shows it. settle() can return before a view change has rendered its first
+     * frame, and a click in the previous view lands on whatever hides the point. So wait until the surface under the
+     * point's projection is the point itself, within 0.3 mm (`objectIds` limits the pick; as in ai-bridge.mjs).
+     * `guard: false` clicks at once, for a target that is not on a surface.
+     */
+    clickWorld: async (p, { objectIds, guard = true } = {}) => {
+      for (let i = 0; guard && i < 40; i++) {
+        const miss = await page.evaluate(
+          ([q, ids]) => {
+            const v = window.__dcad.viewer;
+            const s = v.project(q);
+            const hit = s && v.raycast(s.x, s.y, ids ? { objectIds: ids } : undefined);
+            return hit ? Math.hypot(hit.point.x - q[0], hit.point.y - q[1], hit.point.z - q[2]) : Infinity;
+          },
+          [p, objectIds ?? null],
+        );
+        if (miss < 0.3) break;
+        await page.waitForTimeout(250);
+        await h.settle();
+      }
       const s = await page.evaluate((q) => window.__dcad.viewer.project(q), p);
       await page.mouse.click(s.x, s.y);
     },
@@ -91,7 +134,7 @@ async function frameAbutments(h, abutments) {
     await h.selectTooth(fdi);
     await h.page.keyboard.press('1');
     await h.settle();
-    await h.clickWorld(await h.synthetic('syntheticPrepSeed', { fdi, along: ALONG }));
+    await h.clickWorld(await h.synthetic('syntheticPrepSeed', { fdi, along: ALONG }), { objectIds: [fdi < 30 ? 'upper' : 'lower'] });
     await h.waitFor((f) => Boolean(window.__dcad.design.getState().doc.teeth.find((t) => t.fdi === f)?.frame), fdi, 60000);
   }
 }
@@ -140,7 +183,7 @@ async function traceMargins(h, abutments) {
         d = await miss(p);
       }
       misses.push(d);
-      await h.clickWorld(p);
+      await h.clickWorld(p, { objectIds: [role] });
       await h.page.waitForTimeout(250);
     }
     expect(Math.max(...misses) < 0.3, `margin ${fdi}: every click lands on the margin`, `${misses.map((d) => d.toFixed(2)).join(' ')} mm (${reaimed} re-aimed)`);
@@ -224,7 +267,7 @@ if (ONLY !== 'anterior') {
     const r = v.raycast(s.x, s.y, { objectIds: ['lower'] });
     return r && [r.point.x, r.point.y, r.point.z];
   }, target);
-  await h.clickWorld(hit);
+  await h.clickWorld(hit, { objectIds: ['lower'] });
   await h.waitFor(() => window.__dcad.design.getState().doc.teeth.find((t) => t.fdi === 36).frame.source === 'manual', null, 30000).catch(() => {});
   const clicked = (await h.tooth(36)).frame;
   const offBy = Math.hypot(...[0, 1, 2].map((k) => clicked.origin[k] - hit[k]));
@@ -286,7 +329,7 @@ if (ONLY !== 'anterior') {
     }
     return c.map((x) => x / n);
   });
-  await h.clickWorld(ponticTop);
+  await h.clickWorld(ponticTop, { guard: false }); // a mean of the pontic's top vertices: inside the crown, not on it
   await h.waitFor(() => window.__dcad.design.getState().activeFdi === 36, null, 10000).catch(() => {});
   expect((await h.state(() => window.__dcad.design.getState().activeFdi)) === 36, 'clicking the pontic makes it active');
   await page.waitForTimeout(300);

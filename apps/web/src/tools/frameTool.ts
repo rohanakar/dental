@@ -8,6 +8,7 @@ import { analysis } from '../workers/geometryClient';
 import { isStale } from '../workers/latestWins';
 import { frameView } from './bridgeTool';
 import { errorText, fromMarginPoints, toothContext } from './context';
+import { PREP_MARGIN } from './marginView';
 import { useToolStore, type V3 } from './toolStore';
 
 const neg = (v: readonly number[]): V3 => [-v[0]!, -v[1]!, -v[2]!];
@@ -19,11 +20,15 @@ export async function estimateFrameAt(seed: V3): Promise<void> {
   if (!ctx) return;
   tools.set({ busy: 'Estimating the tooth frame…', message: null });
   try {
+    const restoration = useDesignStore.getState().doc.setup.teeth.find((t) => t.fdi === ctx.fdi)?.restoration;
     const est = await analysis.estimateFrame({
       jawSha: ctx.jaw.sha256,
       antagonistSha: ctx.antagonist?.sha256,
       seed,
       fdi: ctx.fdi,
+      // On a crown prep a front tooth's frame follows the prep's own axis; a scan body, a wing's tooth or a cavity
+      // keeps the jaw-level frame.
+      prep: restoration ? PREP_MARGIN.includes(restoration) : true,
     });
     const { warnings, ...frame } = est;
     useDesignStore.getState().dispatch({ type: 'setFrame', fdi: ctx.fdi, frame: { ...frame, source: 'auto' } });
