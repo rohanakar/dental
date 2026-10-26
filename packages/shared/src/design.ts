@@ -122,6 +122,36 @@ export type StepStatus = z.infer<typeof StepStatus>;
 export const initialSteps = (): Record<StepId, StepStatus> =>
   Object.fromEntries(STEP_ORDER.map((s) => [s, 'pending'])) as Record<StepId, StepStatus>;
 
+/**
+ * Implant crowns: the scan-body match (the "Implant position" step, stored in the margin step). The pose places the
+ * library frame (platform centre, implant axis +z, anti-rotation flat +x) in the scan.
+ */
+export const ImplantDesign = z.object({
+  /** Library entry key, `${library id}/${entry id}`, e.g. 'synthetic-generic@1/rp-non-engaging'. */
+  libraryId: z.string().min(1),
+  scanBodyPose: Pose,
+  /** Engaging Ti-base (single units); bridges use non-engaging ones. */
+  engaging: z.boolean(),
+  /** The library's largest angled-screw-channel angle (setScrewChannel is refused above it). */
+  ascMaxDeg: z.number().min(0).max(45),
+  /** Registration quality (scanBody.ts). */
+  fit: z.object({
+    rmsMm: z.number().nonnegative(),
+    maxMm: z.number().nonnegative(),
+    inlierFraction: z.number().min(0).max(1),
+    coverage: z.number().min(0).max(1).optional(),
+  }),
+  source: Source,
+});
+export type ImplantDesign = z.infer<typeof ImplantDesign>;
+
+/** Angled screw channel: 0° runs along the implant axis; the azimuth is measured about it from buccal toward mesial. */
+export const ScrewChannel = z.object({
+  angleDeg: z.number().min(0).max(45),
+  azimuthDeg: z.number().min(-360).max(360),
+});
+export type ScrewChannel = z.infer<typeof ScrewChannel>;
+
 export const ToothDesign = z.object({
   fdi: Fdi,
   params: DesignParams,
@@ -129,6 +159,10 @@ export const ToothDesign = z.object({
   margin: MarginLine.optional(),
   axis: InsertionAxis.optional(),
   crown: Crown.optional(),
+  /** Implant crowns: the scan-body match (instead of a margin). */
+  implant: ImplantDesign.optional(),
+  /** Implant crowns: the screw channel; omitted = straight. */
+  screwChannel: ScrewChannel.optional(),
   steps: z.record(StepId, StepStatus),
 });
 export type ToothDesign = z.infer<typeof ToothDesign>;

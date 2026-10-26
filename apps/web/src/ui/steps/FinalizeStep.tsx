@@ -10,6 +10,9 @@ import { BridgeFinalize, useActiveBridge } from './BridgePanels';
 import { CrownStatusView } from './CrownStatusView';
 import { MapSelect, ReadaptNotice } from './CrownViewControls';
 import { isReady, millReadiness, type ReadinessItem, type ReadinessStatus, readinessNeeds } from './readiness';
+import { IMPLANT_NEEDS, implantReadiness } from './implantReadiness';
+import { useIsImplant } from './ImplantPanel';
+import { useImplantStore } from '../../tools/implantTool';
 import { MATERIAL_LABEL } from './SetupStep';
 import './NudgePad.css';
 
@@ -59,6 +62,8 @@ function CrownFinalize() {
   const [measuring, setMeasuring] = useState(true);
   const [confirming, setConfirming] = useState(false);
   const [exported, setExported] = useState<{ file: string; at: string } | null>(null);
+  const implant = useIsImplant();
+  const implantView = useImplantStore((s) => s.result);
 
   // The axis map is cleared when its step is left, so measure the current axis here.
   const axisInput = tooth?.axis;
@@ -88,8 +93,8 @@ function CrownFinalize() {
     material: material ? MATERIAL_LABEL[material] : 'Material',
     adaptationStale: adaptationStale(tooth),
     neighbours: { mesial: Boolean(tooth.frame?.mesialContact), distal: Boolean(tooth.frame?.distalContact) },
-    needs: readinessNeeds(kind),
-  });
+    needs: implant ? IMPLANT_NEEDS : readinessNeeds(kind),
+  }).concat(implant ? implantReadiness(tooth, implantView, crown?.computing) : []);
   const items = measuring ? checks.map((i) => (i.id === 'axis' ? { ...i, detail: 'Measuring…' } : i)) : checks;
   const ready = isReady(items);
   const open = items.filter((i) => i.status !== 'pass');

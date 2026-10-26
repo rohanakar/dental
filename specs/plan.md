@@ -240,3 +240,11 @@ passed; real scans would have had mesial and distal swapped). Both are fixed. Se
 **2026-10-26: one-click bridge auto-design.** Bridge proposers and a one-click bridge run (frames, margins, common
 axis, units, adaptation, connector and union gates) as one Accept/Reject draft. The assistant measures bridges. The
 fixture generator runs with tsx. See [2026-10-25-bridge-mode.md](2026-10-25-bridge-mode.md).
+
+**2026-10-26: implant crowns and bridges.** Screw-retained on Ti-bases.
+- Scan-body registration, the emergence loft, and straight or angled screw channels with exit and wall checks.
+- Implant bridges on non-engaging Ti-bases, with a divergence check and Ti-base seating in the union.
+- An Implant position step, channel controls, and a sidecar for CAM.
+- The synthetic library only: no vendor geometry. 104 tests.
+
+See [2026-10-25-implant-bridges.md](2026-10-25-implant-bridges.md).

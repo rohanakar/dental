@@ -11,6 +11,7 @@ import { isStale } from '../workers/latestWins';
 import { bridgeTool } from './bridgeTool';
 import { errorText, fromMarginPoints, toothContext, type ToothContext } from './context';
 import { CROWN_MAPS, crownMapLegend } from './crownLegend';
+import { implantCrownRequest } from './implantTool';
 import { useToolStore, type LegendSpec } from './toolStore';
 
 export const CROWN_OBJECT_ID = 'crown';
@@ -36,6 +37,7 @@ function legendFor(map: CrownMapName): LegendSpec {
 }
 
 function request(ctx: ToothContext, withPose: boolean, map: CrownMapName | 'none'): CrownRequest | null {
+  if (ctx.tooth.implant) return implantCrownRequest(ctx, withPose, map);
   const { frame, margin, axis, params, crown } = ctx.tooth;
   if (!frame || !margin || !axis) return null;
   return {
@@ -62,7 +64,7 @@ function request(ctx: ToothContext, withPose: boolean, map: CrownMapName | 'none
 /** Everything the derived crown depends on; a change of any entry recomputes it. */
 function inputsOf(ctx: ToothContext | null): unknown[] {
   const t = ctx?.tooth;
-  return [ctx?.jaw.sha256, ctx?.antagonist?.sha256, t?.frame, t?.margin, t?.axis, t?.params, t?.crown, t?.steps.adapt, useToolStore.getState().crownMap];
+  return [ctx?.jaw.sha256, ctx?.antagonist?.sha256, t?.frame, t?.margin, t?.axis, t?.params, t?.crown, t?.steps.adapt, useToolStore.getState().crownMap, t?.implant, t?.screwChannel];
 }
 
 /**
@@ -201,7 +203,9 @@ class CrownTool {
     const caseRef = (doc.setup.patientRef || useSessionStore.getState().currentCase?.patientRef || 'case').replace(/[^\w.-]+/g, '_');
     const base = `${caseRef}-${ctx.fdi}`;
     if (kind === 'stl') {
-      downloadBytes(crownStl({ positions: last.positions, indices: last.indices }), `${base}.stl`, 'model/stl');
+      // An implant crown is exported with its screw channel.
+      const solid = last.implant?.cut ?? last;
+      downloadBytes(crownStl({ positions: solid.positions, indices: solid.indices }), `${base}.stl`, 'model/stl');
       return `${base}.stl`;
     }
     const info = constructionInfo({ doc, tooth: ctx.tooth, appVersion: APP_VERSION, result: last });

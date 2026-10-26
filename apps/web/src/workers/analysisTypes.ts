@@ -4,6 +4,8 @@ import type { ConnectorEnd, ConnectorFailure } from '../geometry/connectors';
 import type { GapCheck } from '../geometry/intaglio';
 import type { MeshValidation } from '../geometry/meshValidate';
 import type { PonticBaseGap } from '../geometry/pontic';
+import type { ScrewChannelReport } from '../geometry/implantCrown';
+import type { TiBaseGapCheck } from '../geometry/tiBase';
 
 /** Messages between the main thread and the geometry worker's analysis API. */
 export type V3 = [number, number, number];
@@ -78,6 +80,8 @@ export interface CrownRequest {
   maps?: CrownMapName[];
   /** Adaptation targets stored on the crown. */
   adapt?: CrownAdapt;
+  /** Implant crowns: the Ti-base and the scan-body pose (the margin is then unused). */
+  implant?: ImplantUnitRequest;
 }
 
 export interface AdaptConflict {
@@ -116,6 +120,8 @@ export interface CrownResult {
   warnings: string[];
   timingsMs: Record<string, number>;
   ms: number;
+  /** Implant crowns: the screw channel, the Ti-base fit and the restoration with the channel. */
+  implant?: ImplantResultView;
 }
 
 /** Jaw faces to draw in focus while the crown is adjusted: the prep region inside the margin. */
@@ -234,6 +240,8 @@ export interface BridgeUnitRequest {
   adapt?: CrownAdapt;
   /** Pontics: centre override (a click on the ridge); places the proposed pose. Pass it again with a stored frame. */
   centre?: V3;
+  /** Implant crowns: the Ti-base and the scan-body pose, instead of a margin. */
+  implant?: ImplantUnitRequest;
 }
 
 /** One bridge, designed in the worker. Units are cached by input hash: moving one unit recomputes it and its connectors. */
@@ -305,3 +313,90 @@ export interface BridgeResultView {
   timingsMs: Record<string, number>;
   ms: number;
 }
+
+// ---- Implants (geometry/scanBody.ts, implantCrown.ts, implantBridge.ts) ------------------------------------------
+
+/** An implant unit as the document stores it (ToothDesign.implant and screwChannel). */
+export interface ImplantUnitRequest {
+  /** Library entry key, e.g. 'synthetic-generic@1/rp-non-engaging'. */
+  libraryId: string;
+  /** The registered scan-body pose (the library frame in the scan). */
+  pose: Pose;
+  channel?: { angleDeg: number; azimuthDeg: number };
+}
+
+/** A library entry, for the setup and the implant position step. */
+export interface ImplantEntryView {
+  key: string;
+  libraryId: string;
+  system: string;
+  platform: string;
+  engaging: boolean;
+  channelDiameterMm: number;
+  ascMaxDeg: number;
+  maxDivergenceDeg: number;
+  bondingGapMm: number;
+  scanBodyTopZ: number;
+  scanBodyRadiusMm: number;
+}
+
+/** The implant position step: register the library scan body from a click on the scanned one's top. */
+export interface ScanBodyRequest {
+  jawSha: string;
+  fdi: number;
+  click: V3;
+  libraryId: string;
+  /** The tooth frame (from the frame step): returned moved onto the gingival opening, with its contacts searched again. */
+  frame?: FrameView;
+}
+
+export interface ScanBodyResult {
+  /** The library frame in the scan, as the document stores it. */
+  pose: Pose;
+  origin: V3;
+  axis: V3;
+  rmsMm: number;
+  maxMm: number;
+  inlierFraction: number;
+  coverage: number;
+  /** RMS ≤ 0.05 mm, inliers ≥ 0.9, coverage ≥ 0.6. */
+  passed: boolean;
+  failures: string[];
+  /** The tooth frame on the gingival opening (when a frame was given and the match passed). */
+  frame?: FrameView;
+  opening?: { centre: V3; meanHeightMm: number; coverage: number };
+  /** The library scan body at the pose, for the ghost display. */
+  scanBody: { positions: Float32Array; indices: Uint32Array };
+  ms: number;
+}
+
+/** The common path over a bridge's implant axes (searchImplantPath). */
+export interface ImplantPathRequest {
+  implants: Array<{ fdi: number; pose: Pose; libraryId: string }>;
+}
+
+export interface ImplantPathView {
+  direction: V3;
+  divergenceDeg: number;
+  maxDivergenceDeg: number;
+  ok: boolean;
+  implants: Array<{ fdi: number; angleToPathDeg: number }>;
+  failures: string[];
+}
+
+/** An implant crown's extras on a CrownResult (geometry/implantCrown.ts ImplantCrownExtras). */
+export interface ImplantResultView {
+  libraryId: string;
+  engaging: boolean;
+  channel: ScrewChannelReport;
+  tiBaseGap: TiBaseGapCheck;
+  /** Shoulder points hidden under the Ti-base from the insertion path: > 0 = cannot be seated. */
+  rimUndercutCount: number;
+  opening: { centre: V3; meanHeightMm: number; coverage: number };
+  /** The restoration with the screw channel: what is exported. */
+  cut?: { positions: Float32Array; indices: Uint32Array };
+  cutOk?: boolean;
+}
+
+/** The auto-angled screw channel (classical.screw-channel), or null when no angle in the ASC cone passes. */
+export type ScrewChannelProposal = { angleDeg: number; azimuthDeg: number; exitOk: boolean; minWallMm: number } | null;

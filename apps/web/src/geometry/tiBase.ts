@@ -132,7 +132,11 @@ export interface TiBaseGapCheck {
  * intaglio must equal the gap. Measured both ways: from the Ti-base's
  * bonding surface (above the shoulder, away from the rim) to the intaglio,
  * which catches the intaglio cutting corners between its vertices, and from
- * the intaglio's vertices to the Ti-base (signed), which catches penetration.
+ * the intaglio's vertices to the Ti-base (signed by ray parity: inside the
+ * closed Ti-base is negative), which catches penetration. With an insertion
+ * axis other than the implant axis (a bridge's common path), Ti-base samples
+ * hidden from that direction (undercut, or under an overhang) are blocked
+ * out, not bonded, and are skipped.
  */
 export function measureTiBaseGap(input: {
   /** The Ti-base at the pose (world). */
@@ -143,6 +147,12 @@ export function measureTiBaseGap(input: {
   gapMm: number;
   /** Samples closer than this to the rim are skipped (default 0.3 mm). */
   excludeMm?: number;
+  /** Also skip samples where this is true (e.g. around a screw channel). */
+  exclude?: (p: V3) => boolean;
+  /** Also measure from the intaglio's vertices to the Ti-base (default true; off for a whole restoration or a union). */
+  intaglioSide?: boolean;
+  /** The insertion axis the intaglio was built along; samples hidden from it are skipped (blockout). */
+  insertionAxis?: V3;
 }): TiBaseGapCheck {
   const { tiBase, intaglio, rim, gapMm } = input;
   const exclude = input.excludeMm ?? 0.3;
@@ -157,9 +167,16 @@ export function measureTiBaseGap(input: {
   const intaglioRay = bvhRayCaster(createBvh({ positions: intaglio.positions, indices: intaglio.indices.slice() }));
   const T = tiBase.positions;
   const ti = tiBase.indices;
+  const tiIndices = ti.slice();
+  const tiRay = bvhRayCaster(createBvh({ positions: T, indices: tiIndices }));
+  const path = input.insertionAxis ? normalize(input.insertionAxis) : null;
+  const vertexNormals = path ? angleWeightedNormals(tiBase) : null;
+  /** Hidden from the insertion direction: a ray from just off the surface along the path hits the Ti-base. */
+  const hidden = (p: V3, n: V3) => Boolean(path && tiRay.first([p[0] + 2e-3 * n[0], p[1] + 2e-3 * n[1], p[2] + 2e-3 * n[2]], path, 20));
   let samples = 0, sum = 0, maxErr = 0, minGap = Infinity, maxGap = 0;
-  const measure = (p: V3) => {
-    if (height(p) < shoulderLow || distanceToLoop(p, rim) < exclude) return;
+  const skip = input.exclude;
+  const measure = (p: V3, n: V3 | null) => {
+    if (height(p) < shoulderLow || distanceToLoop(p, rim) < exclude || skip?.(p) || (n && hidden(p, n))) return;
     const hit = intaglioRay.closestPoint(p, gapMm + 1);
     if (!hit) return;
     const err = Math.abs(hit.distance - gapMm);
@@ -169,29 +186,30 @@ export function measureTiBaseGap(input: {
     minGap = Math.min(minGap, hit.distance);
     maxGap = Math.max(maxGap, hit.distance);
   };
-  for (let i = 0; i < T.length; i += 3) measure([T[i]!, T[i + 1]!, T[i + 2]!]);
+  for (let i = 0; i < T.length; i += 3) measure([T[i]!, T[i + 1]!, T[i + 2]!], vertexNormals ? [vertexNormals[i]!, vertexNormals[i + 1]!, vertexNormals[i + 2]!] : null);
   for (let f = 0; f < ti.length; f += 3) {
     const a = ti[f]! * 3, b = ti[f + 1]! * 3, c = ti[f + 2]! * 3;
-    measure([(T[a]! + T[b]! + T[c]!) / 3, (T[a + 1]! + T[b + 1]! + T[c + 1]!) / 3, (T[a + 2]! + T[b + 2]! + T[c + 2]!) / 3]);
+    const n = path
+      ? normalize([
+          (T[b + 1]! - T[a + 1]!) * (T[c + 2]! - T[a + 2]!) - (T[b + 2]! - T[a + 2]!) * (T[c + 1]! - T[a + 1]!),
+          (T[b + 2]! - T[a + 2]!) * (T[c]! - T[a]!) - (T[b]! - T[a]!) * (T[c + 2]! - T[a + 2]!),
+          (T[b]! - T[a]!) * (T[c + 1]! - T[a + 1]!) - (T[b + 1]! - T[a + 1]!) * (T[c]! - T[a]!),
+        ])
+      : null;
+    measure([(T[a]! + T[b]! + T[c]!) / 3, (T[a + 1]! + T[b + 1]! + T[c + 1]!) / 3, (T[a + 2]! + T[b + 2]! + T[c + 2]!) / 3], n);
   }
 
-  // Intaglio → Ti-base, signed by the Ti-base face normal at the closest point.
-  const tiIndices = ti.slice();
-  const tiRay = bvhRayCaster(createBvh({ positions: T, indices: tiIndices }));
+  // Intaglio → Ti-base: the distance, negative inside the Ti-base (ray parity over three directions, majority).
+  const PARITY: V3[] = [normalize([0.21, 0.37, 0.9]), normalize([-0.53, 0.29, 0.79]), normalize([0.11, -0.61, 0.78])];
+  const inside = (p: V3) => PARITY.filter((d) => tiRay.all(p, d, 40).length % 2 === 1).length >= 2;
   const Q = intaglio.positions;
   let iSamples = 0, iSum = 0, iMax = 0, iMin = Infinity;
-  for (let i = 0; i < Q.length; i += 3) {
+  for (let i = 0; input.intaglioSide !== false && i < Q.length; i += 3) {
     const p: V3 = [Q[i]!, Q[i + 1]!, Q[i + 2]!];
     if (distanceToLoop(p, rim) < exclude) continue;
     const hit = tiRay.closestPoint(p, gapMm + 1);
     if (!hit) continue;
-    const f = hit.faceIndex * 3;
-    const a = tiIndices[f]! * 3, b = tiIndices[f + 1]! * 3, c = tiIndices[f + 2]! * 3;
-    const ux = T[b]! - T[a]!, uy = T[b + 1]! - T[a + 1]!, uz = T[b + 2]! - T[a + 2]!;
-    const vx = T[c]! - T[a]!, vy = T[c + 1]! - T[a + 1]!, vz = T[c + 2]! - T[a + 2]!;
-    const n = normalize([uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx]);
-    const side = dot([p[0] - hit.point[0], p[1] - hit.point[1], p[2] - hit.point[2]], n) >= 0 ? 1 : -1;
-    const d = side * hit.distance;
+    const d = inside(p) ? -hit.distance : hit.distance;
     iSamples++;
     iSum += Math.abs(d - gapMm);
     iMax = Math.max(iMax, Math.abs(d - gapMm));
@@ -254,6 +272,6 @@ export function tiBaseFittingSurface(input: {
   const ray = bvhRayCaster(createBvh({ positions: offset.positions, indices: offset.indices.slice() }));
   const rim = input.rim ?? shoulderRim(input.entry, input.pose, gapMm);
   const intaglio = buildIntaglio({ offset: ray, rim, axis, profilePoints: input.profilePoints ?? 64, samples: input.samples ?? 200 });
-  const gap = measureTiBaseGap({ tiBase, intaglio: intaglio.mesh, rim, pose: input.pose, gapMm });
+  const gap = measureTiBaseGap({ tiBase, intaglio: intaglio.mesh, rim, pose: input.pose, gapMm, insertionAxis: axis });
   return { intaglio, rim, axis, gapMm, tiBase, offset, gap, warnings: [...intaglio.warnings] };
 }

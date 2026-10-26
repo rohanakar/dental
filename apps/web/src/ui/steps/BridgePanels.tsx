@@ -26,6 +26,8 @@ import { AlertIcon, CheckIcon, FailIcon, UnknownIcon } from '../icons';
 import { CrownStatusView } from './CrownStatusView';
 import { MapSelect } from './CrownViewControls';
 import { isReady, millReadiness, type ReadinessItem, type ReadinessStatus, readinessNeeds } from './readiness';
+import { IMPLANT_NEEDS, implantReadiness } from './implantReadiness';
+import { isImplantTooth } from '../../tools/implantTool';
 import { MATERIAL_LABEL } from './SetupStep';
 import '../bridge.css';
 
@@ -596,8 +598,10 @@ export function BridgeFinalize() {
       material: materialLabel,
       adaptationStale: adaptationStale(tooth),
       neighbours: freeNeighbours(doc, tooth, view?.frame),
-      needs: readinessNeeds(kind),
-    }).map((i) => ({ ...i, id: `${tooth.fdi}-${i.id}`, ...(i.id === 'axis' && !axes ? { detail: 'Measuring…' } : {}) }));
+      needs: isImplantTooth(doc, tooth.fdi) ? IMPLANT_NEEDS : readinessNeeds(kind),
+    })
+      .concat(isImplantTooth(doc, tooth.fdi) ? implantReadiness(tooth, view?.implant, computing) : [])
+      .map((i) => ({ ...i, id: `${tooth.fdi}-${i.id}`, ...(i.id === 'axis' && !axes ? { detail: 'Measuring…' } : {}) }));
     return { title: `${tooth.fdi} · ${kind === 'pontic' ? 'pontic' : 'crown'}`, items };
   });
 

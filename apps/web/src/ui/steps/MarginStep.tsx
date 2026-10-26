@@ -2,6 +2,7 @@ import { unitKind } from '@dcad/shared';
 import { useDesignStore, selectActiveTooth } from '../../design/store';
 import { marginTool } from '../../tools/marginTool';
 import { useToolStore } from '../../tools/toolStore';
+import { ImplantPositionPanel, useIsImplant } from './ImplantPanel';
 
 function polylineLength(points: ReadonlyArray<{ p: readonly number[] }>): number {
   let sum = 0;
@@ -18,7 +19,9 @@ export function MarginStep() {
   const pontic = useDesignStore((s) => unitKind(s.doc.setup, s.activeFdi) === 'pontic');
   const anchors = useToolStore((s) => s.marginAnchors);
   const surface = useToolStore((s) => s.surface);
+  const implant = useIsImplant();
   if (!tooth) return null;
+  if (implant) return <ImplantPositionPanel />;
   if (pontic) return <div className="step-body muted">Pontic {tooth.fdi} replaces a missing tooth: it has no prep, so no margin.</div>;
   if (!tooth.frame) return <div className="step-body warning">Set the tooth frame first.</div>;
   const margin = tooth.margin;

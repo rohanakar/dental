@@ -388,6 +388,13 @@ export interface ShellFinishInput {
   neighbours?: { ray: RayCaster; faceMask?: Uint8Array };
   /** Fit check of the inner surface (crowns: the cement gap on the axial walls). */
   gapCheck: (inner: IntaglioSurface) => GapCheck;
+  /**
+   * Implant crowns (implantCrown.ts): the cervical ring is pinned to `ringTargets` (xyz per ring point, on the
+   * gingiva) instead of the band's outer loop, and `rows` builds the emergence profile between them: rows of
+   * ring.length points from just above the outer loop up to just below the fitted ring, given the outer loop and the
+   * fitted shell. Their vertices (the outer loop, then the rows) follow the template shell, with move weight 0.
+   */
+  emergence?: { ringTargets: Float32Array; rows: (outer: Float32Array, shell: Float32Array) => Float32Array[] };
   warnings: string[];
   timings: Record<string, number>;
   lap: (name: string) => void;
@@ -426,10 +433,12 @@ export function fitAndFinishShell(input: ShellFinishInput): FinishedShell {
   const anchors = anchorIds.filter((_, k) => k % stride === 0);
   const centers = new Float64Array((T + anchors.length) * 3);
   const values = new Float64Array((T + anchors.length) * 3);
+  const emergence = input.emergence;
+  const ringTarget = (i: number): V3 => (emergence ? pointAt(emergence.ringTargets, i) : outer[i]!);
   ring.forEach((v, i) => {
     const c = pointAt(shell, v);
     centers.set(c, i * 3);
-    values.set(sub(outer[i]!, c), i * 3);
+    values.set(sub(ringTarget(i), c), i * 3);
   });
   anchors.forEach((v, k) => centers.set(pointAt(shell, v), (T + k) * 3));
   // Solved together with the move response: the same fit with a unit displacement on the ring and none on the
@@ -449,21 +458,31 @@ export function fitAndFinishShell(input: ShellFinishInput): FinishedShell {
   }
   // Ring vertices land exactly on the outer loop (and are pinned).
   ring.forEach((v, i) => {
-    shell.set(outer[i]!, v * 3);
+    shell.set(ringTarget(i), v * 3);
     shellMoveWeights[v] = 0;
   });
   lap('fit');
 
+  // Implant crowns: the emergence vertices (outer loop, then each row) go after the shell.
+  let emergenceRows: Float32Array[] = [];
+  if (emergence) {
+    const outerRow = new Float32Array(T * 3);
+    outer.forEach((p, i) => outerRow.set(p, i * 3));
+    emergenceRows = [outerRow, ...emergence.rows(outerRow, shell)];
+  }
+  const ne = emergenceRows.length * T;
+
   // Assemble: intaglio | shell | band.
   const ni = intaglio.mesh.positions.length / 3;
-  const positions = new Float32Array((ni + tv) * 3);
+  const positions = new Float32Array((ni + tv + ne) * 3);
   positions.set(intaglio.mesh.positions, 0);
   positions.set(shell, ni * 3);
-  const moveWeights = new Float32Array(ni + tv);
+  emergenceRows.forEach((row, k) => positions.set(row, (ni + tv + k * T) * 3));
+  const moveWeights = new Float32Array(ni + tv + ne);
   moveWeights.set(shellMoveWeights, ni);
 
   const ti = template.mesh.indices;
-  const indices = new Uint32Array(intaglio.mesh.indices.length + ti.length + T * 6);
+  const indices = new Uint32Array(intaglio.mesh.indices.length + ti.length + T * 6 * (emergenceRows.length + 1));
   indices.set(intaglio.mesh.indices, 0);
   let o = intaglio.mesh.indices.length;
   for (let f = 0; f < ti.length; f += 3) {
@@ -471,12 +490,18 @@ export function fitAndFinishShell(input: ShellFinishInput): FinishedShell {
     indices.set(mirrored ? [a, c, b] : [a, b, c], o);
     o += 3;
   }
-  for (let i = 0; i < T; i++) {
-    const j = (i + 1) % T;
-    const mi = i, mj = j, oi = ring[i]! + ni, oj = ring[j]! + ni;
-    // Rim and ring run CCW seen from +axis with the ring outside: this order faces −axis (the crown's underside).
-    indices.set([mi, mj, oj, mi, oj, oi], o);
-    o += 6;
+  // Strips from the rim (inner, lower) out and up to the ring: one band, or the band then the emergence rows.
+  const strips = [...emergenceRows.map((_, k) => (i: number) => ni + tv + k * T + i), (i: number) => ring[i]! + ni];
+  let lower = (i: number) => i;
+  for (const upper of strips) {
+    for (let i = 0; i < T; i++) {
+      const j = (i + 1) % T;
+      const mi = lower(i), mj = lower(j), oi = upper(i), oj = upper(j);
+      // Rim and ring run CCW seen from +axis with the ring outside: this order faces −axis (the crown's underside).
+      indices.set([mi, mj, oj, mi, oj, oi], o);
+      o += 6;
+    }
+    lower = upper;
   }
   const mesh: IndexedMesh = { positions, indices };
 

@@ -4,8 +4,8 @@
  *   pnpm pipeline [--cases data/golden] [--out out/pipeline] [--case <id>] [--synthetic] [--auto]
  *
  * --synthetic first writes the synthetic cases (no patient data) into
- * data/golden: synthetic-36 and the bridges synthetic-bridge-35-37 and
- * synthetic-bridge-12-22. Each case writes <out>/<id>/metrics.json and
+ * data/golden: synthetic-36, the bridges synthetic-bridge-35-37 and
+ * synthetic-bridge-12-22, and the implant bridge synthetic-implant-bridge-35-37. Each case writes <out>/<id>/metrics.json and
  * crown.stl (a bridge case: bridge.stl). --auto also runs every case with the
  * automatic margin (classical.margin-ridge) instead of the scripted anchors,
  * writing <out>/<id>-auto/. Exits 1 if any check fails or a case errors.
@@ -17,6 +17,8 @@ import { parseArgs } from 'node:util';
 import { runBridgeCase } from './bridgePipeline';
 import { GoldenCase, SYNTHETIC_BRIDGES, writeSyntheticBridgeCase, writeSyntheticCase, type SyntheticBridgeKind } from './golden';
 import { runCase } from './pipeline';
+import { GoldenImplantCase, SYNTHETIC_IMPLANT_BRIDGE, writeSyntheticImplantCase } from './implantGolden';
+import { runImplantBridgeCase } from './implantPipeline';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const { values } = parseArgs({
@@ -42,6 +44,10 @@ if (values.synthetic) {
     writeSyntheticBridgeCase(bridgeDir, kind);
     console.log(`wrote ${bridgeDir} (${Math.round(performance.now() - t1)} ms)`);
   }
+  const implantDir = join(casesDir, SYNTHETIC_IMPLANT_BRIDGE.id);
+  const t2 = performance.now();
+  await writeSyntheticImplantCase(implantDir);
+  console.log(`wrote ${implantDir} (${Math.round(performance.now() - t2)} ms)`);
 }
 
 if (!existsSync(casesDir)) {
@@ -67,12 +73,23 @@ for (const id of ids) {
     const label = auto ? `${id}-auto` : id;
     runs++;
     try {
-      const spec = GoldenCase.parse(JSON.parse(readFileSync(join(dir, 'case.json'), 'utf8')));
+      const raw: { kind?: string } = JSON.parse(readFileSync(join(dir, 'case.json'), 'utf8'));
+      // Implant cases have no margin: one run (no --auto variant).
+      if (raw.kind === 'implant-bridge' && auto) {
+        runs--;
+        continue;
+      }
+      const spec = raw.kind === 'implant-bridge' ? null : GoldenCase.parse(raw);
       const caseOut = join(outDir, label);
       mkdirSync(caseOut, { recursive: true });
       let metrics: { ok: boolean; timingsMs: Record<string, number>; checks: Array<{ id: string; passed: boolean; message: string; value?: number; threshold?: number }> };
       let title: string;
-      if (spec.bridge) {
+      if (!spec) {
+        const result = await runImplantBridgeCase(GoldenImplantCase.parse(raw), dir);
+        metrics = result.metrics;
+        writeFileSync(join(caseOut, 'bridge.stl'), result.bridgeStl);
+        title = `implant bridge ${result.metrics.teeth.join('–')}`;
+      } else if (spec.bridge) {
         const result = await runBridgeCase(spec, dir, { auto });
         metrics = result.metrics;
         writeFileSync(join(caseOut, 'bridge.stl'), result.bridgeStl);

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { CaseSetup, DesignParams, Fdi, FdiPair } from './case';
-import { ConnectorArea, ConnectorOffset, Crown, InsertionAxis, MarginLine, ScanRef, ScanRole, StepId, ToothFrame } from './design';
+import { ConnectorArea, ConnectorOffset, Crown, ImplantDesign, InsertionAxis, MarginLine, ScanRef, ScanRole, StepId, ToothFrame } from './design';
 
 /**
  * Every mutation of a DesignDocument is one of these commands. The UI,
@@ -47,6 +47,12 @@ export const SetCrown = z.object({
   type: z.literal('setCrown'),
   fdi: Fdi,
   crown: Crown,
+});
+/** Implant crowns: the scan-body match (the "Implant position" step). */
+export const SetImplant = z.object({
+  type: z.literal('setImplant'),
+  fdi: Fdi,
+  implant: ImplantDesign,
 });
 
 // ---- Clinical commands: tooth-local, exposed to the LLM agent as tools ----
@@ -110,6 +116,15 @@ export const SetConnector = z
   })
   .describe('Change the connector between two connected bridge units: its cross-section area and position. Omitted fields keep their value.');
 
+export const SetScrewChannel = z
+  .object({
+    type: z.literal('setScrewChannel'),
+    fdi: Fdi,
+    angleDeg: z.number().min(0).max(45).describe('Channel angle from the implant axis in degrees; 0 = straight. Never above the library maximum.'),
+    azimuthDeg: z.number().min(-360).max(360).describe('Direction of the tilt about the implant axis: 0 = buccal, 90 = mesial, 180 = lingual, 270 = distal'),
+  })
+  .describe('Set the screw access channel of an implant crown: straight (0°) or angled toward an azimuth, up to the Ti-base library maximum.');
+
 export const SetParam = z
   .object({
     type: z.literal('setParam'),
@@ -127,8 +142,8 @@ export const RunStep = z
   })
   .describe('Run the automatic proposer for one design step.');
 
-export const DOCUMENT_COMMANDS = [SetCaseSetup, AddScan, RemoveScan, SetFrame, SetMargin, SetAxis, SetParams, SetCrown] as const;
-export const CLINICAL_COMMANDS = [MoveCrown, RotateCrown, ScaleCrown, SetContact, AdaptOcclusion, SetConnector, SetParam, RunStep] as const;
+export const DOCUMENT_COMMANDS = [SetCaseSetup, AddScan, RemoveScan, SetFrame, SetMargin, SetAxis, SetParams, SetCrown, SetImplant] as const;
+export const CLINICAL_COMMANDS = [MoveCrown, RotateCrown, ScaleCrown, SetContact, AdaptOcclusion, SetConnector, SetScrewChannel, SetParam, RunStep] as const;
 
 export const Command = z.discriminatedUnion('type', [...DOCUMENT_COMMANDS, ...CLINICAL_COMMANDS]);
 export type Command = z.infer<typeof Command>;

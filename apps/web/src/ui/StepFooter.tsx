@@ -1,11 +1,9 @@
 import { stepsFor, unitKind, type StepId } from '@dcad/shared';
 import { useDesignStore } from '../design/store';
 import { DraftReview } from './ai/AutoDesign';
-import { STEPS } from './StepNav';
+import { stepLabel, useImplantLabels } from './StepNav';
 import { missingBefore, neighbours } from './stepGuide';
 import './StepFooter.css';
-
-const labelOf = (id: StepId) => STEPS.find((s) => s.id === id)?.label ?? id;
 
 /** Back / Next under the step panel, and the way to an earlier step this one still needs. */
 export function StepFooter() {
@@ -13,6 +11,8 @@ export function StepFooter() {
   const statuses = useDesignStore((s) => s.doc.teeth.find((t) => t.fdi === s.activeFdi)?.steps);
   const kind = useDesignStore((s) => unitKind(s.doc.setup, s.activeFdi));
   const { setActiveStep } = useDesignStore.getState();
+  const implant = useImplantLabels();
+  const labelOf = (id: StepId) => stepLabel(id, implant);
   const steps = stepsFor(kind);
   const { prev, next } = neighbours(step, steps);
   const missing = missingBefore(step, statuses, steps);

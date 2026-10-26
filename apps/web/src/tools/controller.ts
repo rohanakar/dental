@@ -12,6 +12,7 @@ import { errorText, toothContext } from './context';
 import { focusTool } from './focusTool';
 import { frameInteraction } from './frameTool';
 import { MARGIN_COLOR, marginTool } from './marginTool';
+import { implantTool, isImplantTooth } from './implantTool';
 import { useToolStore } from './toolStore';
 
 export const FRAME_COLORS = { occlusal: '#4c8dff', mesial: '#2fbf71', buccal: '#f0a030', distal: '#a970ff' } as const;
@@ -50,6 +51,8 @@ class DesignTools {
     useSceneStore.subscribe((s, prev) => {
       if (s.objects !== prev.objects) this.sync();
     });
+    // The screw channel follows each new crown or bridge result.
+    crownTool.onResult(() => implantTool.sync(useDesignStore.getState().activeStep, crownTool.current()));
   }
 
   attachViewer(viewer: Viewer): void {
@@ -62,6 +65,7 @@ class DesignTools {
     bridgeTool.attach(viewer);
     gizmoTool.attach(viewer);
     focusTool.attach(viewer);
+    implantTool.attach(viewer);
     this.sync();
   }
 
@@ -74,6 +78,7 @@ class DesignTools {
     bridgeTool.attach(null);
     gizmoTool.attach(null);
     focusTool.attach(null);
+    implantTool.attach(null);
   }
 
   /** Store changes made while syncing (e.g. hiding the antagonist) re-trigger sync; run them once more instead of recursing. */
@@ -124,10 +129,13 @@ class DesignTools {
     const bridged = Boolean(ctx && bridgeOf(doc, ctx.fdi));
     // A pontic has no prep: no margin to trace (its step list skips the margin; this covers the moment before).
     const pontic = Boolean(ctx && unitKind(doc.setup, ctx.fdi) === 'pontic');
-    const key = ctx ? `${step}:${ctx.jaw.role}:${bridged}:${pontic}` : '';
+    // An implant crown's margin step is its implant position: a click matches the scan body.
+    const implant = Boolean(ctx && isImplantTooth(doc, ctx.fdi));
+    const key = ctx ? `${step}:${ctx.jaw.role}:${bridged}:${pontic}:${implant}` : '';
     if (key !== this.interactionKey) {
       this.interactionKey = key;
       if (ctx && step === 'frame') v.setInteraction(frameInteraction(ctx.jaw.role));
+      else if (ctx && step === 'margin' && implant) v.setInteraction(implantTool.interaction(ctx.jaw.role));
       else if (ctx && step === 'margin' && !pontic) v.setInteraction(marginTool.interaction(ctx.jaw.role));
       else if (ctx && bridged && PICK_UNIT.includes(step)) v.setInteraction(bridgeTool.interaction(ctx.jaw.role));
       else v.setInteraction(null);
@@ -137,6 +145,7 @@ class DesignTools {
     this.drawOverlays(step);
     if (step === 'axis') axisTool.sync();
     crownTool.sync(step);
+    implantTool.sync(step, crownTool.current());
     gizmoTool.sync(step === 'proposal');
     focusTool.sync();
   }

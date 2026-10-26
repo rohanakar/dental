@@ -49,6 +49,10 @@ export * from './tiBase';
 export * from './cutback';
 export * from './overpress';
 
+// Implant crowns and bridges: emergence on the Ti-base, screw channels, the common path over implant axes.
+export * from './implantCrown';
+export * from './implantBridge';
+
 // Inlays and onlays: synthetic cavities, the library tooth fitted to a collar, face-set and slab helpers, and the
 // snap-and-subtract retainer.
 export * from './syntheticCavity';

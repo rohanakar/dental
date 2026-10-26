@@ -25,6 +25,7 @@ import { analysis } from '../workers/geometryClient';
 import { isStale } from '../workers/latestWins';
 import { errorText, fromMarginPoints } from './context';
 import { CROWN_MAPS, crownMapLegend } from './crownLegend';
+import { implantMissing, implantRequestOf, isImplantTooth } from './implantTool';
 import { type CrownStatus, type LegendSpec, useToolStore } from './toolStore';
 
 /** One designed bridge: every unit and connector, plus the union and its checks when asked for (worker designBridge). */
@@ -92,8 +93,10 @@ function missingInputs(ctx: BridgeContext): string | null {
   const abutments = abutmentsOf(ctx);
   const noFrame = abutments.filter((t) => !t.frame);
   if (noFrame.length) return `Set the tooth frame on ${listOf(noFrame)}.`;
-  const noMargin = abutments.filter((t) => !t.margin);
+  const noMargin = abutments.filter((t) => !t.margin && !isImplantTooth(ctx.doc, t.fdi));
   if (noMargin.length) return `Draw the margin on ${listOf(noMargin)}.`;
+  const noImplant = implantMissing(ctx.doc, abutments);
+  if (noImplant) return noImplant;
   if (abutments.some((t) => !t.axis)) return `Set the common insertion axis of ${listOf(abutments)}.`;
   return null;
 }
@@ -145,6 +148,7 @@ function buildRequest(ctx: BridgeContext, opts: BridgeRequestOptions): BridgeReq
       ...(t.frame ? { frame: frameView(t.frame) } : {}),
       ...(centre ? { centre } : {}),
       ...(kind !== 'pontic' && t.margin ? { margin: fromMarginPoints(t.margin.points) } : {}),
+      ...(t.implant ? { implant: implantRequestOf(t) } : {}),
       ...(opts.withPoses !== false && crown ? { pose: crown.pose } : {}),
       ...(adapt ? { adapt } : {}),
     };
@@ -200,7 +204,7 @@ function inputsOf(ctx: BridgeContext, map: string): unknown[] {
     ctx.antagonistSha,
     ctx.bridge,
     materialOf(ctx),
-    ...ctx.units.flatMap((t) => [t.frame, t.margin, t.axis, t.params, t.crown, t.steps.adapt]),
+    ...ctx.units.flatMap((t) => [t.frame, t.margin, t.axis, t.params, t.crown, t.steps.adapt, t.implant, t.screwChannel]),
     map,
   ];
 }

@@ -3,6 +3,7 @@
  * data/implant-libraries/synthetic-generic@1/, then loads it back and
  * validates it:
  *
+ *   pnpm --filter @dcad/web fixtures:implant      (the library and the demo scan)
  *   pnpm --filter @dcad/pipeline-runner exec tsx ../fixtures/implant-library.mts [--out <dir>] [--scan]
  *
  * --scan also writes a demo lower-jaw scan with scan bodies at 35 and 37

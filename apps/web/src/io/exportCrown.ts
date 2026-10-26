@@ -2,6 +2,8 @@ import type { DesignDocument, Pose, ToothDesign } from '@dcad/shared';
 import type { IndexedMesh } from '../geometry/mesh';
 import type { MeshValidation } from '../geometry/meshValidate';
 import { writeBinaryStl } from '../geometry/stl';
+import type { ImplantResultView } from '../workers/analysisTypes';
+import { implantSidecar } from './implantExport';
 
 export const CONSTRUCTION_FORMAT = 'dcad.construction@1';
 
@@ -20,6 +22,8 @@ export interface ConstructionInfoInput {
     validation: MeshValidation;
     minAxialThicknessMm?: number;
     gapCheck?: unknown;
+    /** Implant crowns: the screw channel and the Ti-base fit. */
+    implant?: ImplantResultView;
   };
   /** ISO timestamp; defaults to now. */
   createdAt?: string;
@@ -46,6 +50,7 @@ export function constructionInfo(input: ConstructionInfoInput) {
     margin: tooth.margin ? { anchors: tooth.margin.anchors, points: tooth.margin.points } : null,
     axis: tooth.axis ?? null,
     crown: { kind: 'template' as const, templateId: result.templateId, pose: result.pose },
+    implant: implantSidecar(tooth, result.implant),
     validation: result.validation,
     metrics: {
       minAxialThicknessMm: result.minAxialThicknessMm,
@@ -80,6 +85,8 @@ export interface BridgeConstructionInput {
       minAxialThicknessMm?: number;
       gapCheck?: unknown;
       base?: unknown;
+      /** Implant crowns: the screw channel and the Ti-base fit. */
+      implant?: ImplantResultView;
     }>;
     connectors: ReadonlyArray<{
       between: [number, number];
@@ -137,6 +144,7 @@ export function bridgeConstructionInfo(input: BridgeConstructionInput) {
         frame: t?.frame ?? u.frame,
         margin: t?.margin ? { anchors: t.margin.anchors, points: t.margin.points } : null,
         crown: { kind: 'template' as const, templateId: u.templateId, pose: u.pose },
+        implant: implantSidecar(t, u.implant),
         validation: u.validation,
         metrics: { minAxialThicknessMm: u.minAxialThicknessMm, gapCheck: u.gapCheck, ...(u.base ? { ponticBase: u.base } : {}) },
       };

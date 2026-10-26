@@ -24,6 +24,9 @@ import { designPontic, proposePonticPose, type PonticBaseGap } from './pontic';
 import { bvhRayCaster, createBvh, type RayCaster } from './raycast';
 import type { IntaglioSurface } from './thickness';
 import { findNeighbourContacts, mesialFromBuccal } from './toothFrame';
+import { implantRetainer, implantUnitWidths, unionMeshOf, channelCount } from './implantBridge';
+import type { ImplantUnit } from './implantCrown';
+import { implantToWorld } from './implantLibrary';
 
 /**
  * Bridges: one solid of retainers (crowns on the abutments), pontics over the
@@ -319,6 +322,8 @@ export interface BridgeUnitInput {
   /** Pontics: centre override (a click on the ridge); places the proposed pose, also when a frame is stored. */
   centre?: V3;
   template?: CrownTemplate;
+  /** Implant crowns (abutments): the Ti-base, the scan-body pose and the screw channel, instead of a margin. */
+  implant?: ImplantUnit;
 }
 
 export interface BridgeInput {
@@ -511,6 +516,8 @@ export function designBridge(input: BridgeInput): BridgeResult {
   lap('curve');
 
   const work = new Map<number, UnitWork>();
+  // Implant crowns take their widths from the implant spacing along the arch (implantBridge.ts).
+  const widths = implantUnitWidths(curve, units.map((u) => ({ fdi: u.fdi, kind: u.kind, ...(u.implant ? { implantCentre: implantToWorld(u.implant.pose)([0, 0, u.implant.entry.tiBaseTopZ]) } : {}) })));
   /**
    * A unit from the cache or freshly designed. Units are keyed by their resolved pose, so storing a proposal (setCrown)
    * is a cache hit, and moving one unit misses only for it. Proposal warnings are added per call, never cached.
@@ -557,6 +564,11 @@ export function designBridge(input: BridgeInput): BridgeResult {
 
   // 1. Retainers.
   for (const u of abutments) {
+    if (u.implant && u.frame) {
+      const r = implantRetainer({ ...u, implant: u.implant, frame: u.frame, sides: sidesOf(u.fdi), jaw, antagonist, axis, widths, maps: input.maps });
+      work.set(u.fdi, unit(u, ['implant', ...common, ...r.key], r.frame, r.proposal, r.design));
+      continue;
+    }
     if (!u.frame || !u.margin || !u.region) throw new Error(`Abutment ${u.fdi} needs a frame and a margin`);
     const sides = sidesOf(u.fdi);
     const frame = dropContacts(u.frame, sides);
@@ -677,7 +689,7 @@ export function designBridge(input: BridgeInput): BridgeResult {
     if (!meshBooleanReady()) throw new Error('Mesh booleans are not initialized: await initMeshBoolean() before a bridge union');
     let mesh: IndexedMesh | undefined;
     try {
-      mesh = unionMeshes([...unitResults.map((r) => r.design.mesh), ...connectors.map((c) => c.mesh)]);
+      mesh = unionMeshes([...unitResults.map((r) => unionMeshOf(r.design)), ...connectors.map((c) => c.mesh)]);
     } catch (error) {
       unionError = `The bridge could not be merged into one solid: ${(error as Error).message}`;
       warnings.push(unionError);
@@ -690,6 +702,7 @@ export function designBridge(input: BridgeInput): BridgeResult {
         axis,
         units: units.map((u) => ({ input: u, result: work.get(u.fdi)!.result })),
         connectors,
+        expectedGenus: channelCount(unitResults.map((r) => r.design)),
       });
       warnings.push(...checks.failures.filter((f) => !warnings.includes(f)));
       union = { mesh, checks };

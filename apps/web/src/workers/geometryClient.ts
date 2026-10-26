@@ -17,7 +17,13 @@ import type {
   FocusFacesRequest,
   FrameEstimate,
   FrameRequest,
+  ImplantEntryView,
+  ImplantPathRequest,
+  ImplantPathView,
   MarginTrace,
+  ScanBodyRequest,
+  ScanBodyResult,
+  ScrewChannelProposal,
   SurfaceInfo,
   V3,
 } from './analysisTypes';
@@ -86,14 +92,16 @@ export const analysis = {
     latest.run('margin', () => geometryWorker().smoothMargin(sha, points, iterations)),
   axis: (request: AxisRequest): Promise<AxisAnalysis> => latest.run('axis', () => geometryWorker().axisAnalysis(request)),
   releaseScan: (sha: string): Promise<void> => geometryWorker().releaseScan(sha),
-  designCrown: (request: CrownRequest): Promise<CrownResult> => latest.run('crown', () => geometryWorker().designCrown(request)),
+  designCrown: (request: CrownRequest): Promise<CrownResult> =>
+    latest.run('crown', () => (request.implant ? geometryWorker().designImplantCrown(request) : geometryWorker().designCrown(request))),
   /** Automatic margin (never superseded: used by the auto-design orchestrator). */
   autoMargin: (request: AutoMarginRequest): Promise<AutoMarginResult> => geometryWorker().autoMargin(request),
   /** Frame/axis without "latest wins", so interactive tools cannot cancel an orchestrator run. */
   estimateFrameUnlatched: (request: FrameRequest): Promise<FrameEstimate> => geometryWorker().estimateFrame(request),
   axisUnlatched: (request: AxisRequest): Promise<AxisAnalysis> => geometryWorker().axisAnalysis(request),
   /** Like designCrown but never superseded (independent evaluations, e.g. metrics). */
-  designCrownUnlatched: (request: CrownRequest): Promise<CrownResult> => geometryWorker().designCrown(request),
+  designCrownUnlatched: (request: CrownRequest): Promise<CrownResult> =>
+    request.implant ? geometryWorker().designImplantCrown(request) : geometryWorker().designCrown(request),
   /** Load the mesh-boolean engine in the worker (once). */
   initBooleans: (): Promise<{ ms: number }> => geometryWorker().initBooleans(),
   /** Prep faces drawn in focus while the crown is adjusted. */
@@ -108,4 +116,12 @@ export const analysis = {
   designBridgeUnlatched: (request: BridgeRequest): Promise<BridgeResultView> => geometryWorker().designBridge(request),
   bridgeAxisUnlatched: (request: BridgeAxisRequest): Promise<BridgeAxisResult> => geometryWorker().bridgeAxis(request),
   bridgeFramesUnlatched: (request: BridgeFramesRequest): Promise<BridgeFramesResult> => geometryWorker().bridgeFrames(request),
+  /** Implants: the library entries (synthetic generic library). */
+  implantLibrary: (): Promise<ImplantEntryView[]> => geometryWorker().implantLibrary(),
+  /** Implant position step: match the library scan body from a click on the scanned one's top. */
+  registerScanBody: (request: ScanBodyRequest): Promise<ScanBodyResult> => latest.run('scanBody', () => geometryWorker().registerScanBody(request)),
+  /** Implant bridges: the common path over the implant axes, with the divergence check. */
+  implantPath: (request: ImplantPathRequest): Promise<ImplantPathView> => geometryWorker().implantPath(request),
+  /** classical.screw-channel: straight, or the smallest ASC angle with an occlusal (lingual) exit and enough wall. */
+  screwChannelAuto: (request: CrownRequest): Promise<ScrewChannelProposal> => geometryWorker().screwChannelAuto(request),
 };

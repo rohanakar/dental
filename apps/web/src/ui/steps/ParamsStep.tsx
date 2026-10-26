@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { DesignParams, MATERIAL_PRESETS, type DesignParams as Params } from '@dcad/shared';
 import { useDesignStore, selectActiveTooth } from '../../design/store';
 import { MATERIAL_LABEL } from './SetupStep';
+import { useIsImplant } from './ImplantPanel';
 
 type Field = { key: keyof Params; label: string; hint: string };
 
@@ -34,9 +35,20 @@ const GROUPS: Array<{ title: string; fields: Field[] }> = [
   },
 ];
 
+/** Implant crowns only; unset values use these (the library's bonding gap, the spec's channel wall). */
+const IMPLANT_GROUP: { title: string; fields: Field[] } = {
+  title: 'Implant',
+  fields: [
+    { key: 'tiBaseGapMm', label: 'Ti-base bonding gap', hint: 'Cement space between the Ti-base and the restoration.' },
+    { key: 'channelWallMm', label: 'Channel wall', hint: 'Least material around the screw channel.' },
+  ],
+};
+const IMPLANT_DEFAULTS: Partial<Record<keyof Params, number>> = { tiBaseGapMm: 0.03, channelWallMm: 0.8 };
+
 /** Range of a numeric field from its zod schema, for the input's min/max. */
 function range(key: keyof Params): { min?: number; max?: number } {
-  const schema = DesignParams.shape[key] as unknown as { minValue?: number | null; maxValue?: number | null };
+  const field = DesignParams.shape[key] as unknown as { minValue?: number | null; maxValue?: number | null; unwrap?: () => unknown };
+  const schema = (field.minValue === undefined && field.unwrap ? field.unwrap() : field) as { minValue?: number | null; maxValue?: number | null };
   return { min: schema.minValue ?? undefined, max: schema.maxValue ?? undefined };
 }
 
@@ -51,6 +63,7 @@ export function ParamsStep() {
   const tooth = useDesignStore(selectActiveTooth);
   const material = useDesignStore((s) => s.doc.setup.teeth.find((t) => t.fdi === s.activeFdi)?.material);
   const [errors, setErrors] = useState<Partial<Record<keyof Params, string>>>({});
+  const implant = useIsImplant();
   if (!tooth) return null;
   const params = tooth.params;
   const fromPreset = material !== undefined && JSON.stringify(params) === JSON.stringify(MATERIAL_PRESETS[material]);
@@ -61,7 +74,7 @@ export function ParamsStep() {
     const value = Number(raw);
     const next = { ...params, [key]: value };
     const valid = raw !== '' && Number.isFinite(value) && DesignParams.safeParse(next).success;
-    setErrors((e) => ({ ...e, [key]: valid ? undefined : rejected(key, raw, params[key]) }));
+    setErrors((e) => ({ ...e, [key]: valid ? undefined : rejected(key, raw, params[key] ?? 0) }));
     if (!valid) {
       input.value = String(params[key]);
       return;
@@ -76,7 +89,7 @@ export function ParamsStep() {
         recompute the crown.
       </p>
       <div className="param-grid">
-        {GROUPS.map((group) => (
+        {[...GROUPS, ...(implant ? [IMPLANT_GROUP] : [])].map((group) => (
           <fieldset key={group.title}>
             <legend>{group.title}</legend>
             {group.fields.map(({ key, label, hint }) => {
@@ -95,7 +108,7 @@ export function ParamsStep() {
                       step={0.01}
                       min={min}
                       max={max}
-                      defaultValue={params[key]}
+                      defaultValue={params[key] ?? IMPLANT_DEFAULTS[key]}
                       aria-describedby={`${id}-hint${error ? ` ${id}-error` : ''}`}
                       onBlur={(e) => commit(key, e.currentTarget)}
                       onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}

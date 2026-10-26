@@ -47,6 +47,7 @@ import type {
   SurfaceInfo,
 } from './analysisTypes';
 import { buildScanPayload, type ScanPayload } from './scanPayload';
+import { createImplantApi } from './implantApi';
 import { ScanRegistry, type RetainedScan } from './scanRegistry';
 
 /** Live-wire search radius (mm) for the interactive tree; farther clicks need an intermediate anchor. */
@@ -88,6 +89,9 @@ function regionFor(scan: RetainedScan, margin: Float32Array, occlusal: V3): Prep
     return { ...prepRegion({ positions: scan.positions, indices: scan.indices, graph, loopVertices, seedVertex }), loopVertices };
   });
 }
+
+/** Implant crowns, the scan-body match and the synthetic implant library (implantApi.ts). */
+const implants = createImplantApi({ registry, rayOf, initBooleans: () => initMeshBoolean({ wasmUrl: manifoldWasmUrl }) });
 
 /** Bridge units and connectors by input hash, across calls: moving one unit recomputes only it and its connectors. */
 const bridgeCache = new BridgeCache(64);
@@ -363,11 +367,13 @@ const api = {
    */
   async designBridge(request: BridgeRequest): Promise<BridgeResultView> {
     const t0 = performance.now();
-    if (request.union) await initMeshBoolean({ wasmUrl: manifoldWasmUrl });
+    // Implant crowns cut their screw channels with the boolean engine too.
+    if (request.union || request.units.some((u) => u.implant)) await initMeshBoolean({ wasmUrl: manifoldWasmUrl });
     const scan = registry.get(request.jawSha);
     const antagonist = request.antagonistSha && registry.has(request.antagonistSha) ? registry.get(request.antagonistSha) : null;
-    const units: BridgeUnitInput[] = request.units.map((u) => {
+    const units: BridgeUnitInput[] = request.units.map(({ implant, ...u }) => {
       if (u.kind === 'pontic') return u;
+      if (implant) return { ...u, implant: implants.unitOf(implant) };
       if (!u.frame || !u.margin) throw new Error(`Abutment ${u.fdi} needs a frame and a margin`);
       const region = regionFor(scan, u.margin, u.frame.occlusal);
       if (!region.closed) throw new Error(`Abutment ${u.fdi}: the prep region is not closed by the margin; fix the margin first`);
@@ -390,8 +396,10 @@ const api = {
     const transfer: ArrayBuffer[] = [];
     const unitViews = design.units.map((r): BridgeUnitView => {
       const { mesh, maps, moveWeights, ...rest } = r.design;
+      const implant = implants.viewOf(r.design, transfer);
       return {
         ...rest,
+        ...(implant ? { implant } : {}),
         positions: copyOut(mesh.positions, transfer),
         indices: copyOut(mesh.indices, transfer),
         moveWeights: copyOut(moveWeights, transfer),
@@ -424,6 +432,8 @@ const api = {
     };
     return Comlink.transfer(result, transfer);
   },
+
+  ...implants.api,
 };
 
 export type GeometryWorkerApi = typeof api;

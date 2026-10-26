@@ -1,6 +1,6 @@
 # Implant crowns and bridges (screw-retained on Ti-bases)
 
-Status: **in progress** (2026-10-25). Phase A has landed: library format, synthetic library, scan-body registration and the Ti-base fitting surface. Phase B (emergence, screw channels, implant bridges, schemas, UI, runner case) is next.
+Status: **in progress** (2026-10-26). Phases A and B have landed: implant crowns and bridges in the editor and the runner. The AI items (scan-body and screw-channel proposers, implant gates, auto-design for implant bridges) are next.
 Depends on:
 - [2026-10-25-bridge-mode.md](2026-10-25-bridge-mode.md) (pontics, connectors, union, anterior teeth)
 - [2026-10-25-framework-bridges.md](2026-10-25-framework-bridges.md) (the titanium and CoCr materials)
@@ -307,3 +307,46 @@ Also:
   - Vendor Ti-bases with open screw holes need capping, unless the channel is at least as wide as the hole.
   - The gingival-opening loop and the emergence loft are phase B. They need a `crown.ts` hook that passes the
     fitting side in, instead of building it from a prep.
+
+### Phase B (2026-10-26): implant crowns and bridges in the editor
+- **Shared:**
+  - `implant-crown` type and `isImplantRestoration`.
+  - `ToothDesign.implant` and `screwChannel`.
+  - The `SetImplant` and `SetScrewChannel` commands; `set_screw_channel` becomes an agent tool.
+  - Optional params `tiBaseGapMm`, `channelWallMm`, `emergenceConcavity`.
+  - A `mixed-support` bridge issue: mixed implant and natural-tooth bridges are refused, the user decision still
+    pending.
+- **Reducer:** the margin step is "Implant position" (`setMargin` refused); the common path runs over implant axes;
+  engaging Ti-bases are refused in bridges; channels above the library ASC maximum are refused.
+- **Geometry:**
+  - `implantCrown.ts`: the emergence loft through an optional `crown.ts` `emergence` hook (single-crown output
+    byte-identical), screw channels (straight, or auto-angled within the ASC cone on a failed exit or wall), the exit
+    check and the channel wall check.
+  - `implantBridge.ts`: implant units in `designBridge`, the expected union genus (one through-hole per channel),
+    and Ti-base seating in the union.
+  - `tiBase.ts` gains exclusions and checks along the insertion axis.
+- **Worker:** `workers/implantApi.ts`, with the synthetic library built in the worker.
+- **UI:** "Implant" in Setup; the Implant position step (click the scan body, a ghost match with its RMS); channel
+  controls; readiness rows; the export sidecar with implant poses, library ids, channel axes and fit.
+- **Fixtures:** `pnpm --filter @dcad/web fixtures:implant` writes the library and the demo scan with scan bodies.
+- **Runner:** `synthetic-implant-bridge-35-37`, 40/40 checks:
+  - registration error ≤ 0.0003 mm, divergence 8.706° (truth 8.704°)
+  - 35's channel auto-angled 10°, wall 0.61 mm; 37's straight, wall 1.39 mm
+  - Ti-base gap error ≤ 0.023 mm
+  - the union is printable and of genus 2
+- **Test:** `pipeline.test.ts` "passes every check on the synthetic implant bridge" (103 → 104). The reducer bridge
+  test is extended.
+- **Verified on the integrated tree:** typecheck, 104 tests, build, runner 4/4, and the browser tests `bridge.mjs`
+  28/28, `ai-bridge.mjs` 16/16 and `tools/e2e/implant.mjs` 31/31.
+- **Deviations:**
+  - The golden case's channel wall is 0.55 mm, because the synthetic premolar is too small for 0.8 mm. At 0.8 mm the
+    app correctly refuses, and the E2E checks that refusal.
+  - The channel search is finer than specified.
+  - The emergence ring is kept at least collar + 0.3 mm.
+  - The Ti-base rim sits at the shoulder edge.
+- **Open (AI):**
+  - `classical.scan-body-match@1` and `classical.screw-channel@1` proposers.
+  - Implant gates in `bridgeGate`.
+  - Agent prompt and metrics for channels.
+  - Bridge auto-design for implant bridges: today it stops safely at the margin step.
+  - Rx for implant crowns.

@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "fixtures": "pnpm --filter @dcad/pipeline-runner exec tsx ../fixtures/generate.mts"
+    "fixtures": "pnpm --filter @dcad/pipeline-runner exec tsx ../fixtures/generate.mts",
+    "fixtures:implant": "pnpm --filter @dcad/pipeline-runner exec tsx ../fixtures/implant-library.mts --scan"
   },
   "dependencies": {
     "@dcad/shared": "workspace:*",

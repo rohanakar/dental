@@ -6,6 +6,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { runBridgeCase } from './bridgePipeline';
 import { writeSyntheticBridgeCase, writeSyntheticCase } from './golden';
 import { runCase } from './pipeline';
+import { writeSyntheticImplantCase } from './implantGolden';
+import { runImplantBridgeCase } from './implantPipeline';
 
 describe('pipeline runner', () => {
   const dir = mkdtempSync(join(tmpdir(), 'dcad-golden-'));
@@ -64,6 +66,30 @@ describe('pipeline runner', () => {
       const toward = (p.frame.mesial[0] * d[0]! + p.frame.mesial[1] * d[1]! + p.frame.mesial[2] * d[2]!) / Math.hypot(...d);
       expect(toward).toBeGreaterThan(0.5);
     }
+    expect(bridgeStl.byteLength).toBe(84 + 50 * metrics.union!.triangles);
+  });
+
+  // 35i–[36]–37i on Ti-bases: scan-body registration against the true poses, the common path over 8.7° of divergence,
+  // screw channels (35 auto-angled), seating on each Ti-base, one merged solid with a through-hole per channel.
+  it('passes every check on the synthetic implant bridge', async () => {
+    const spec = await writeSyntheticImplantCase(join(dir, 'implant'), { along: 600, across: 160 });
+    const { metrics, bridgeStl } = await runImplantBridgeCase(spec, join(dir, 'implant'));
+    expect(metrics.checks.filter((c) => !c.passed)).toEqual([]);
+    const implants = metrics.units.filter((u) => u.registration);
+    expect(implants.map((u) => u.fdi)).toEqual([35, 37]);
+    for (const u of implants) {
+      expect(u.registration!.errorMm).toBeLessThanOrEqual(0.02);
+      expect(u.registration!.axisErrorDeg).toBeLessThanOrEqual(0.2);
+      expect(u.registration!.rmsMm).toBeLessThanOrEqual(0.05);
+      expect(u.channel).toMatchObject({ exitOk: true, wallOk: true, cut: true, cutGenus: 1 });
+      expect(u.tiBaseGap!.minGapMm).toBeGreaterThan(0);
+    }
+    expect(Math.abs(metrics.path.divergenceDeg - spec.expect.divergenceDeg!)).toBeLessThanOrEqual(0.3);
+    expect(metrics.path.divergenceDeg).toBeLessThan(metrics.path.maxDivergenceDeg);
+    expect(metrics.union).toMatchObject({ closed: true, printable: true, components: 1, genus: 2 });
+    for (const s of metrics.seating) expect(s.samples).toBe(s.ownSamples);
+    expect(metrics.seating.map((s) => s.fdi)).toEqual([35, 37]);
+    for (const c of metrics.connectors) expect(c.measuredAreaMm2).toBeGreaterThanOrEqual(minConnectorAreaMm2('zirconia', c.between[0], c.between[1]));
     expect(bridgeStl.byteLength).toBe(84 + 50 * metrics.union!.triangles);
   });
 });

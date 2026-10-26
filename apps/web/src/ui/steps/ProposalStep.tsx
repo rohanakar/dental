@@ -8,6 +8,7 @@ import { BridgeResultPanel, useActiveBridge } from './BridgePanels';
 import { CrownStatusView } from './CrownStatusView';
 import { FocusControls, MapSelect } from './CrownViewControls';
 import { NudgePad } from './NudgePad';
+import { ScrewChannelPanel } from './ImplantPanel';
 
 /** How the crown (or bridge) is shown: visibility, colour map, opacity and the focus view. */
 function CrownView({ what }: { what: string }) {
@@ -51,8 +52,9 @@ export function ProposalStep() {
   return (
     <div className="step-body">
       <p className="muted">
-        A library crown is placed on the margin in the tooth frame, sized to the gap between the neighbours and the space
-        to the antagonist. The inner surface follows the prep with the cement gap.
+        {tooth.implant
+          ? 'A library crown is placed on the gingiva around the implant, sized to the gap between the neighbours and the space to the antagonist. It is bonded to the Ti-base and screwed through its channel.'
+          : 'A library crown is placed on the margin in the tooth frame, sized to the gap between the neighbours and the space to the antagonist. The inner surface follows the prep with the cement gap.'}
       </p>
       <div className="row">
         <button className={`btn${hasCrown ? '' : ' primary'}`} disabled={computing} onClick={() => void crownTool.propose()}>
@@ -64,6 +66,7 @@ export function ProposalStep() {
         <>
           <CrownStatusView />
           <NudgePad />
+          <ScrewChannelPanel />
           <CrownView what="crown" />
         </>
       )}
@@ -106,6 +109,7 @@ function BridgeProposal() {
           <BridgeResultPanel />
           <CrownStatusView />
           <NudgePad label={`Adjust ${activeFdi}, ${kind}`} />
+          <ScrewChannelPanel />
           <CrownView what="bridge" />
         </>
       )}

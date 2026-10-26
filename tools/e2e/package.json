@@ -8,6 +8,7 @@
     "online": "node online-case.mjs",
     "move": "node crown-move.mjs",
     "bridge": "node --experimental-strip-types bridge.mjs",
+    "implant": "node --experimental-strip-types implant.mjs",
     "ai-bridge": "node ai-bridge.mjs"
   },
   "devDependencies": {

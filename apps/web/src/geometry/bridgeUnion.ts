@@ -7,6 +7,7 @@ import { meshTopology, validateClosedMesh } from './meshValidate';
 import type { V3 } from './pca';
 import { bvhRayCaster, createBvh } from './raycast';
 import { countSelfIntersections } from './selfIntersect';
+import { implantSeatingCheck } from './implantBridge';
 
 /**
  * Checks of a merged bridge (the union of its retainers, pontics and
@@ -102,7 +103,10 @@ export function checkBridgeUnion(input: {
   axis: V3;
   units: Array<{ input: BridgeUnitInput; result: BridgeUnitResult }>;
   connectors: BridgeConnectorResult[];
+  /** Through-holes the bridge must have: one per screw channel of its implant units (default 0). */
+  expectedGenus?: number;
 }): BridgeChecks {
+  const expectedGenus = input.expectedGenus ?? 0;
   const { union, jaw, axis } = input;
   const failures: string[] = [];
 
@@ -122,12 +126,12 @@ export function checkBridgeUnion(input: {
     components: topology.components,
     genus: topology.genus,
     euler: topology.euler,
-    ok: printable && topology.components === 1 && topology.genus === 0,
+    ok: printable && topology.components === 1 && topology.genus === expectedGenus,
   };
   if (!v.ok) failures.push(`The merged bridge is not a valid closed solid (${v.boundaryEdges} open, ${v.nonManifoldEdges} non-manifold edges, ${v.degenerateTriangles} degenerate triangles).`);
   if (selfIntersections > 0) failures.push(`The merged bridge intersects itself (${selfIntersections} triangle pairs).`);
   if (topology.components !== 1) failures.push(`The merged bridge has ${topology.components} separate parts; every unit must be connected.`);
-  else if (topology.genus !== 0) failures.push(`The merged bridge has ${topology.genus} through-holes (genus ${topology.genus}).`);
+  else if (topology.genus !== expectedGenus) failures.push(`The merged bridge has ${topology.genus} through-holes (genus ${topology.genus}, expected ${expectedGenus}).`);
 
   const connectors = input.connectors.map((c): ConnectorCheck => {
     const measured = measureConnector(union, c);
@@ -156,6 +160,10 @@ export function checkBridgeUnion(input: {
   const ponticBase: PonticBaseCheck[] = [];
   for (const { input: u, result } of input.units) {
     const design = result.design;
+    if (result.kind === 'abutment' && u.implant) {
+      const s = implantSeatingCheck({ fdi: result.fdi, design, implant: u.implant, union });
+      if (s) (s.ok ? seating : (failures.push(s.failure), seating)).push(s.check);
+    }
     if (result.kind === 'abutment' && u.region) {
       const distance = distanceFromMargin(jaw.positions, jaw.graph, u.region.vertexMask, u.region.loopVertices);
       const onUnion = measureIntaglioGap({

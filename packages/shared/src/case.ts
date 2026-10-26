@@ -52,7 +52,7 @@ export function facingSide(a: number, b: number): ProximalSide {
   return b % 10 < a % 10 ? 'mesial' : 'distal';
 }
 
-export const RestorationType = z.enum(['anatomic-crown', 'pontic']);
+export const RestorationType = z.enum(['anatomic-crown', 'pontic', 'implant-crown']);
 export type RestorationType = z.infer<typeof RestorationType>;
 
 /** What a unit is in a bridge: an abutment sits on a prep (retainer), a pontic replaces a missing tooth. */
@@ -73,7 +73,12 @@ export interface RestorationRole {
 export const RESTORATION_ROLE: Record<RestorationType, RestorationRole> = {
   'anatomic-crown': { role: 'abutment', connectors: true },
   pontic: { role: 'pontic', connectors: true },
+  /** Screw-retained on a library Ti-base: the scan-body match replaces the margin (specs/2026-10-25-implant-bridges.md). */
+  'implant-crown': { role: 'abutment', connectors: true },
 };
+
+/** Abutments supported by an implant (not a prepared tooth). A bridge may not mix the two supports. */
+export const isImplantRestoration = (restoration: RestorationType): boolean => restoration === 'implant-crown';
 
 export const Material = z.enum(['zirconia', 'lithium-disilicate', 'pmma']);
 export type Material = z.infer<typeof Material>;
@@ -119,6 +124,12 @@ export const DesignParams = z.object({
   proximalContactMm: z.number().min(-0.2).max(0.5),
   /** Pontics only: gap between the pontic base and the ridge (0 = passive contact, negative = pressure). */
   ponticRidgeGapMm: z.number().min(-0.3).max(3).default(0),
+  /** Implant crowns only: bonding gap to the Ti-base; omitted = the library's. */
+  tiBaseGapMm: z.number().min(0).max(0.2).optional(),
+  /** Implant crowns only: minimum material around the screw channel; omitted = 0.8 mm. */
+  channelWallMm: z.number().min(0.3).max(2).optional(),
+  /** Implant crowns only: emergence profile, 0 = straight from the Ti-base shoulder, 1 = concave; omitted = 0.5. */
+  emergenceConcavity: z.number().min(0).max(1).optional(),
 });
 export type DesignParams = z.infer<typeof DesignParams>;
 
@@ -247,6 +258,8 @@ export type BridgeIssueCode =
   | 'no-abutment'
   /** A pontic with no connection. */
   | 'unconnected-pontic'
+  /** A bridge with both implant and natural-tooth abutments (refused: the supports move differently). */
+  | 'mixed-support'
   /** Warning: more units than the material is indicated for. */
   | 'indication-units'
   /** Warning: a unit further distal than the material is indicated for. */
@@ -309,6 +322,12 @@ export function validateBridges(setup: Pick<CaseSetup, 'teeth' | 'connections'>)
     const label = teeth.join('–');
     if (!teeth.some((fdi) => unitKind(setup, fdi) === 'abutment')) {
       errors.push({ code: 'no-abutment', message: `Bridge ${label} has no abutment`, teeth });
+    }
+    const supports = new Set(
+      teeth.filter((fdi) => unitKind(setup, fdi) === 'abutment').map((fdi) => isImplantRestoration(order.get(fdi)!.restoration)),
+    );
+    if (supports.size > 1) {
+      errors.push({ code: 'mixed-support', message: `Bridge ${label} mixes implant and natural-tooth abutments`, teeth });
     }
     for (const material of new Set(teeth.map((fdi) => order.get(fdi)!.material))) {
       const indication = BRIDGE_PRESETS[material].indication;

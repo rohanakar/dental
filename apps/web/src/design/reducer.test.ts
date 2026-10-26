@@ -137,6 +137,45 @@ describe('applyCommand', () => {
     doc = applyCommand(doc, { type: 'setCaseSetup', setup: { ...doc.setup, teeth: doc.setup.teeth.filter((t) => t.fdi !== 37) } });
     expect(doc.bridges).toEqual([{ teeth: [35, 36], connectors: [{ between: [35, 36], areaMm2: 12, ...offsets }] }]);
     expect(tooth(35).steps.axis).toBe('stale');
+
+    // Implant bridges: no bridge on both implants and prepared teeth; an implant unit's position step holds its
+    // scan-body match (never a margin), on a non-engaging Ti-base; its screw channel stays within the library maximum.
+    const implantSetup = (restoration37: 'anatomic-crown' | 'implant-crown') => ({
+      patientRef: '',
+      notes: '',
+      teeth: [order(35, 'anatomic-crown'), order(36, 'pontic'), order(37, 'anatomic-crown')].map((t) =>
+        t.fdi === 35 ? { ...t, restoration: 'implant-crown' as const } : t.fdi === 37 ? { ...t, restoration: restoration37 } : t,
+      ),
+      connections: [[35, 36], [36, 37]] as Array<[number, number]>,
+    });
+    expect(() => applyCommand(doc, { type: 'setCaseSetup', setup: implantSetup('anatomic-crown') })).toThrow(CommandError);
+    doc = applyCommand(doc, { type: 'setCaseSetup', setup: implantSetup('implant-crown') });
+    expect(tooth(35)).not.toHaveProperty('margin');
+    expect(tooth(35).steps.margin).toBe('pending');
+    expect(() => applyCommand(doc, { type: 'setMargin', fdi: 35, margin })).toThrow(CommandError);
+    const implant = {
+      libraryId: 'synthetic-generic@1/rp-non-engaging',
+      scanBodyPose: { position: [0, 0, -2], quaternion: [0, 0, 0, 1], scale: [1, 1, 1] } as Pose,
+      engaging: false,
+      ascMaxDeg: 25,
+      fit: { rmsMm: 0.001, maxMm: 0.01, inlierFraction: 1, coverage: 1 },
+      source: 'auto' as const,
+    };
+    expect(() => applyCommand(doc, { type: 'setImplant', fdi: 35, implant: { ...implant, engaging: true } })).toThrow(CommandError);
+    doc = applyCommands(doc, [
+      { type: 'setImplant', fdi: 37, implant },
+      { type: 'setAxis', fdi: 37, axis },
+      { type: 'setImplant', fdi: 35, implant },
+    ]);
+    expect(tooth(35).implant).toEqual(implant);
+    expect(tooth(35).steps.margin).toBe('done');
+    // A new implant position invalidates the common path of the other implant unit.
+    expect(tooth(37).steps.axis).toBe('stale');
+    expect(() => applyCommand(doc, { type: 'setScrewChannel', fdi: 35, angleDeg: 30, azimuthDeg: 0 })).toThrow(CommandError);
+    expect(applyCommand(doc, { type: 'setScrewChannel', fdi: 35, angleDeg: 20, azimuthDeg: -90 }).teeth.find((t) => t.fdi === 35)!.screwChannel).toEqual({
+      angleDeg: 20,
+      azimuthDeg: 270,
+    });
   });
 
   it('never mutates its input', () => {

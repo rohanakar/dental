@@ -3,6 +3,7 @@ import { useDesignStore, selectActiveTooth } from '../../design/store';
 import { axisTool } from '../../tools/axisTool';
 import { useToolStore } from '../../tools/toolStore';
 import { BridgeAxisReport, useActiveBridge } from './BridgePanels';
+import { ImplantAxisPanel, useIsImplant } from './ImplantPanel';
 
 export function AxisStep() {
   const tooth = useDesignStore(selectActiveTooth);
@@ -12,7 +13,9 @@ export function AxisStep() {
   const bridge = useActiveBridge();
   const report = useToolStore((s) => s.axisReport);
   const busy = useToolStore((s) => s.busy);
+  const implant = useIsImplant();
   if (!tooth) return null;
+  if (implant) return <ImplantAxisPanel />;
   if (pontic) return <div className="step-body muted">Pontic {tooth.fdi} has no prep: it follows the bridge's common insertion axis.</div>;
   // A bridge seats as one piece: one axis over every abutment, searched over all their preps.
   const common = bridge ? bridge.teeth.filter((f) => unitKind(setup, f) === 'abutment') : [];

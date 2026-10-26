@@ -2,6 +2,7 @@ import { bridgeOf, STEP_ORDER, stepsFor, unitKind, type StepId, type StepStatus 
 import { useEffect } from 'react';
 import { useOrchestrator } from '../ai/orchestrator';
 import { useDesignStore } from '../design/store';
+import { isImplantTooth } from '../tools/implantTool';
 import './bridge.css';
 
 export const STEPS: Array<{ id: StepId; label: string; available: boolean }> = [
@@ -15,6 +16,13 @@ export const STEPS: Array<{ id: StepId; label: string; available: boolean }> = [
   { id: 'adapt', label: 'Adapt', available: true },
   { id: 'finalize', label: 'Finalize', available: true },
 ];
+
+/** A step's label for the active unit: an implant crown's margin step is its implant position (the scan-body match). */
+export const stepLabel = (id: StepId, implant: boolean): string =>
+  id === 'margin' && implant ? 'Implant position' : (STEPS.find((s) => s.id === id)?.label ?? id);
+
+/** Whether the active tooth is an implant crown (its margin step is labelled "Implant position"). */
+export const useImplantLabels = (): boolean => useDesignStore((s) => isImplantTooth(s.doc, s.activeFdi));
 
 type NavStatus = StepStatus | 'draft';
 
@@ -70,7 +78,7 @@ export function StepNav() {
       )}
       {/* Remounted per unit kind: Chrome keeps stale CSS step counters (1, 2, 3, 6…) when items are removed in place. */}
       <ol key={kind}>
-        {STEPS.filter(({ id }) => visible.includes(id)).map(({ id, label, available }) => {
+        {STEPS.filter(({ id }) => visible.includes(id)).map(({ id, available }) => {
           const inDraft = drafted?.some((r) => r.step === id && (r.status === 'passed' || r.status === 'failed'));
           const status: NavStatus = inDraft ? 'draft' : (steps?.[id] ?? 'pending');
           return (
@@ -83,7 +91,7 @@ export function StepNav() {
                 onClick={() => setActiveStep(id)}
               >
                 <span className="step-label">
-                  {label}
+                  {stepLabel(id, isImplantTooth({ setup }, activeFdi))}
                   {id === 'axis' && commonAxis.length > 1 && <span className="step-note"> · common for {commonAxis.join(', ')}</span>}
                 </span>
                 {status === 'stale' && <span className="badge stale">stale</span>}

@@ -28,6 +28,7 @@ import {
 } from '@dcad/shared';
 import { axisVector, crownCentre, directionVector, movePose, rotatePose, scaleIndex, scalePose, templateHeight } from './clinical';
 import { newTooth } from './document';
+import { requireNaturalPrep, setImplant, setScrewChannel, switchSupport, syncEngaging } from './implant';
 
 export class CommandError extends Error {
   constructor(message: string) {
@@ -198,6 +199,8 @@ function setCaseSetup(doc: DesignDocument, cmd: CommandOf<'setCaseSetup'>): Desi
     }
     const kind = RESTORATION_ROLE[order.restoration].role;
     if (before && RESTORATION_ROLE[before.restoration].role !== kind) tooth = changeKind(tooth, kind);
+    if (before) tooth = switchSupport(tooth, before.restoration, order.restoration);
+    tooth = syncEngaging(tooth, bridges.some((b) => b.teeth.includes(order.fdi)));
     if (axisStale.has(order.fdi)) tooth = { ...tooth, steps: markStaleFrom(tooth.steps, 'axis') };
     return syncConnectedSides(tooth, connectedSides(doc, order.fdi), connectedSides({ bridges }, order.fdi));
   });
@@ -268,6 +271,7 @@ export function applyCommand(doc: DesignDocument, cmd: Command): DesignDocument 
     }
     case 'setMargin': {
       requireAbutment(doc, cmd.fdi, cmd.type);
+      requireNaturalPrep(doc, cmd.fdi, cmd.type);
       const next = updateTooth(doc, cmd.fdi, (t) => ({ ...t, margin: cmd.margin, steps: markDone(t.steps, 'margin') }));
       return invalidateBridge(next, cmd.fdi, 'margin');
     }
@@ -306,6 +310,10 @@ export function applyCommand(doc: DesignDocument, cmd: Command): DesignDocument 
       return updateCrownAdapt(doc, cmd.fdi, cmd.type, (a) => ({ ...a, [cmd.side]: { targetMm: cmd.targetMm } }));
     case 'setConnector':
       return setConnector(doc, cmd);
+    case 'setImplant':
+      return invalidateBridge(setImplant(doc, cmd, (d, fdi, f) => updateTooth(d, fdi, f), markDone), cmd.fdi, 'margin');
+    case 'setScrewChannel':
+      return setScrewChannel(doc, cmd, (d, fdi, f) => updateTooth(d, fdi, f), markStaleFrom);
     case 'runStep':
       throw new CommandError(`Command "${cmd.type}" is not supported yet`);
   }

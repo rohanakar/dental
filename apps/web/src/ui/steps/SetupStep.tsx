@@ -125,12 +125,16 @@ export function SetupStep() {
 
   const kindSwitch = (fdi: number) => {
     const pontic = unitKind(setup, fdi) === 'pontic';
+    const implant = setup.teeth.find((t) => t.fdi === fdi)?.restoration === 'implant-crown';
     const set = (restoration: RestorationType) =>
-      commit(setRestoration(setup, fdi, restoration), `${fdi} was not made a ${restoration === 'pontic' ? 'pontic' : 'crown'}`);
+      commit(setRestoration(setup, fdi, restoration), `${fdi} was not made a ${restoration === 'pontic' ? 'pontic' : restoration === 'implant-crown' ? 'implant crown' : 'crown'}`);
     return (
       <div className="seg" role="group" aria-label={`Restoration for ${fdi}`}>
-        <button type="button" className="btn" aria-pressed={!pontic} onClick={() => pontic && set('anatomic-crown')}>
+        <button type="button" className="btn" aria-pressed={!pontic && !implant} onClick={() => (pontic || implant) && set('anatomic-crown')}>
           Crown
+        </button>
+        <button type="button" className="btn" aria-pressed={implant} title="Screw-retained on a Ti-base" onClick={() => !implant && set('implant-crown')}>
+          Implant
         </button>
         <button type="button" className="btn" aria-pressed={pontic} onClick={() => !pontic && set('pontic')}>
           Pontic
