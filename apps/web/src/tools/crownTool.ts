@@ -399,7 +399,8 @@ class CrownTool {
   }
 
   private applyVisibility(step: StepId): void {
-    const visible = SHOW_CROWN.includes(step) && useToolStore.getState().crownVisible;
+    // No mesh (the crown was undone or rejected): nothing on screen, so no legend either.
+    const visible = SHOW_CROWN.includes(step) && useToolStore.getState().crownVisible && this.geometry !== null;
     this.viewer?.setObjectVisible(CROWN_OBJECT_ID, visible);
     if (!visible) this.viewer?.overlays.remove('crown:conflicts');
     // The legend belongs to the crown map only while the crown is on screen (the axis step has its own).

@@ -96,7 +96,7 @@ vi.mock('./proposers', () => ({
   ],
 }));
 
-const { accept, recordEditsOnSave, reject, resetOrchestrator, runAutoDesign, useOrchestrator } = await import('./orchestrator');
+const { accept, draftCommitted, recordEditsOnSave, reject, resetOrchestrator, runAutoDesign, useOrchestrator } = await import('./orchestrator');
 const { useEventLog } = await import('./events');
 
 describe('auto-design orchestrator', () => {
@@ -108,6 +108,7 @@ describe('auto-design orchestrator', () => {
   });
 
   it('runs every step in one transaction; accept is one undo entry with accepted events', async () => {
+    useDesignStore.getState().setActiveStep('frame');
     await runAutoDesign({ seed: [0, 0, 0] });
     const o = useOrchestrator.getState();
     expect(o.steps.map((s) => s.status)).toEqual(['passed', 'passed', 'passed']);
@@ -123,19 +124,24 @@ describe('auto-design orchestrator', () => {
     const events = useEventLog.getState().queued;
     expect(events.map((e) => [e.step, e.action])).toEqual([['frame', 'accepted'], ['margin', 'accepted'], ['axis', 'accepted']]);
     for (const e of events) expect(ProposalEvent.safeParse(e).success).toBe(true);
+    // The committed document knows its draft: undoing from it returns to where the run started.
+    expect(draftCommitted(s.doc)).toEqual({ step: 'frame', fdi: 36, label: 'Auto-design' });
     s.undo();
     expect(useDesignStore.getState().doc.teeth[0]!.frame).toBeUndefined();
+    expect(draftCommitted(useDesignStore.getState().doc)).toBeUndefined();
   });
 
   it('stops at a failed gate with the draft on screen; reject restores and logs rejected (crown and bridge)', async () => {
     behaviour.axisPasses = false;
     const before = useDesignStore.getState().doc;
+    useDesignStore.getState().setActiveStep('frame');
     await runAutoDesign({ seed: [0, 0, 0] });
     const o = useOrchestrator.getState();
     expect(o.steps.map((s) => s.status)).toEqual(['passed', 'passed', 'failed']);
     expect(o.pendingReview).toBe(true);
     expect(o.complete).toBe(false);
-    reject();
+    useDesignStore.getState().setActiveStep('axis'); // the draft opened elsewhere: Reject returns to the run's start
+    expect(reject()).toEqual({ step: 'frame', fdi: 36, label: 'Auto-design' });
     expect(useDesignStore.getState().doc).toBe(before);
     expect(useDesignStore.getState().past).toHaveLength(0);
     expect(useEventLog.getState().queued.map((e) => e.action)).toEqual(['rejected', 'rejected', 'rejected']);

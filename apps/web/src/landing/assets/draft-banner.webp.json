@@ -1,4 +1,4 @@
 {
-  "prompt": "Origin: screen capture of the Dental CAD editor (this repository, apps/web, at commit 86acde6 plus the one-look working tree, specs/2026-10-26-one-look.md) on the synthetic demo case 36 (procedural scans from src/geometry/synthetic.ts, no patient data), taken by tools/e2e/landing-shots.mjs in headless Chrome at device scale 2, converted to lossless WebP with cwebp. Not generated, not retouched. Output: draft-banner.\n",
-  "createdAt": "2026-10-26T11:15:38.000Z"
+  "prompt": "Origin: screen capture of the Dental CAD editor (this repository, apps/web, at commit aa8c66d plus the undo-and-check-numbers working tree, specs/2026-10-26-undo-and-check-numbers.md) on the synthetic demo case 36 (procedural scans from src/geometry/synthetic.ts, no patient data), taken by tools/e2e/landing-shots.mjs in headless Chrome at device scale 2, converted to lossless WebP with cwebp. Not generated, not retouched. Output: draft-banner.\n",
+  "createdAt": "2026-10-26T13:54:00.000Z"
 }

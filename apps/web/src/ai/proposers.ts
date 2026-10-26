@@ -159,6 +159,8 @@ const orthoCheck = (id: string, ortho: number, message: string): QaCheck => ({
   passed: ortho < ORTHO_MAX,
   value: Number((Math.asin(Math.min(1, ortho)) * DEG).toFixed(3)),
   threshold: Number((Math.asin(ORTHO_MAX) * DEG).toFixed(3)),
+  unit: 'deg',
+  bound: 'max',
   message,
 });
 
@@ -185,7 +187,7 @@ export const frameProposer: Proposer = {
     const ortho = orthoError(frame);
     const contacts = [frame.mesialContact && 'mesial', frame.distalContact && 'distal'].filter(Boolean);
     const qa: QaCheck[] = [
-      orthoCheck('frame.orthonormal', ortho, 'Frame directions at right angles, largest error in degrees'),
+      orthoCheck('frame.orthonormal', ortho, 'Frame directions at right angles: largest error'),
       // A missing neighbour is legitimate (e.g. the last molar), so contacts are informational.
       {
         id: 'frame.contacts',
@@ -733,7 +735,7 @@ export const ponticFrameProposer: Proposer = {
     for (const t of order) {
       const fr = frames.get(t)!;
       const ortho = orthoError(fr);
-      qa.push(orthoCheck(`frame.orthonormal.${t}`, ortho, `${t}: frame directions at right angles, largest error in degrees`));
+      qa.push(orthoCheck(`frame.orthonormal.${t}`, ortho, `${t}: frame directions at right angles: largest error`));
     }
     // FDI handedness of each pontic: mesial points toward its mesial neighbour (or away from its distal one). The gate
     // is a cosine above 0.5; it is shown as the angle (limit 60°).
@@ -751,7 +753,9 @@ export const ponticFrameProposer: Proposer = {
         passed: value > 0.5,
         value: Number((Math.acos(Math.max(-1, Math.min(1, value))) * DEG).toFixed(1)),
         threshold: 60,
-        message: `${p.fdi}: mesial faces ${n.mesial} along the arch, angle off in degrees`,
+        unit: 'deg',
+        bound: 'max',
+        message: `${p.fdi}: mesial faces ${n.mesial} along the arch: angle off`,
       });
     }
     const pontics = result.pontics.map((p) => `${p.fdi}${p.cantilever ? ' (cantilever)' : ''}`);
@@ -830,7 +834,7 @@ export const bridgeAxisProposer: Proposer = {
     const qa: QaCheck[] = [
       ...axisGate({ marginUndercutCount: result.marginUndercutTotal, angleFromOcclusalDeg: result.angleFromCenterDeg, prepClosed: result.prepClosed }),
       // Divergent abutments force blockout; a warning, not a gate (long spans often diverge).
-      { id: 'axis.divergence', passed: true, value: Number(result.divergenceDeg.toFixed(2)), threshold: 12, message: "Largest angle between the abutments' own best insertion axes, in degrees (only a warning)" },
+      { id: 'axis.divergence', passed: true, value: Number(result.divergenceDeg.toFixed(2)), threshold: 12, unit: 'deg', bound: 'max', message: "Largest angle between the abutments' own best insertion axes, only a warning" },
     ];
     return {
       proposerId: this.id,

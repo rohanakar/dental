@@ -7,12 +7,13 @@ import type { InlayUnitReport } from './inlayUnit';
  */
 
 const round = (x: number, d = 3) => Number(x.toFixed(d));
-const check = (id: string, passed: boolean, message: string, value?: number, threshold?: number): QaCheck => ({
+const check = (id: string, passed: boolean, message: string, value?: number, threshold?: number, reading: Pick<QaCheck, 'unit' | 'bound' | 'tolerance'> = {}): QaCheck => ({
   id,
   passed,
   message,
   ...(value !== undefined && Number.isFinite(value) ? { value: round(value) } : {}),
   ...(threshold !== undefined ? { threshold } : {}),
+  ...reading,
 });
 
 /**
@@ -24,12 +25,12 @@ export function inlayChecks(fdi: number, inlay: Pick<InlayUnitReport, 'marginFit
   const id = `inlay.${fdi}`;
   const name = `${inlay.type === 'onlay' ? 'Onlay' : 'Inlay'} ${fdi}`;
   const out = [
-    check(`${id}.marginFit`, inlay.marginFit.ok, `${name}: largest gap between its edge and the cavity margin, in mm`, inlay.marginFit.maxMm, inlay.marginFit.limitMm),
-    check(`${id}.isthmus`, inlay.isthmus.ok, `${name}: thinnest material over the cavity floor, in mm`, inlay.isthmus.minMm, inlay.isthmus.thresholdMm),
+    check(`${id}.marginFit`, inlay.marginFit.ok, `${name}: largest gap between its edge and the cavity margin`, inlay.marginFit.maxMm, inlay.marginFit.limitMm, { unit: 'mm', bound: 'max' }),
+    check(`${id}.isthmus`, inlay.isthmus.ok, `${name}: thinnest material over the cavity floor`, inlay.isthmus.minMm, inlay.isthmus.thresholdMm, { unit: 'mm', bound: 'min' }),
     check(`${id}.marginUndercut`, inlay.blockout.outlineUndercutPoints === 0, `${name}: margin points in an undercut along the insertion axis`, inlay.blockout.outlineUndercutPoints, 0),
   ];
   if (inlay.library) {
-    out.push(check(`${id}.libraryFit`, inlay.library.ok, `${name}: library tooth's distance from the natural surface around the cavity, in mm, ignoring the worst 5%`, inlay.library.residual.p95Mm, inlay.library.limitMm));
+    out.push(check(`${id}.libraryFit`, inlay.library.ok, `${name}: library tooth's distance from the natural surface around the cavity, ignoring the worst 5%`, inlay.library.residual.p95Mm, inlay.library.limitMm, { unit: 'mm', bound: 'max' }));
   }
   return out;
 }

@@ -19,9 +19,37 @@ export const QaCheck = z.object({
   passed: z.boolean(),
   value: z.number().optional(),
   threshold: z.number().optional(),
+  /** Unit of value, threshold and tolerance; a fraction (0–1) reads as a percentage. Unset: a count. */
+  unit: z.enum(['mm', 'mm2', 'um', 'deg', 'fraction']).optional(),
+  /** The side of the threshold that passes: at least it (min) or at most it (max). Unset: a plain limit. */
+  bound: z.enum(['min', 'max']).optional(),
+  /** Measuring tolerance: a value this far past the threshold still passes. */
+  tolerance: z.number().nonnegative().optional(),
   message: z.string(),
 });
 export type QaCheck = z.infer<typeof QaCheck>;
+
+/** A number keeps its unit, and a limit word its number, on one line (no-break spaces). */
+const UNIT_TEXT = { mm: '\u00a0mm', mm2: '\u00a0mm²', um: '\u00a0µm', deg: '°', fraction: '%' } as const;
+
+/**
+ * A check's measurement in words, e.g. "1.01 mm, minimum 0.50 mm, 0.02 mm measuring tolerance", "42.79°, maximum
+ * 120°", "100%, minimum 75%" or "0, limit 0". Millimetres take two decimals (as the parameters do), anything below
+ * 0.01 two significant digits. Empty without a value.
+ */
+export function qaValueText(c: QaCheck): string {
+  if (c.value === undefined) return '';
+  const show = (v: number): string => {
+    if (c.unit === 'fraction') return `${Math.round(v * 100)}%`;
+    const small = v !== 0 && Math.abs(v) < 0.01;
+    const digits = small ? String(Number(v.toPrecision(2))) : c.unit === 'mm' ? v.toFixed(2) : String(Number(v.toFixed(2)));
+    return `${digits}${c.unit ? UNIT_TEXT[c.unit] : ''}`;
+  };
+  const parts = [show(c.value)];
+  if (c.threshold !== undefined) parts.push(`${c.bound === 'min' ? 'minimum' : c.bound === 'max' ? 'maximum' : 'limit'}\u00a0${show(c.threshold)}`);
+  if (c.tolerance) parts.push(`${show(c.tolerance)} measuring tolerance`);
+  return parts.join(', ');
+}
 
 export const ProposalInput = z.object({
   caseId: z.string(),

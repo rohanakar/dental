@@ -1,4 +1,4 @@
-import type { QaCheck } from '@dcad/shared';
+import { qaValueText, type QaCheck } from '@dcad/shared';
 import type { BridgeConnectorResult, BridgeUnitInput, BridgeUnitResult } from './bridge';
 import { measureConnector, type ConnectorFailure, type ConnectorMeasure } from './connectors';
 import type { CrownInput } from './crown';
@@ -245,7 +245,7 @@ export function checkBridgeUnion(input: {
     const wing = result.design.wing;
     if (!wing) continue;
     const checks = wingChecks(result.fdi, wing);
-    for (const c of checks) if (!c.passed) failures.push(`${c.message}${c.value !== undefined ? `: ${c.value}` : ''}.`);
+    for (const c of checks) if (!c.passed) failures.push(`${c.message}${c.value !== undefined ? ` (${qaValueText(c)})` : ''}.`);
     wings.push({ fdi: result.fdi, checks, ok: checks.every((c) => c.passed) });
   }
 
@@ -254,7 +254,7 @@ export function checkBridgeUnion(input: {
     const inlay = result.design.inlay;
     if (!inlay) continue;
     const checks = inlayChecks(result.fdi, inlay);
-    for (const c of checks) if (!c.passed) failures.push(`${c.message}${c.value !== undefined ? `: ${c.value}` : ''}.`);
+    for (const c of checks) if (!c.passed) failures.push(`${c.message}${c.value !== undefined ? ` (${qaValueText(c)})` : ''}.`);
     inlays.push({ fdi: result.fdi, checks, ok: checks.every((c) => c.passed) });
   }
 

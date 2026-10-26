@@ -10,13 +10,19 @@ type V3 = readonly [number, number, number];
 /** Gates for the auto-design orchestrator: deterministic checks, not "confidence". */
 
 const round = (n: number, d = 3) => Number(n.toFixed(d));
-const check = (id: string, passed: boolean, message: string, value?: number, threshold?: number, digits = 3): QaCheck => ({
+/** How a value reads (`qaValueText`): its unit, which side of the threshold passes, a measuring tolerance. */
+type Reading = Pick<QaCheck, 'unit' | 'bound' | 'tolerance'> & { digits?: number };
+const check = (id: string, passed: boolean, message: string, value?: number, threshold?: number, { digits = 3, ...reading }: Reading = {}): QaCheck => ({
   id,
   passed,
   message,
   ...(value !== undefined && Number.isFinite(value) ? { value: round(value, digits) } : {}),
   ...(threshold !== undefined ? { threshold } : {}),
+  ...reading,
 });
+
+/** Thickness is measured on the mesh: a wall this much under the material minimum still passes. */
+export const THICKNESS_TOLERANCE_MM = 0.02;
 
 /** Sharpest turn (degrees) between consecutive segments of a closed polyline. */
 /**
@@ -56,11 +62,11 @@ export function sharpestTurnDeg(points: ReadonlyArray<V3>, strideMm = 0.6): numb
 export function marginGate(input: { points: ReadonlyArray<V3>; lengthMm: number; prepClosed?: boolean; confidence?: number }): QaCheck[] {
   const turn = sharpestTurnDeg(input.points);
   const checks = [
-    check('margin.length', input.lengthMm >= 8 && input.lengthMm <= 60, 'Margin length within 8–60 mm', input.lengthMm),
-    check('margin.smooth', turn <= 120, 'No kinks: sharpest bend in the margin line, in degrees', turn, 120),
+    check('margin.length', input.lengthMm >= 8 && input.lengthMm <= 60, 'Margin length within 8–60 mm', input.lengthMm, undefined, { unit: 'mm' }),
+    check('margin.smooth', turn <= 120, 'No kinks: sharpest bend in the margin line', turn, 120, { unit: 'deg', bound: 'max' }),
   ];
   if (input.prepClosed !== undefined) checks.unshift(check('margin.closed', input.prepClosed, 'The margin is closed all the way round the prep'));
-  if (input.confidence !== undefined) checks.push(check('margin.ridge', input.confidence >= 0.75, 'The margin edge shows clearly around the prep: share of the way round', input.confidence, 0.75));
+  if (input.confidence !== undefined) checks.push(check('margin.ridge', input.confidence >= 0.75, 'The margin edge shows clearly around the prep: share of the way round', input.confidence, 0.75, { unit: 'fraction', bound: 'min' }));
   return checks;
 }
 
@@ -68,19 +74,22 @@ export function marginGate(input: { points: ReadonlyArray<V3>; lengthMm: number;
 export function axisGate(axis: Pick<AxisAnalysis, 'marginUndercutCount' | 'angleFromOcclusalDeg' | 'prepClosed'>): QaCheck[] {
   return [
     check('axis.marginUndercut', axis.marginUndercutCount === 0, 'Margin points in an undercut along the insertion axis', axis.marginUndercutCount, 0),
-    check('axis.angle', axis.angleFromOcclusalDeg <= 25, 'Insertion axis tilt from the biting direction, in degrees', axis.angleFromOcclusalDeg, 25),
+    check('axis.angle', axis.angleFromOcclusalDeg <= 25, 'Insertion axis tilt from the biting direction', axis.angleFromOcclusalDeg, 25, { unit: 'deg', bound: 'max' }),
     check('axis.prepClosed', axis.prepClosed, 'The margin is closed all the way round the prep'),
   ];
 }
 
-/** Crown: a valid, printable solid that respects the minimum thickness. */
+/**
+ * Crown: a valid, printable solid that respects the material minimum (shown as the limit, passing within
+ * THICKNESS_TOLERANCE_MM).
+ */
 export function crownGate(result: Pick<CrownResult, 'validation' | 'thickness' | 'minAxialThicknessMm'>, params: Pick<DesignParams, 'minThicknessMm'>): QaCheck[] {
   const min = result.thickness?.minMm ?? result.minAxialThicknessMm;
-  const limit = round(params.minThicknessMm - 0.02);
+  const limit = round(params.minThicknessMm - THICKNESS_TOLERANCE_MM);
   return [
     check('crown.valid', result.validation.ok, 'Closed, watertight solid'),
     check('crown.printable', result.validation.printable === true, 'Places where the surface crosses itself', result.validation.selfIntersections, 0),
-    check('crown.thickness', min >= limit, 'Thinnest material away from the margin, in mm', min, limit),
+    check('crown.thickness', min >= limit, 'Thinnest material away from the margin', min, params.minThicknessMm, { unit: 'mm', bound: 'min', tolerance: THICKNESS_TOLERANCE_MM }),
   ];
 }
 
@@ -90,12 +99,12 @@ export function adaptGate(result: Pick<CrownResult, 'adapt'>): QaCheck[] {
   if (reports.length === 0) return [check('adapt.applied', false, 'No adaptation was applied')];
   return reports.map(([kind, r]) => {
     const label = kind === 'occlusion' ? 'Occlusion' : `${kind[0]!.toUpperCase()}${kind.slice(1)} contact`;
-    if (r?.conflict) return check(`adapt.${kind}`, false, `${label}: ${r.conflict.kind} at ${r.conflict.vertices} points, closest distance in mm`, r.conflict.minClearanceMm);
+    if (r?.conflict) return check(`adapt.${kind}`, false, `${label}: ${r.conflict.kind} at ${r.conflict.vertices} points, closest distance`, r.conflict.minClearanceMm, undefined, { unit: 'mm' });
     if (r?.open) {
       const gap = Number.isFinite(r.open.clearanceMm) ? `${r.open.clearanceMm.toFixed(2)} mm to the ${kind === 'occlusion' ? 'antagonist' : 'neighbour'}` : 'nothing within reach';
-      return check(`adapt.${kind}`, false, `${label} open: ${gap}`, r.open.clearanceMm, r.targetMm);
+      return check(`adapt.${kind}`, false, `${label} open: ${gap}`, r.open.clearanceMm, r.targetMm, { unit: 'mm', bound: 'max' });
     }
-    return check(`adapt.${kind}`, true, `${label}: target reached, closest distance in mm`, r?.minClearanceMm);
+    return check(`adapt.${kind}`, true, `${label}: target reached, closest distance`, r?.minClearanceMm, undefined, { unit: 'mm' });
   });
 }
 
@@ -121,9 +130,9 @@ export function scanBodyGate(fit: { rmsMm: number; inlierFraction: number; cover
   const g = SCAN_BODY_GATE;
   return [
     // In µm: the fit is a few µm on a clean scan, which reads as 0 in mm.
-    check('implant.fit.rms', fit.rmsMm <= g.maxRmsMm, 'Scan body match: average distance to the scan, in µm', fit.rmsMm * 1000, g.maxRmsMm * 1000, 1),
-    check('implant.fit.inliers', fit.inlierFraction >= g.minInlierFraction, 'Share of the scan points that lie on the matched scan body', fit.inlierFraction, g.minInlierFraction),
-    check('implant.fit.coverage', fit.coverage >= g.minCoverage, "Share of the scan body's surface captured in the scan", fit.coverage, g.minCoverage),
+    check('implant.fit.rms', fit.rmsMm <= g.maxRmsMm, 'Scan body match: average distance to the scan', fit.rmsMm * 1000, g.maxRmsMm * 1000, { digits: 1, unit: 'um', bound: 'max' }),
+    check('implant.fit.inliers', fit.inlierFraction >= g.minInlierFraction, 'Share of the scan points that lie on the matched scan body', fit.inlierFraction, g.minInlierFraction, { unit: 'fraction', bound: 'min' }),
+    check('implant.fit.coverage', fit.coverage >= g.minCoverage, "Share of the scan body's surface captured in the scan", fit.coverage, g.minCoverage, { unit: 'fraction', bound: 'min' }),
   ];
 }
 
@@ -135,7 +144,7 @@ export function implantSeatGate(implant: { rimUndercutCount: number }): QaCheck[
 /** Implant bridge path: the implants diverge no more than their Ti-base library allows, so the bridge seats on one path. */
 export function implantPathGate(path: { divergenceDeg: number; maxDivergenceDeg: number }): QaCheck[] {
   return [
-    check('implant.divergence', path.divergenceDeg <= path.maxDivergenceDeg + 1e-9, 'Largest angle between two implants, in degrees', path.divergenceDeg, path.maxDivergenceDeg, 2),
+    check('implant.divergence', path.divergenceDeg <= path.maxDivergenceDeg + 1e-9, 'Largest angle between two implants', path.divergenceDeg, path.maxDivergenceDeg, { digits: 2, unit: 'deg', bound: 'max' }),
   ];
 }
 
@@ -145,7 +154,7 @@ type ChannelView = Pick<ScrewChannelReport, 'exitOk' | 'wallOk' | 'minWallMm' | 
 function channelChecks(prefix: string, label: string, channel: ChannelView, cut?: { ok: boolean }): QaCheck[] {
   return [
     check(`${prefix}.exit`, channel.exitOk, `${label} opens on the occlusal surface (lingual on front teeth)`),
-    check(`${prefix}.wall`, channel.wallOk, `${label}: thinnest material around it, in mm`, channel.minWallMm, round(channel.requiredWallMm)),
+    check(`${prefix}.wall`, channel.wallOk, `${label}: thinnest material around it`, channel.minWallMm, round(channel.requiredWallMm), { unit: 'mm', bound: 'min' }),
     ...(cut ? [check(`${prefix}.cut`, cut.ok, `${label} is cut through, leaving one clean piece`)] : []),
   ];
 }
@@ -172,7 +181,7 @@ export function wingOutlineGate(outline: { anchors: number; points: Float32Array
   return [
     check('wing.outline.closed', outline.anchors >= 3 && gap < 1, 'The wing outline is a closed loop on the tooth'),
     check('wing.outline.region', outline.regionClosed, 'The outline fully encloses the area to bond'),
-    check('wing.outline.area', outline.areaMm2 > 0, 'Bonding area inside the outline, in mm²', outline.areaMm2, 0, 1),
+    check('wing.outline.area', outline.areaMm2 > 0, 'Bonding area inside the outline', outline.areaMm2, 0, { digits: 1, unit: 'mm2' }),
   ];
 }
 
@@ -192,10 +201,11 @@ export function cutbackGate(framework: Pick<FrameworkView, 'shortfall' | 'valida
       'cutback.shortfall',
       deficit <= CUTBACK_MAX_DEFICIT_MM,
       framework.shortfall
-        ? `Insufficient veneering space on ${framework.shortfall.areaMm2.toFixed(1)} mm²: largest shortfall, in mm`
-        : 'Full veneering space everywhere: largest shortfall, in mm',
+        ? `Insufficient veneering space on ${framework.shortfall.areaMm2.toFixed(1)} mm²: largest shortfall`
+        : 'Full veneering space everywhere: largest shortfall',
       deficit,
       CUTBACK_MAX_DEFICIT_MM,
+      { unit: 'mm', bound: 'max' },
     ),
   ];
 }
@@ -274,26 +284,26 @@ export function bridgeGate(result: BridgeGateInput): QaCheck[] {
         const areaLimit = Math.max(c.targetAreaMm2, c.minAreaMm2);
         const height = Math.min(c.measured.heightMm, c.designedHeightMm);
         qa.push(
-          check(`${id}.area`, c.measured.minAreaMm2 >= areaLimit, `Connector ${a}–${b}: smallest cross-section, in mm²`, c.measured.minAreaMm2, round(areaLimit)),
-          check(`${id}.height`, height >= c.minHeightMm, `Connector ${a}–${b}: height, in mm`, height, c.minHeightMm),
+          check(`${id}.area`, c.measured.minAreaMm2 >= areaLimit, `Connector ${a}–${b}: smallest cross-section`, c.measured.minAreaMm2, round(areaLimit), { unit: 'mm2', bound: 'min' }),
+          check(`${id}.height`, height >= c.minHeightMm, `Connector ${a}–${b}: height`, height, c.minHeightMm, { unit: 'mm', bound: 'min' }),
         );
       }
     }
-    for (const f of connector.failures) qa.push(check(`${id}.${f.code}`, false, f.message, f.valueMm, round(f.limitMm)));
+    for (const f of connector.failures) qa.push(check(`${id}.${f.code}`, false, f.message, f.valueMm, round(f.limitMm), { unit: 'mm' }));
   }
 
   for (const s of checks?.seating ?? []) {
     const change = Math.max(s.deltaMeanMm, s.deltaMaxMm);
     const ok = s.onUnion.samples > 0 && s.onUnion.samples === s.own.samples && s.deltaMeanMm <= SEATING_TOLERANCE_MM && s.deltaMaxMm <= SEATING_TOLERANCE_MM;
     const message = implants.some((i) => i.fdi === s.fdi)
-      ? `Implant crown ${s.fdi}: fit on its Ti-base unchanged after merging, largest change of the bonding gap in mm`
-      : `Retainer ${s.fdi}: fit unchanged after merging, largest change of the cement gap in mm`;
-    qa.push(check(`bridge.seating.${s.fdi}`, ok, message, change, SEATING_TOLERANCE_MM, 4));
+      ? `Implant crown ${s.fdi}: fit on its Ti-base unchanged after merging, largest change of the bonding gap`
+      : `Retainer ${s.fdi}: fit unchanged after merging, largest change of the cement gap`;
+    qa.push(check(`bridge.seating.${s.fdi}`, ok, message, change, SEATING_TOLERANCE_MM, { digits: 4, unit: 'mm', bound: 'max' }));
   }
   for (const p of checks?.ponticBase ?? []) {
     const limit = p.targetMm - PONTIC_BASE_TOLERANCE_MM;
     const ok = p.samples > 0 && p.minGapMm >= limit && p.minGapMm <= p.targetMm + PONTIC_BASE_MAX_EXCESS_MM && p.meanGapMm >= limit;
-    qa.push(check(`bridge.ponticBase.${p.fdi}`, ok, `Pontic ${p.fdi}: smallest gap from the base to the ridge, in mm`, p.minGapMm, round(limit)));
+    qa.push(check(`bridge.ponticBase.${p.fdi}`, ok, `Pontic ${p.fdi}: smallest gap from the base to the ridge`, p.minGapMm, round(limit), { unit: 'mm', bound: 'min' }));
   }
   for (const { fdi, implant } of implants) {
     const cut = { ok: Boolean(implant.cut) && implant.cutOk !== false };
@@ -305,3 +315,18 @@ export function bridgeGate(result: BridgeGateInput): QaCheck[] {
 }
 
 export const passed = (qa: readonly QaCheck[]): boolean => qa.every((c) => c.passed);
+
+/** Checks that measure what another id measures: the axis gate re-checks the closure the margin gate checked. */
+const SAME_AS: Record<string, string> = { 'axis.prepClosed': 'margin.closed' };
+
+/**
+ * The rows of a run with each check counted once: a check that a later row measures again (the crown's validity and
+ * thickness after adaptation, the margin's closure on the axis) stays only on that last row, so the review shows the
+ * final numbers. Rows of different teeth (a bridge's per-abutment rows) never repeat each other.
+ */
+export function latestChecks<R extends { fdi?: number; qa: readonly QaCheck[] }>(rows: readonly R[]): R[] {
+  const key = (row: R, c: QaCheck) => `${row.fdi ?? ''}|${SAME_AS[c.id] ?? c.id}`;
+  const last = new Map<string, number>();
+  rows.forEach((row, i) => row.qa.forEach((c) => last.set(key(row, c), i)));
+  return rows.map((row, i) => ({ ...row, qa: row.qa.filter((c) => last.get(key(row, c)) === i) }));
+}

@@ -1,4 +1,4 @@
-import { archOrder, connectedSides, type DesignDocument, isReduced, jawOf, type QaCheck, type ToothDesign, unitKind } from '@dcad/shared';
+import { archOrder, connectedSides, type DesignDocument, isReduced, jawOf, qaValueText, type QaCheck, type ToothDesign, unitKind } from '@dcad/shared';
 import { bridgeGate } from '../../ai/qa';
 import { adaptationStale } from '../../design/adaptation';
 import { cutbackFor } from '../../design/framework';
@@ -142,8 +142,7 @@ async function designCrown(doc: DesignDocument, fdi: number, ref: string, name: 
   }
 }
 
-const gateDetail = (c: QaCheck): string =>
-  c.value !== undefined ? `${c.value}${c.threshold !== undefined ? ` (limit ${c.threshold})` : ''}` : 'Failed';
+const gateDetail = (c: QaCheck): string => qaValueText(c) || 'Failed';
 
 /**
  * A bridge designed from the document and merged into one solid (designBridge with union: true), as the bridge export

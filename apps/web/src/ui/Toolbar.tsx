@@ -4,6 +4,7 @@ import { sceneController } from '../state/sceneController';
 import { useSceneStore } from '../state/sceneStore';
 import { CameraIcon, MoonIcon, RedoIcon, SunIcon, UndoIcon } from './icons';
 import { toggleHelp, useHelp } from './HelpSheet';
+import { redo, undo } from './history';
 import { setTheme, useTheme } from './theme';
 import { ProjectControls } from './session/ProjectControls';
 import { SessionControls } from './session/SessionControls';
@@ -24,7 +25,6 @@ export function Toolbar() {
   const draftOpen = useDesignStore((s) => Boolean(s.transaction));
   const canUndo = useDesignStore((s) => s.past.length > 0) && !draftOpen;
   const canRedo = useDesignStore((s) => s.future.length > 0) && !draftOpen;
-  const { undo, redo } = useDesignStore.getState();
 
   return (
     <header className="toolbar">

@@ -193,36 +193,41 @@ export function designWingUnit(input: {
 }
 
 const round = (x: number, d = 3) => Number(x.toFixed(d));
-const check = (id: string, passed: boolean, message: string, value?: number, threshold?: number): QaCheck => ({
+/** Thickness is measured on the mesh: a wing this much under its minimum still passes. */
+const WING_THICKNESS_TOLERANCE_MM = 0.02;
+const check = (id: string, passed: boolean, message: string, value?: number, threshold?: number, reading: Pick<QaCheck, 'unit' | 'bound' | 'tolerance'> = {}): QaCheck => ({
   id,
   passed,
   message,
   ...(value !== undefined && Number.isFinite(value) ? { value: round(value) } : {}),
   ...(threshold !== undefined ? { threshold } : {}),
+  ...reading,
 });
 
 /**
  * The wing gate (classical.wing checks): the outline seats along the axis and
  * nothing inside it is undercut (until a side-wall blockout exists, an
  * undercut folds the wing), the wing is at least its minimum thickness away
- * from the edge ramp (0.02 mm tolerance), and there is space for it against
+ * from the edge ramp (shown as the limit, passing within a 0.02 mm measuring
+ * tolerance), and there is space for it against
  * the antagonist. Bonded and blocked-out area are reported, not gated.
  */
 export function wingChecks(fdi: number, wing: Pick<WingUnitReport, 'params' | 'blockout' | 'thickness' | 'space'>): QaCheck[] {
   const id = `wing.${fdi}`;
-  const minLimit = round(wing.params.wingMinThicknessMm - 0.02);
+  const minLimit = round(wing.params.wingMinThicknessMm - WING_THICKNESS_TOLERANCE_MM);
   const t = wing.thickness;
   return [
     check(`${id}.outlineUndercut`, wing.blockout.outlineUndercutPoints === 0, `Wing ${fdi}: outline points in an undercut along the insertion axis`, wing.blockout.outlineUndercutPoints, 0),
-    check(`${id}.undercut`, wing.blockout.undercutFaces === 0, `Wing ${fdi}: undercut area inside the outline, in mm²`, wing.blockout.undercutAreaMm2, 0),
+    check(`${id}.undercut`, wing.blockout.undercutFaces === 0, `Wing ${fdi}: undercut area inside the outline`, wing.blockout.undercutAreaMm2, 0, { unit: 'mm2' }),
     check(
       `${id}.thickness`,
       t.samples > 0 && t.minMm >= minLimit,
-      t.samples > 0 ? `Wing ${fdi}: thinnest material ${WING_EDGE_RAMP_MM} mm or more from the edge, in mm` : `Wing ${fdi}: too narrow to reach full thickness inside its tapered edge`,
+      t.samples > 0 ? `Wing ${fdi}: thinnest material ${WING_EDGE_RAMP_MM} mm or more from the edge` : `Wing ${fdi}: too narrow to reach full thickness inside its tapered edge`,
       t.minMm,
-      minLimit,
+      wing.params.wingMinThicknessMm,
+      { unit: 'mm', bound: 'min', tolerance: WING_THICKNESS_TOLERANCE_MM },
     ),
-    check(`${id}.space`, !wing.space?.conflict, wing.space?.conflict ? `Wing ${fdi}: insufficient space for the wing against the antagonist, closest in mm` : `Wing ${fdi}: space against the antagonist, closest in mm`, wing.space?.conflict?.minClearanceMm ?? wing.space?.minClearanceMm),
+    check(`${id}.space`, !wing.space?.conflict, wing.space?.conflict ? `Wing ${fdi}: insufficient space for the wing against the antagonist, at the closest point` : `Wing ${fdi}: space against the antagonist, at the closest point`, wing.space?.conflict?.minClearanceMm ?? wing.space?.minClearanceMm, undefined, { unit: 'mm' }),
   ];
 }
 

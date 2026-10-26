@@ -1,14 +1,16 @@
-import { bridgeOf, type DesignDocument, type QaCheck, type StepId, unitKind } from '@dcad/shared';
+import { bridgeOf, type DesignDocument, qaValueText, type QaCheck, type StepId, unitKind } from '@dcad/shared';
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { cutbackFor } from '../../design/framework';
 import { useDesignStore, selectActiveTooth } from '../../design/store';
 import { accept, reject, runAutoDesign, useOrchestrator, type StepRun } from '../../ai/orchestrator';
+import { latestChecks } from '../../ai/qa';
 import { crownTool } from '../../tools/crownTool';
 import { isImplantTooth } from '../../tools/implantTool';
 import { useToolStore } from '../../tools/toolStore';
 import { isWing } from '../../tools/wing';
 import { isCavity } from '../../tools/inlay';
+import { returnTo } from '../history';
 import { CheckIcon, FailIcon } from '../icons';
 import './AutoDesign.css';
 
@@ -99,17 +101,17 @@ function acceptDraft(complete: boolean, failed: StepRun | undefined, bridge: boo
   useToolStore.getState().set({ message: { kind: 'info', text } });
 }
 
+/** Reject goes back to where the run started (the step it was started on, or the earliest step not done). */
 function rejectDraft(): void {
-  reject();
+  const origin = reject();
+  if (origin) returnTo(origin);
   useToolStore.getState().set({ message: { kind: 'info', text: 'Draft rejected. The design is back to where it was before auto-design.' } });
 }
 
 /** How many AutoDesign panels are on screen (the Frame and Proposal steps have one; DraftReview covers the rest). */
 const usePanels = create<{ open: number }>(() => ({ open: 0 }));
 
-const num = (v: number) => Number(v.toFixed(2));
-const checkValue = (c: QaCheck) =>
-  c.value === undefined ? '' : c.threshold === undefined ? ` (${num(c.value)})` : ` (${num(c.value)}, limit ${num(c.threshold)})`;
+const checkValue = (c: QaCheck) => (c.value === undefined ? '' : ` (${qaValueText(c)})`);
 
 /** What to do about a draft that stopped, in plain words, by the step that failed. */
 function nextAction(failed: StepRun | undefined, bridge: boolean): string {
@@ -137,7 +139,8 @@ function nextAction(failed: StepRun | undefined, bridge: boolean): string {
 function Review({ className = '' }: { className?: string }) {
   const { complete, steps, bridge } = useOrchestrator();
   const isBridge = Boolean(bridge);
-  const ran = steps.filter((s) => s.status === 'passed' || s.status === 'failed');
+  // Each check once: a check measured again by a later step shows on that step only.
+  const ran = latestChecks(steps.filter((s) => s.status === 'passed' || s.status === 'failed'));
   const failed = steps.find((s) => s.status === 'failed');
   const failing = failed?.qa.filter((c) => !c.passed) ?? [];
   const checks = ran.reduce((n, r) => n + r.qa.length, 0);

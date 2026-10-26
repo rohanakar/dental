@@ -11,6 +11,7 @@ import {
   crownGate,
   cutbackGate,
   implantPathGate,
+  latestChecks,
   marginGate,
   passed,
   scanBodyGate,
@@ -61,6 +62,9 @@ describe('QA gates', () => {
     expect(passed(crownGate(ok, { minThicknessMm: 0.5 }))).toBe(true);
     expect(passed(crownGate({ ...ok, validation: { ...ok.validation, printable: false, selfIntersections: 3 } }, { minThicknessMm: 0.5 }))).toBe(false);
     expect(passed(crownGate({ ...ok, thickness: { minMm: 0.4, pushedVertices: 0, maxPushMm: 0 } }, { minThicknessMm: 0.5 }))).toBe(false);
+    // The limit shown is the material minimum; the measuring tolerance lets 0.49 mm pass a 0.50 mm minimum.
+    const thin = crownGate({ ...ok, thickness: { minMm: 0.49, pushedVertices: 0, maxPushMm: 0 } }, { minThicknessMm: 0.5 }).find((c) => c.id === 'crown.thickness')!;
+    expect([thin.passed, thin.threshold, thin.tolerance]).toEqual([true, 0.5, 0.02]);
 
     const reached = { movedVertices: 10, maxMoveMm: 0.2, minClearanceMm: 0.02, targetMm: 0.02 };
     expect(passed(adaptGate({ adapt: { occlusion: reached, mesial: reached } }))).toBe(true);
@@ -144,5 +148,27 @@ describe('QA gates', () => {
     expect(failedIds(bridgeGate(withInlay({ ...inlay, isthmus: { ...inlay.isthmus, minMm: 1.1, ok: false } })))).toEqual(['inlay.35.isthmus']);
     const shallow: ConnectorFailure = { code: 'box-too-shallow', message: 'insufficient connector height: box too shallow', valueMm: 2.2, limitMm: 3 };
     expect(failedIds(bridgeGate({ ...withInlay(inlay), connectors: [{ between: [35, 36], failures: [shallow] }, bridge.connectors[1]!] }))).toEqual(['bridge.connector.35-36.box-too-shallow']);
+  });
+
+  it('the review counts each check once, on its last run (a crown run; a bridge keeps each abutment its own)', () => {
+    const c = (id: string, value?: number): QaCheck => ({ id, passed: true, message: id, ...(value !== undefined ? { value } : {}) });
+    const crown = (thickness: number) => [c('crown.valid'), c('crown.printable', 0), c('crown.thickness', thickness)];
+    const rows = [
+      { qa: [c('margin.closed'), c('margin.length', 28)] },
+      { qa: [c('axis.marginUndercut', 0), c('axis.prepClosed')] },
+      { qa: crown(1.2) },
+      { qa: [c('adapt.occlusion', 0.05), ...crown(1.01)] },
+    ];
+    const once = latestChecks(rows);
+    expect(once.map((r) => r.qa.map((q) => q.id))).toEqual([
+      ['margin.length'],
+      ['axis.marginUndercut', 'axis.prepClosed'],
+      [],
+      ['adapt.occlusion', 'crown.valid', 'crown.printable', 'crown.thickness'],
+    ]);
+    expect(once[3]!.qa.find((q) => q.id === 'crown.thickness')!.value).toBe(1.01);
+    // A bridge: the margins of 35 and 37 are different checks; the merged-bridge axis closure is its own too.
+    const bridge = latestChecks([{ fdi: 35, qa: [c('margin.closed')] }, { fdi: 37, qa: [c('margin.closed')] }, { qa: [c('axis.prepClosed')] }]);
+    expect(bridge.map((r) => r.qa.length)).toEqual([1, 1, 1]);
   });
 });

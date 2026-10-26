@@ -88,6 +88,20 @@ let currentRun: RunRecord[] = [];
 /** Accepted proposals whose step output may still be edited before the next save. */
 let accepted: AcceptedRecord[] = [];
 
+/** Where a run started (the step and tooth on screen) and its name: Reject and Undo take the user back there. */
+export interface DraftOrigin {
+  step: StepId;
+  fdi: number;
+  label: string;
+}
+
+let currentOrigin: DraftOrigin | null = null;
+/** Accepted drafts by the document their commit made: an undo from that document takes the draft back. */
+const committedDrafts = new WeakMap<DesignDocument, DraftOrigin>();
+
+/** The accepted draft whose commit made `doc`, if any. */
+export const draftCommitted = (doc: DesignDocument | undefined): DraftOrigin | undefined => (doc ? committedDrafts.get(doc) : undefined);
+
 /** Max time to wait for the derived crown to catch up with a step (display only). */
 const SETTLE_TIMEOUT_MS = 60_000;
 
@@ -216,7 +230,8 @@ async function execute(input: { plan: PlanItem[]; startIndex: number; label: str
     })),
   });
   currentRun = [];
-  const runFdi = useDesignStore.getState().activeFdi;
+  const { activeFdi: runFdi, activeStep } = useDesignStore.getState();
+  currentOrigin = { step: activeStep, fdi: runFdi, label: input.label };
   useDesignStore.getState().beginTransaction({ label: input.label, author: 'proposer' });
   let failed = false;
   for (const item of plan.slice(startIndex)) {
@@ -294,7 +309,10 @@ const sameOutput = (a: Pick<AcceptedRecord, 'fdi' | 'step' | 'proposerId'>, b: P
 export function accept(): void {
   const design = useDesignStore.getState();
   if (!design.transaction) return;
-  design.commitTransaction();
+  const { base } = design.transaction;
+  const doc = design.commitTransaction();
+  if (doc !== base && currentOrigin) committedDrafts.set(doc, currentOrigin);
+  currentOrigin = null;
   // Every step this run proposed replaces what an earlier run proposed for it, a failed step included: its output is
   // in the document now, and is not the designer's correction of the earlier proposal.
   const touched = new Set(currentRun.flatMap((r) => teethOf(r).map((fdi) => `${fdi}:${r.step}:${r.proposerId}`)));
@@ -304,16 +322,19 @@ export function accept(): void {
   useOrchestrator.setState({ ...IDLE });
 }
 
-/** Discard the draft (rollback) and log `rejected` events for every step that ran. */
-export function reject(): void {
+/** Discard the draft (rollback) and log `rejected` events for every step that ran. Returns where the run started. */
+export function reject(): DraftOrigin | null {
   const design = useDesignStore.getState();
-  if (!design.transaction) return;
+  if (!design.transaction) return null;
   // Build the events before rolling back, while the document still has the run's teeth.
   const events = currentRun.flatMap((run) => eventsOf(run, 'rejected'));
   design.rollbackTransaction();
   events.forEach(logProposalEvent);
   currentRun = [];
+  const origin = currentOrigin;
+  currentOrigin = null;
   useOrchestrator.setState({ ...IDLE });
+  return origin;
 }
 
 /** A bridge's adapt artifact on its first unit also carries the connector settings (see buildBridgeProposalEvents). */
@@ -383,5 +404,6 @@ export function recordEditsOnSave(): void {
 export function resetOrchestrator(): void {
   currentRun = [];
   accepted = [];
+  currentOrigin = null;
   useOrchestrator.setState({ ...IDLE });
 }
