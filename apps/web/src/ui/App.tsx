@@ -20,6 +20,7 @@ import { ParamsStep } from './steps/ParamsStep';
 import { ProposalStep } from './steps/ProposalStep';
 import { ScansStep } from './steps/ScansStep';
 import { SetupStep } from './steps/SetupStep';
+import { useEditorTheme } from './theme';
 import { Toolbar, VIEWS } from './Toolbar';
 import { Viewport } from './Viewport';
 import { stepLabelFor } from './steps/WingPanel';
@@ -119,12 +120,19 @@ function StepPanel() {
   );
 }
 
+/** The editor's own theme (light unless the user turned dark on); the session screens stay light. */
+function EditorTheme() {
+  useEditorTheme();
+  return null;
+}
+
 export function App() {
   useKeyboardShortcuts();
   const setup = useDesignStore((s) => s.activeStep === 'setup');
   return (
     <SessionGate>
       <div className={`app${setup ? ' wide-panel' : ''}`}>
+        <EditorTheme />
         <Toolbar />
         <aside className="panel">
           <StepNav />

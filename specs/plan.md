@@ -326,3 +326,17 @@ See [2026-10-25-inlay-bridges.md](2026-10-25-inlay-bridges.md).
 - 111 tests (unchanged). New browser test `first-run.mjs`; every browser script passes.
 
 See [2026-10-26-new-user-journey.md](2026-10-26-new-user-journey.md).
+
+**2026-10-26: one look across the landing page, sign-in, editor and 3D view.**
+- Every surface is light. The editor's dark theme is now a toolbar toggle, remembered per browser, instead of
+  following the OS.
+- Hanken Grotesk and the landing's ink are used throughout the app.
+- Sign-in and the case list use the landing's bar, heading and fields, with the hero render beside the sign-in form.
+- **3D view:**
+  - see-through scans draw only their front surface, back to front (no streaks);
+  - the surroundings are less grey;
+  - the move handles use the frame's colours.
+- The landing page's editor captures are re-shot from the restyled editor.
+- 111 tests (unchanged). `first-run.mjs` checks the theme; every browser script passes.
+
+See [2026-10-26-one-look.md](2026-10-26-one-look.md).

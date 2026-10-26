@@ -96,3 +96,18 @@ export const CameraIcon = (p: P) => (
     <circle cx="8" cy="9" r="2.2" />
   </Icon>
 );
+
+/** Dark theme off: switch to dark. */
+export const MoonIcon = (p: P) => (
+  <Icon {...p}>
+    <path d="M13 9.6A5.5 5.5 0 0 1 6.4 3a5.5 5.5 0 1 0 6.6 6.6Z" />
+  </Icon>
+);
+
+/** Dark theme on: switch to light. */
+export const SunIcon = (p: P) => (
+  <Icon {...p}>
+    <circle cx="8" cy="8" r="2.75" />
+    <path d="M8 1.5v1.25M8 13.25v1.25M1.5 8h1.25M13.25 8h1.25M3.4 3.4l.9.9M11.7 11.7l.9.9M3.4 12.6l.9-.9M11.7 4.3l.9-.9" />
+  </Icon>
+);

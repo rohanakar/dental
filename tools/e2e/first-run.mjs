@@ -2,7 +2,8 @@
 // looking down onto the lower jaw with the prep of 36 ringed → a click on 35 is refused → a click in the ring gives a
 // draft reviewed in one line (checks folded, Accept the only primary) → Accept, said in the status line inside the
 // window → Finalize → export → the ending, and the rail showing Parameters and Finalize done → the help sheet (?)
-// → Start your own case → Case setup with the dentist's-view chart in the wider panel.
+// → the theme: light by default, dark as a remembered opt-in, sign-in always light → Start your own case → Case setup
+// with the dentist's-view chart in the wider panel.
 import { chromium } from 'playwright';
 import { resolve } from 'node:path';
 import { mkdirSync } from 'node:fs';
@@ -19,7 +20,8 @@ const expect = (ok, what, detail = '') => {
 };
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const errors = [];
-const page = await browser.newPage({ viewport: { width: 1400, height: 900 }, acceptDownloads: true });
+const context = await browser.newContext({ viewport: { width: 1400, height: 900 }, acceptDownloads: true });
+const page = await context.newPage();
 page.on('console', (m) => {
   if (m.type() === 'error' && !/status of 50\d|Failed to load resource/.test(m.text())) errors.push(m.text());
 });
@@ -44,6 +46,9 @@ const primaries = () => page.locator('.panel .btn.primary').evaluateAll((els) =>
 
 // ---- Sign-in screen → the demo ------------------------------------------------------------------------------------
 await page.goto(APP_URL);
+await page.getByRole('button', { name: 'Try the demo case' }).waitFor();
+const signInLook = await state(() => ({ theme: document.documentElement.dataset.theme ?? null, font: getComputedStyle(document.body).fontFamily, ground: getComputedStyle(document.querySelector('.session-screen')).backgroundColor }));
+expect(!signInLook.theme && /Hanken Grotesk/.test(signInLook.font) && signInLook.ground === 'rgb(255, 255, 255)', 'the sign-in screen is in the light landing world (white, Hanken Grotesk)', JSON.stringify(signInLook));
 await page.getByRole('button', { name: 'Try the demo case' }).click();
 await waitFor(() => window.__dcad?.design.getState().activeStep === 'frame' && Boolean(window.__dcad.viewer));
 await settle();
@@ -144,6 +149,25 @@ expect((await help.locator('dt').allTextContents()).includes('Insertion axis'), 
 await shot('06-help');
 await page.keyboard.press('Escape');
 expect(!(await help.isVisible().catch(() => false)), 'Esc closes the help sheet');
+
+// ---- Theme: light by default, dark as an opt-in, the session screens always light -------------------------------------
+const toggle = page.getByRole('button', { name: 'Dark theme' });
+const themeOf = () => state(() => ({ theme: document.documentElement.dataset.theme ?? null, saved: localStorage.getItem('dcad.theme'), bg: window.__dcad.viewer.scene.background.getHexString() }));
+const light = await themeOf();
+expect((await toggle.getAttribute('aria-pressed')) === 'false' && !light.theme && light.bg === 'e9ecf0', 'the editor opens light, on the ground of the landing renders', JSON.stringify(light));
+await toggle.click();
+await page.waitForTimeout(300);
+const dark = await themeOf();
+expect(dark.theme === 'dark' && dark.saved === 'dark' && dark.bg === '20242a', 'the toggle switches the editor and its scene to dark, and remembers it', JSON.stringify(dark));
+await shot('06b-dark');
+const other = await context.newPage();
+await other.goto(APP_URL);
+await other.getByRole('button', { name: 'Try the demo case' }).waitFor();
+expect(!(await other.evaluate(() => document.documentElement.dataset.theme ?? null)), 'with dark saved, the sign-in screen stays light');
+await other.close();
+await toggle.click();
+await page.waitForTimeout(300);
+expect((await themeOf()).theme === null, 'the toggle switches back to light');
 
 // ---- Your own case: Case setup with the dentist's-view chart ---------------------------------------------------------
 await end.getByRole('button', { name: 'Start your own case' }).click();

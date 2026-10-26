@@ -1,14 +1,25 @@
+/* The landing page's typeface, shared by the whole app (one self-hosted variable file). */
+@font-face {
+  font-family: 'Hanken Grotesk';
+  src: url('./landing/fonts/hanken-grotesk-latin-wght.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Light everywhere, as on the landing page: ink, muted ink, outlines and grounds are the landing's. The editor's
+   dark theme is opt-in (ui/theme.ts sets data-theme on <html> while the editor is open). */
 :root {
-  color-scheme: light dark;
-  --bg: #f4f5f7;
+  color-scheme: light;
+  --bg: #f5f7fa;
   --panel: #ffffff;
   --panel-2: #f0f2f5;
   --border: #dde1e6;
   /* Input and select outlines: ≥ 3:1 against the panel (WCAG 1.4.11). */
-  --field-border: #7b8591;
+  --field-border: #8792a2;
   --field-bg: #ffffff;
-  --text: #1b1f24;
-  --text-muted: #5f6b7a;
+  --text: #0f1b2d;
+  --text-muted: #5d6878;
   --accent: #2f6fde;
   /* Accent as text on the accent tint (pressed toggles, the active step, links). */
   --accent-strong: #1f56b8;
@@ -31,29 +42,28 @@
   --fs-small: 12px;
   --fs-body: 13px;
   --fs-title: 15px;
-  --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font: 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #15181c;
-    --panel: #1c2026;
-    --panel-2: #242a31;
-    --border: #2e353e;
-    --field-border: #6b7684;
-    --field-bg: #15181c;
-    --text: #e6e9ed;
-    --text-muted: #9aa5b1;
-    --accent: #5b8ef0;
-    --accent-strong: #9bbcf7;
-    --accent-text: #0b1220;
-    --ok: #3cc47c;
-    --warn-icon: #e0a325;
-    --warn-bg: #3a2f12;
-    --warn-text: #f3d48a;
-    --error-text: #ff8a80;
-    --viewport-bg: #20242a;
-  }
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #15181c;
+  --panel: #1c2026;
+  --panel-2: #242a31;
+  --border: #2e353e;
+  --field-border: #6b7684;
+  --field-bg: #15181c;
+  --text: #e6e9ed;
+  --text-muted: #9aa5b1;
+  --accent: #5b8ef0;
+  --accent-strong: #9bbcf7;
+  --accent-text: #0b1220;
+  --ok: #3cc47c;
+  --warn-icon: #e0a325;
+  --warn-bg: #3a2f12;
+  --warn-text: #f3d48a;
+  --error-text: #ff8a80;
+  --viewport-bg: #20242a;
 }
 
 * {

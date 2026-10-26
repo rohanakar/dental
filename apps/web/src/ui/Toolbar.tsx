@@ -2,8 +2,9 @@ import { useDesignStore } from '../design/store';
 import type { StandardView } from '../engine/viewFrame';
 import { sceneController } from '../state/sceneController';
 import { useSceneStore } from '../state/sceneStore';
-import { CameraIcon, RedoIcon, UndoIcon } from './icons';
+import { CameraIcon, MoonIcon, RedoIcon, SunIcon, UndoIcon } from './icons';
 import { toggleHelp, useHelp } from './HelpSheet';
+import { setTheme, useTheme } from './theme';
 import { ProjectControls } from './session/ProjectControls';
 import { SessionControls } from './session/SessionControls';
 
@@ -66,6 +67,7 @@ export function Toolbar() {
       <button className="btn quiet icon" disabled={!hasReady} aria-label="Screenshot" title="Screenshot (PNG)" onClick={() => void sceneController.screenshot()}>
         <CameraIcon />
       </button>
+      <ThemeToggle />
       <button id="help-button" className="btn quiet" aria-keyshortcuts="?" title="Shortcuts and terms (?)" aria-expanded={help} onClick={() => toggleHelp()}>
         Help
       </button>
@@ -73,5 +75,15 @@ export function Toolbar() {
       <ProjectControls />
       <SessionControls />
     </header>
+  );
+}
+
+/** The editor's dark theme, opt-in; the icon shows what a click switches to. */
+function ThemeToggle() {
+  const dark = useTheme((s) => s.theme === 'dark');
+  return (
+    <button className="btn quiet icon" aria-label="Dark theme" aria-pressed={dark} title={dark ? 'Switch to the light theme' : 'Switch to the dark theme'} onClick={() => setTheme(dark ? 'light' : 'dark')}>
+      {dark ? <SunIcon /> : <MoonIcon />}
+    </button>
   );
 }

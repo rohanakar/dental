@@ -17,14 +17,14 @@ colors:
   landing-accent-tint: "#e8effc"
   landing-ok: "#1d7f4e"
   landing-error-tint: "#fdeceb"
-  editor-bg: "#f4f5f7"
+  editor-bg: "#f5f7fa"
   editor-panel: "#ffffff"
   editor-panel-2: "#f0f2f5"
   editor-border: "#dde1e6"
-  editor-field-border: "#7b8591"
+  editor-field-border: "#8792a2"
   editor-field-bg: "#ffffff"
-  editor-text: "#1b1f24"
-  editor-text-muted: "#5f6b7a"
+  editor-text: "#0f1b2d"
+  editor-text-muted: "#5d6878"
   editor-accent-tint: "#e6eefb"
   editor-accent-text: "#ffffff"
   editor-ok: "#177245"
@@ -121,32 +121,32 @@ typography:
     lineHeight: 1
     letterSpacing: "-0.005em"
   editor-title:
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    fontFamily: "Hanken Grotesk, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif"
     fontSize: "15px"
     fontWeight: 600
     lineHeight: 1.45
     letterSpacing: "-0.01em"
     fontFeature: "tnum"
   editor-body:
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    fontFamily: "Hanken Grotesk, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif"
     fontSize: "13px"
     fontWeight: 400
     lineHeight: 1.45
     fontFeature: "tnum"
   editor-label:
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    fontFamily: "Hanken Grotesk, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif"
     fontSize: "12px"
     fontWeight: 600
     lineHeight: 1.45
     fontFeature: "tnum"
   editor-small:
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    fontFamily: "Hanken Grotesk, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif"
     fontSize: "12px"
     fontWeight: 400
     lineHeight: 1.45
     fontFeature: "tnum"
   editor-micro:
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    fontFamily: "Hanken Grotesk, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif"
     fontSize: "11px"
     fontWeight: 400
     lineHeight: 1.45
@@ -273,7 +273,7 @@ components:
 
 DentalCAD is a precision instrument that shows its working. It has two surfaces. The landing page (`apps/web/index.html`) persuades a lab technician or clinician on a first visit. The editor at `/app/` is where they then work all day. Both play the category standard straight, at the craft level of exocad, Dentbird and Linear / Vercel: cool white and blue-grey grounds, a single blue, hairlines instead of boxes, and numbers set as numbers. Every claim on screen is something the user can check: a measured value with its unit, a pass mark, a colour map with its scale.
 
-The two surfaces share a family, not a stylesheet. The landing world has a white ground, deep navy ink and Hanken Grotesk, tracked tight at display sizes. Its sections breathe, and it shows real captures of the editor in a hairline frame with one soft, navy-tinted shadow. The editor world is dense and flat. It uses the system typeface at instrument sizes (13px body), tonal panels and hairline borders, follows the operating system's light or dark theme, and is built for long sessions zoomed into one tooth. Both use the same blue (#2f6fde) as their only accent. Both use the same Viewport Grey behind the 3D scene, and the same colour-map stops, which the engine owns and every surface copies.
+The two surfaces share one look and differ in density. Both are light, set in Hanken Grotesk with deep navy ink and Muted Slate. The landing world has a white ground and display sizes tracked tight. Its sections breathe, and it shows real captures of the editor in a hairline frame with one soft, navy-tinted shadow. The screens between the two (sign-in, create account, the case list) belong to the landing world: its bar and wordmark, its display heading, 44px fields and 8px corners, and the hero render beside the sign-in form. The editor world is dense and flat: instrument sizes (13px body), tonal panels and hairline borders, built for long sessions zoomed into one tooth. Its dark theme is an opt-in from the toolbar (2026-10-26: one look across the surfaces, `specs/2026-10-26-one-look.md`). Both use the same blue (#2f6fde) as their only accent. Both use the same Viewport Grey behind the 3D scene, and the same colour-map stops, which the engine owns and every surface copies.
 
 Ownership: the landing sections of this file are recorded from `apps/web/src/landing/landing.css`, and its direction contract is `apps/web/.impeccable/surfaces/index-html.md`. The parts marked "editor" are **maintained by the editor polish work** (`specs/2026-10-25-ux-critique-polish.md`), recorded from `apps/web/src/styles.css` and `apps/web/src/ui/**/*.css`. Editor token changes land there first and are recorded here afterwards. The colour-map stops belong to `apps/web/src/engine/colormap.ts` and `apps/web/src/tools/crownLegend.ts`. The confirmed visual rejection (PRODUCT.md, Brand Commitments) is that marketing surfaces carry real product renders, never illustration, a glowing-tooth hero or stock clinic photography.
 
@@ -306,15 +306,15 @@ A cool, nearly colourless system: white and blue-grey grounds, navy or graphite 
 - **Viewport Grey** (#e9ecf0, shared): the ground behind every framed render. It is the editor's light viewport colour, so a capture meets its frame without a seam.
 
 ### Neutral: editor (maintained by the editor polish work)
-Light by default. The dark values apply under `prefers-color-scheme: dark`, and there is no manual toggle.
-- **Bench Grey** (#f4f5f7; dark #15181c): the app ground, seen around session cards.
-- **Panel White** (#ffffff; dark #1c2026): the toolbar, the side panel, the legend and session cards.
+Light, with the landing page's ink and outlines. The dark values apply only under `:root[data-theme='dark']`, which the toolbar's Dark theme toggle sets while the editor is open (remembered per browser in `localStorage`). The session screens are always light.
+- **Bench Grey** (#f5f7fa, the landing's Cool Mist; dark #15181c): the app ground, and the new-case panel on the case list.
+- **Panel White** (#ffffff; dark #1c2026): the toolbar, the side panel, the legend and the session screens' ground.
 - **Control Grey** (#f0f2f5; dark #242a31): the default button fill, object cards, and the hover fill of quiet controls, steps and table rows.
 - **Panel Hairline** (#dde1e6; dark #2e353e): panel edges, button borders, dividers and the seams of segmented groups.
-- **Field Outline** (#7b8591; dark #6b7684): inputs, selects and textareas, plus the dropzone's dashes. It measures at least 3:1 against the panel.
+- **Field Outline** (#8792a2, the landing's Field Grey; dark #6b7684): inputs, selects and textareas, plus the dropzone's dashes and the session screens' secondary buttons. It measures at least 3:1 against the panel.
 - **Field Ground** (#ffffff; dark #15181c): the inside of a field.
-- **Graphite** (#1b1f24; dark #e6e9ed): text and the legend's ticks.
-- **Muted Graphite** (#5f6b7a; dark #9aa5b1): field labels, section labels, hints, read-out terms, step numbers and the not-done status ring.
+- **Deep Navy Ink** (#0f1b2d, as on the landing page; dark #e6e9ed): text and the legend's ticks.
+- **Muted Slate** (#5d6878, as on the landing page; dark #9aa5b1): field labels, section labels, hints, read-out terms, step numbers and the not-done status ring.
 - **Viewport Grey** (#e9ecf0; dark #20242a): the 3D viewport.
 - **On-Accent** (#ffffff; dark #0b1220): text on the solid accent.
 
@@ -335,15 +335,15 @@ The engine owns these stops, and the 3D surface, the editor legend and the landi
 
 **The Tint Is Not The Fill Rule.** The solid accent marks the main action: one per step, form or page region. Repeating the same action is fine: the nav and the hero form both create a lab account. Pressed toggles, the active step, the current unit and drafts take the Blue Wash with Deep Instrument Blue text. Outside actions, the solid accent fills only the tooth chart's marks for what is in the case: crown teeth and their connectors.
 
-**The Data Is Not Decoration Rule.** A map colour always means a clinical value. Map colours appear on the scan or crown surface, on the legend and on scales transcribed from it, and nowhere else; the axis colours appear only on the viewport's frame arrows and their swatches. Penetration Red (#c0392b) is the crown maps' one warning colour.
+**The Data Is Not Decoration Rule.** A map colour always means a clinical value. Map colours appear on the scan or crown surface, on the legend and on scales transcribed from it, and nowhere else; the axis colours appear only on the viewport's frame arrows, their swatches and the crown's move handles (mesial-distal green, buccal orange, occlusal blue; a hovered handle turns Draft Amber #ffd166). Penetration Red (#c0392b) is the crown maps' one warning colour.
 
 ## Typography
 
 **Display Font:** Hanken Grotesk, variable 100–900, self-hosted from `apps/web/src/landing/fonts/` (with ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif)
-**Body Font:** Hanken Grotesk on the landing page. The editor uses the system stack (system-ui, -apple-system, Segoe UI, Roboto, sans-serif) and loads no web font.
+**Body Font:** Hanken Grotesk everywhere: the landing page, the session screens and the editor share the one self-hosted variable file (`@font-face` in both `landing/landing.css` and `styles.css`).
 **Label/Mono Font:** ui-monospace, SF Mono, Menlo, at 0.9em, for inline file names such as `.dcad.zip` on the landing page.
 
-**Character:** On the landing page, Hanken Grotesk's variable axis is set at in-between weights (480, 520, 560, 600, 620, 630, 640). Hierarchy therefore moves in small steps, and display sizes are tracked tight, so the page reads like a technical product rather than a brochure. The editor uses the operating system's face at instrument sizes, and it gets its hierarchy from weight and muted colour rather than size.
+**Character:** On the landing page, Hanken Grotesk's variable axis is set at in-between weights (480, 520, 560, 600, 620, 630, 640). Hierarchy therefore moves in small steps, and display sizes are tracked tight, so the page reads like a technical product rather than a brochure. The editor sets the same face at instrument sizes, and gets its hierarchy from weight and muted colour rather than size.
 
 ### Hierarchy
 Landing:
@@ -361,7 +361,7 @@ Landing:
 Editor (maintained by the editor polish work):
 - **Title** (600, 15px `--fs-title`, −0.01em): the step title, the one heading in the side panel. Session-card titles are 18px.
 - **Body** (400, 13px `--fs-body`, 1.45): the default for everything, buttons included. Primary buttons, pressed buttons and object names are 500.
-- **Label** (600, 12px `--fs-small`): section labels inside a step (h3, legend) and the colour legend's title, in Muted Graphite.
+- **Label** (600, 12px `--fs-small`): section labels inside a step (h3, legend) and the colour legend's title, in Muted Slate.
 - **Small** (400, 12px): field labels (muted), hints, read-outs, legend text and warnings.
 - **Micro** (400, 11px `--fs-micro`): badges, step notes, and the tooth chart's jaw labels and key. Tooth numbers in the chart are 12px.
 - **Brand** (650, 14px, −0.01em): the working name in the toolbar.
@@ -390,12 +390,12 @@ Editor (maintained by the editor polish work):
 - **Status line:** the busy indicator and the latest tool message sit at the top of the sticky footer, above Back / Next, so feedback is always in view. A message is 12px on a 6px-cornered ground: Control Grey for a notice, Amber Wash for a warning, a 10% Fail Red wash with Fail Red text for an error. It has a 24px dismiss button, and a new message replaces the old one. A notice leaves with its step; warnings and errors stay until dismissed.
 - **Viewport overlays:** the colour legend floats top-right (12px inset, 240px wide). The help sheet (the `?` key or Help in the toolbar) floats top-left, 400px wide, on Panel White with a hairline and 8px corners: shortcuts, then a short glossary. It is not modal. The hint line runs along the bottom left, on a 94% Panel White ground (as the legend) with 6px corners so it stays legible over the scan.
 - **Below 720px:** the viewport (45% of the height) stacks above the panel.
-- **Session screens:** cards are centred on Bench Grey, 380px wide (820px for the case list), with 48px above.
+- **Session screens:** the landing bar (64px, wordmark left, the screen's own controls right) over a centred container, 1120px wide (960px for the case list), with clamp(32px, 6vw, 72px) above. Sign-in and create account run two columns, the form (at most 440px) and the framed hero render with its caption; below 860px the render goes and the form takes the width. Display heading 28px at 650 and −0.02em; fields 44px with 8px corners and 14px padding; labels 14px at 520 in ink; the primary button 44px, secondaries 40px, white with the Field Outline, as on the landing page.
 - The editor is built for desktop, mouse and keyboard.
 
 ## Elevation & Depth
 
-The two surfaces differ on purpose. The landing page lifts its product captures and the overlays on them with a navy-tinted shadow family. Everything else on it is flat and separated by hairlines. The editor is flat throughout: depth comes from tone (Bench Grey under Panel White, with Control Grey for controls) and 1px hairlines.
+The two surfaces differ on purpose. The landing page lifts its product captures and the overlays on them with a navy-tinted shadow family. Everything else on it is flat and separated by hairlines. The editor is flat throughout: depth comes from tone (Bench Grey under Panel White, with Control Grey for controls) and 1px hairlines. The session screens borrow the landing's frame shadow for the hero render beside the sign-in form, and nothing else.
 
 ### Shadow Vocabulary
 - **Frame** (`box-shadow: 0 0 0 1px rgb(15 27 45 / 0.07), 0 1px 2px rgb(15 27 45 / 0.06), 0 18px 40px -18px rgb(15 27 45 / 0.28)`): framed product shots and the gate table. The 1px ring is the hairline edge, so the frame has no separate border.
@@ -457,7 +457,7 @@ Editor badges.
 - **Background:** the landing page uses Viewport Grey behind captures and White Ground for the table and checks panel. The editor uses Panel White for panels and cards, and Control Grey for object cards.
 - **Shadow Strategy:** the landing page uses Frame, Overlay or Inset card (see Elevation & Depth). Editor containers have no shadow.
 - **Border:** a landing frame's edge is the 1px ring inside its shadow. Editor containers have a 1px Panel Hairline. Warnings and notices are a tinted ground with no border. Callouts that do carry a border carry it all round, in their own hue: the hint box and the after-export ending are 30% accent, the draft banner 45% accent, and the export confirm box 45% Fail Red.
-- **Internal Padding:** the landing checks panel uses 16–18px and the table cells 16 × 20px. Editor containers use 8 × 10px, and session cards 20px.
+- **Internal Padding:** the landing checks panel uses 16–18px and the table cells 16 × 20px. Editor containers use 8 × 10px; the case list's new-case panel 18 × 20px with 12px corners.
 
 ### Inputs / Fields
 - **Style:** on the landing page, 46px tall with a 1px Field Grey outline, 8px corners, White Ground, 1rem text and 14px padding, with the label above at 0.875rem and 520. In the editor (maintained by the editor polish work), 28px tall with a 1px Field Outline, Field Ground, 6px corners and 8px padding, with a muted 12px label 4px above. Number fields carry their unit inside the right edge. Session cards use 32px fields.
@@ -502,6 +502,13 @@ The auto-design draft, before anything is kept (`apps/web/src/ui/ai/AutoDesign.t
 ### First Click
 - Entering Tooth frame on a tooth with no frame looks down onto its jaw (from below for the upper jaw), tilted a little toward buccal, with the antagonist hidden.
 - In the demo a 3px Frame Blue ring, 4.5 mm in radius, marks the prep of 36 until it has a frame, and a click more than 5.5 mm from the prep's top is refused with a warning in the status line.
+
+### 3D View
+The scene the landing page's renders come from (`apps/web/src/engine/`).
+- **Ground:** Viewport Grey #e9ecf0, the landing renders' ground; #20242a in the dark theme.
+- **Surfaces:** the procedural matcaps, Stone for scans and Design Blue for restorations, so the editor and the landing captures show the same materials.
+- **See-through:** a scan below full opacity (the focus view's surroundings and antagonist at 40%, or the object panel) shows only its front surface. A depth-only copy is drawn just before it, and see-through objects are drawn back to front, each with its own pre-pass. Opaque things (the crown, the prep in focus) show through; inner walls and far sides never do. The focus view greys the surroundings by 35%, so gums and neighbours still read as gum and tooth.
+- **Move handles:** the frame's axis colours (see The Data Is Not Decoration Rule), never three.js's pure red, green and blue.
 
 ### Tooth Chart
 The editor's FDI chart (`apps/web/src/ui/bridge.css`, from bridge mode).

@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react';
 import { enter, useSessionStore } from '../../state/session';
 import { AuthForm } from './AuthForm';
 import { CaseList } from './CaseList';
+import { SessionPage } from './SessionPage';
 import './session.css';
 import './journey.css';
 
@@ -19,11 +20,11 @@ export function SessionGate({ children }: { children: ReactNode }) {
   switch (status) {
     case 'checking':
       return (
-        <div className="session-screen">
+        <SessionPage>
           <div className="row muted">
             <span className="spinner" /> Connecting…
           </div>
-        </div>
+        </SessionPage>
       );
     case 'signed-out':
       return <AuthForm />;

@@ -199,11 +199,11 @@ await crownIdle();
 await step('Crown proposal');
 await settle();
 const look = () => state(() => {
-  const o = (id) => { const x = window.__dcad.viewer.objects.get(id); return { opacity: x.mesh.material.opacity, desat: x.mesh.material.userData.uniforms.uDesaturate.value, overlay: x.mesh.children.length }; };
+  const o = (id) => { const x = window.__dcad.viewer.objects.get(id); return { opacity: x.mesh.material.opacity, desat: x.mesh.material.userData.uniforms.uDesaturate.value, overlay: x.mesh.children.filter((c) => c.name.endsWith(':focus')).length, prepass: x.mesh.children.filter((c) => c.name.endsWith(':prepass')).length }; };
   return { lower: o('lower'), upper: o('upper') };
 });
 const on = await look();
-expect(on.lower.overlay === 1 && Math.abs(on.lower.opacity - 0.4) < 1e-6 && on.lower.desat === 0.6 && Math.abs(on.upper.opacity - 0.4) < 1e-6, 'focus view on: prep overlay, surroundings at 0.4 and greyed', JSON.stringify(on));
+expect(on.lower.overlay === 1 && Math.abs(on.lower.opacity - 0.4) < 1e-6 && on.lower.desat === 0.35 && Math.abs(on.upper.opacity - 0.4) < 1e-6 && on.lower.prepass === 1 && on.upper.prepass === 1, 'focus view on: prep overlay, surroundings at 0.4, greyed, front surface only (depth pre-pass)', JSON.stringify(on));
 /** Classify a pixel grid by what the ray hits first (crown, prep focus face, surroundings, antagonist, background). */
 const classify = (box) => state(async (box) => {
   const v = window.__dcad.viewer;
@@ -250,7 +250,7 @@ const prepOn = await read(prepClasses);
 await shot('35b-focus-on-crown-hidden');
 await page.getByLabel('Focus on the prep').uncheck();
 const off = await look();
-expect(off.lower.overlay === 0 && off.lower.opacity === 1 && off.lower.desat === 0 && off.upper.opacity === 1, 'focus off restores the object-panel look', JSON.stringify(off));
+expect(off.lower.overlay === 0 && off.lower.opacity === 1 && off.lower.desat === 0 && off.upper.opacity === 1 && off.lower.prepass === 0, 'focus off restores the object-panel look', JSON.stringify(off));
 const prepOff = await read(prepClasses);
 await page.getByLabel('Show crown').check();
 const pixOff = await read(classes);
@@ -308,7 +308,7 @@ await step('Parameters');
 const params = await look();
 expect(params.lower.overlay === 0 && params.lower.opacity === 1 && params.upper.opacity === 1, 'normal look outside the crown steps');
 await step('Adapt');
-await waitFor(() => window.__dcad.viewer.objects.get('lower').mesh.children.length === 1, null, 30000);
+await waitFor(() => window.__dcad.viewer.objects.get('lower').mesh.children.some((c) => c.name.endsWith(':focus')), null, 30000);
 expect(true, 'focus view in the Adapt step');
 await crownIdle(); // the Adapt step switches on the occlusion map (a recompute in the worker)
 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { BASE_URL } from '../../io/urls';
+import heroRender from '../../landing/assets/hero-crown.webp';
 import { goOffline, signIn, signUp, startDemo, useSessionStore } from '../../state/session';
+import { SessionPage } from './SessionPage';
 
 export function AuthForm() {
   const [mode, setMode] = useState(() => useSessionStore.getState().authMode);
@@ -13,17 +14,18 @@ export function AuthForm() {
   const signingUp = mode === 'sign-up';
 
   return (
-    <div className="session-screen">
-      <div className="session-card">
-        <h1>Dental CAD</h1>
+    <SessionPage className="auth">
+      <div className="auth-copy">
+        <h1>{signingUp ? 'Create your lab account' : 'Sign in to your lab'}</h1>
         {notice && <div className="notice">{notice}</div>}
         <form
+          className="auth-form"
+          aria-label={signingUp ? 'Create account' : 'Sign in'}
           onSubmit={(e) => {
             e.preventDefault();
             void (signingUp ? signUp(email, password, name) : signIn(email, password));
           }}
         >
-          <h2>{signingUp ? 'Create account' : 'Sign in'}</h2>
           {signingUp && (
             <div className="field">
               <label htmlFor="auth-name">Name</label>
@@ -32,10 +34,12 @@ export function AuthForm() {
           )}
           <div className="field">
             <label htmlFor="auth-email">Email</label>
-            <input id="auth-email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <input id="auth-email" type="email" autoComplete="email" placeholder="you@yourlab.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </div>
           <div className="field">
-            <label htmlFor="auth-password">Password</label>
+            <label htmlFor="auth-password">
+              Password{signingUp && <span className="label-hint"> (10+ characters)</span>}
+            </label>
             <input
               id="auth-password"
               type="password"
@@ -45,9 +49,8 @@ export function AuthForm() {
               onChange={(e) => setPassword(e.target.value)}
               required
             />
-            {signingUp && <span className="muted">At least 10 characters</span>}
           </div>
-          {error && <div className="error">{error}</div>}
+          {error && <div className="form-error">{error}</div>}
           <div className="actions">
             <button className="btn primary" type="submit" disabled={busy}>
               {busy ? 'Please wait…' : signingUp ? 'Create account' : 'Sign in'}
@@ -57,26 +60,28 @@ export function AuthForm() {
             </button>
           </div>
         </form>
-        <hr className="divider" />
-        <h2>No account needed</h2>
-        <ul className="session-options">
-          <li>
-            <button className="btn" type="button" onClick={() => void startDemo()}>
-              Try the demo case
-            </button>
-            <span className="muted">Ready-made scans: one click to a crown.</span>
-          </li>
-          <li>
-            <button className="btn" type="button" onClick={goOffline}>
-              Continue offline
-            </button>
-            <span className="muted">An empty case for your own scans. Nothing is saved.</span>
-          </li>
-        </ul>
+        <section className="no-account" aria-labelledby="no-account-head">
+          <h2 id="no-account-head">No account needed</h2>
+          <ul className="session-options">
+            <li>
+              <button className="btn" type="button" onClick={() => void startDemo()}>
+                Try the demo case
+              </button>
+              <span className="muted">Ready-made scans: one click to a crown.</span>
+            </li>
+            <li>
+              <button className="btn" type="button" onClick={goOffline}>
+                Continue offline
+              </button>
+              <span className="muted">An empty case for your own scans. Nothing is saved.</span>
+            </li>
+          </ul>
+        </section>
       </div>
-      <a className="session-back" href={BASE_URL}>
-        What is this? See the product page
-      </a>
-    </div>
+      <figure className="auth-shot">
+        <img src={heroRender} width="1400" height="1326" alt="A crown proposed on the synthetic demo prep of tooth 36, with its occlusion map" />
+        <figcaption>The demo case: tooth 36, one click to this crown.</figcaption>
+      </figure>
+    </SessionPage>
   );
 }

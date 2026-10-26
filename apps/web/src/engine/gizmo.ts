@@ -1,5 +1,6 @@
 import { Matrix4, Object3D, Vector2, Vector3, type Camera, type Scene } from 'three';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { AXIS_COLORS, HANDLE_ACTIVE_COLOR } from './axisColors';
 
 export type V3 = [number, number, number];
 
@@ -47,6 +48,8 @@ export class TranslateGizmo {
     this.controls.setMode('translate');
     this.controls.setSpace('local');
     this.controls.size = 0.8;
+    // The handles in the frame's colours (the X handle is the mesial-distal line in every quadrant).
+    this.controls.setColors(AXIS_COLORS.mesial, AXIS_COLORS.buccal, AXIS_COLORS.occlusal, HANDLE_ACTIVE_COLOR);
     scene.add(this.controls.getHelper());
     this.controls.addEventListener('change', () => host.requestRender());
     this.controls.addEventListener('dragging-changed', (e) => this.onDragging(Boolean((e as unknown as { value: boolean }).value)));

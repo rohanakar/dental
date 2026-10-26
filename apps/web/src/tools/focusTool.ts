@@ -11,7 +11,7 @@ import { wingSeed } from './wing';
 /** Steps in which the crown is adjusted. */
 const FOCUS_STEPS: readonly StepId[] = ['proposal', 'adapt'];
 /** Greying of the surroundings. */
-const SURROUNDINGS_DESATURATE = 0.6;
+const SURROUNDINGS_DESATURATE = 0.35;
 
 const v3 = (p: readonly number[]): [number, number, number] => [p[0]!, p[1]!, p[2]!];
 

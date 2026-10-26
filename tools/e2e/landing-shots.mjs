@@ -57,8 +57,21 @@ const stepRuns = await state(() => window.__dcad.orchestrator.getState().steps.m
 // The draft review as the editor shows it before Accept, and the hero render from that same moment: the editor
 // opens a ready draft with the occlusion map on, which is what the banner says.
 await page.locator('.auto-banner').first().screenshot({ path: `${OUT}draft-banner.png` });
-// The review lists every step's checks with their values (the landing page shows the first steps of it).
-await page.locator('section.auto-design').first().screenshot({ path: `${OUT}auto-design.png` });
+// The review's check list, opened ("Show the checks"): every step's checks with their values. The landing page shows
+// the first two steps of it.
+await page.locator('section.auto-design .auto-details > summary').first().click();
+const checksClip = await state(() => {
+  const list = document.querySelector('section.auto-design .auto-details .auto-steps');
+  // The list's top near the panel's top, clear of the sticky footer below.
+  const panel = document.querySelector('aside.panel');
+  panel.scrollTop += list.getBoundingClientRect().top - panel.getBoundingClientRect().top - 24;
+  const rows = list.querySelectorAll(':scope > li');
+  const top = list.getBoundingClientRect();
+  const end = rows[2] ? rows[2].getBoundingClientRect().top - 6 : top.bottom;
+  return { x: top.left - 10, y: top.top - 4, width: top.width + 20, height: end - top.top + 4 };
+});
+await page.screenshot({ path: `${OUT}auto-design.png`, clip: checksClip });
+await page.locator('section.auto-design .auto-details > summary').first().click();
 // Product shots: the antagonist out of the way, surroundings solid, no viewport hint text.
 await page.addStyleTag({ content: '.hint { visibility: hidden; }' });
 await state(() => { window.__dcad.scene.getState().patchObject('upper', { visible: false }); window.__dcad.viewer.setObjectVisible('upper', false); });
@@ -103,13 +116,14 @@ await view({ up: 1, buccal: 0.2, mesial: 0.05, dist: 28 });
 await page.waitForTimeout(1500);
 await viewport.screenshot({ path: `${OUT}map-occlusion.png` });
 
-// 4. The editor at Finalize: the wizard, the ready-to-mill checks, and the crown. The toolbar is cropped off: it
-// carries the working name, and the landing page shows a placeholder until the name is chosen.
+// 4. The editor at Finalize, toolbar included (it carries the product name): the wizard from its first step, the
+// ready-to-mill checks, and the crown.
 await state(() => window.__dcad.crownTool.setMap('none'));
 await state(() => window.__dcad.design.getState().setActiveStep('finalize'));
 await view({ up: 0.9, buccal: 0.75, mesial: 0.35, dist: 30, lift: -0.5 });
-const toolbar = await state(() => document.querySelector('.toolbar').getBoundingClientRect().height);
-await page.screenshot({ path: `${OUT}editor-finalize.png`, clip: { x: 0, y: toolbar, width: 1440, height: 900 - toolbar } });
+await state(() => { document.querySelector('aside.panel').scrollTop = 0; });
+await page.waitForTimeout(300);
+await page.screenshot({ path: `${OUT}editor-finalize.png` });
 // Phones get the side panel alone, at 1:1, instead of the whole editor scaled down.
 await page.locator('aside.panel').screenshot({ path: `${OUT}editor-panel.png` });
 

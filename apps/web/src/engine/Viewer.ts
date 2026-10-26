@@ -3,8 +3,10 @@ import {
   Box3,
   BufferAttribute,
   Color,
+  DoubleSide,
   Matrix4,
   Mesh,
+  MeshBasicMaterial,
   MOUSE,
   OrthographicCamera,
   PerspectiveCamera,
@@ -62,7 +64,12 @@ interface ViewerObject {
   /** The object's own opacity (object panel, crown slider). */
   opacity: number;
   focus: (FocusLook & { overlay: Mesh<BufferGeometry, SurfaceMaterial> | null }) | null;
+  /** Depth-only copy drawn just before a see-through object (see syncPrepass). */
+  prepass: Mesh<BufferGeometry, MeshBasicMaterial> | null;
 }
+
+/** First draw order of see-through objects (orderSeeThrough gives each its pre-pass and colour pass in turn). */
+const SEE_THROUGH_ORDER = 1;
 
 /** Shallow copy of some faces of an indexed geometry, with compacted vertices (position, normal, colour). */
 function subsetGeometry(source: BufferGeometry, faces: Uint32Array): BufferGeometry {
@@ -227,7 +234,7 @@ export class Viewer {
     const mesh = new Mesh(geometry, material);
     mesh.name = id;
     mesh.raycast = acceleratedRaycast;
-    this.objects.set(id, { mesh, kind, opacity: 1, focus: null });
+    this.objects.set(id, { mesh, kind, opacity: 1, focus: null, prepass: null });
     this.scene.add(mesh);
     this.setObjectVertexColors(id, Boolean(opts.vertexColors));
     this.requestRender();
@@ -238,6 +245,7 @@ export class Viewer {
     const obj = this.objects.get(id);
     if (!obj) return;
     this.disposeOverlay(obj);
+    this.disposePrepass(obj);
     this.scene.remove(obj.mesh);
     obj.mesh.material.dispose();
     this.objects.delete(id);
@@ -503,6 +511,7 @@ export class Viewer {
 
   /** PNG of the current view. Rendered and read back synchronously so no preserveDrawingBuffer is needed. */
   async screenshot(): Promise<Blob> {
+    this.orderSeeThrough();
     this.renderer.render(this.scene, this.controls.camera);
     const url = this.renderer.domElement.toDataURL('image/png');
     return (await fetch(url)).blob();
@@ -546,6 +555,7 @@ export class Viewer {
     m.userData.uniforms.uDesaturate.value = focus?.desaturate ?? 0;
     // Surroundings sit behind the focus copy and anything coincident with it (the surface default is 1).
     m.polygonOffsetFactor = m.polygonOffsetUnits = focus ? SURROUNDINGS_POLYGON_OFFSET : 1;
+    this.syncPrepass(obj);
     const overlay = focus?.overlay;
     if (overlay) {
       const o = overlay.material;
@@ -558,6 +568,60 @@ export class Viewer {
       setMaterialOpacity(o, obj.opacity);
     }
     this.requestRender();
+  }
+
+  /**
+   * A see-through object shows only its nearest surface. Its depth-only copy (same geometry, sides and polygon offset)
+   * is drawn first in the transparent queue, so the colour pass that follows blends only the object's front-most
+   * layer: no inner walls or far sides showing through as streaks. Opaque objects (the crown, the prep in focus) are
+   * drawn before both, so they still show through.
+   */
+  private syncPrepass(obj: ViewerObject): void {
+    const m = obj.mesh.material;
+    if (!m.transparent) {
+      this.disposePrepass(obj);
+      obj.mesh.renderOrder = 0;
+      return;
+    }
+    obj.mesh.renderOrder = SEE_THROUGH_ORDER;
+    let prepass = obj.prepass;
+    if (!prepass) {
+      prepass = new Mesh(obj.mesh.geometry, new MeshBasicMaterial({ colorWrite: false, depthWrite: true, transparent: true, side: DoubleSide, polygonOffset: true }));
+      prepass.name = `${obj.mesh.name}:prepass`;
+      prepass.raycast = () => undefined;
+      obj.mesh.add(prepass);
+      obj.prepass = prepass;
+    }
+    prepass.material.polygonOffsetFactor = m.polygonOffsetFactor;
+    prepass.material.polygonOffsetUnits = m.polygonOffsetUnits;
+  }
+
+  /**
+   * See-through objects are drawn back to front, each as its pre-pass then its colour pass, so a nearer one (the
+   * antagonist over the prep's jaw, seen from occlusal) blends over the one behind it instead of hiding it.
+   */
+  private orderSeeThrough(): void {
+    const eye = this.controls.camera.position;
+    const centre = new Vector3();
+    const seeThrough = [...this.objects.values()]
+      .filter((o) => o.prepass && o.mesh.visible)
+      .map((o) => {
+        const g = o.mesh.geometry;
+        if (!g.boundingSphere) g.computeBoundingSphere();
+        return { o, d: centre.copy(g.boundingSphere!.center).applyMatrix4(o.mesh.matrixWorld).distanceToSquared(eye) };
+      })
+      .sort((a, b) => b.d - a.d);
+    seeThrough.forEach(({ o }, i) => {
+      o.prepass!.renderOrder = SEE_THROUGH_ORDER + 2 * i;
+      o.mesh.renderOrder = SEE_THROUGH_ORDER + 2 * i + 1;
+    });
+  }
+
+  private disposePrepass(obj: ViewerObject): void {
+    if (!obj.prepass) return;
+    obj.mesh.remove(obj.prepass);
+    obj.prepass.material.dispose();
+    obj.prepass = null;
   }
 
   private disposeOverlay(obj: ViewerObject): void {
@@ -760,6 +824,7 @@ export class Viewer {
     const moved = this.controls.update(delta);
     if (moved || this.needsRender) {
       this.needsRender = false;
+      this.orderSeeThrough();
       this.renderer.render(this.scene, this.controls.camera);
     }
   };

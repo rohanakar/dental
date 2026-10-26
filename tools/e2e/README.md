@@ -64,8 +64,10 @@ These scripts drive the real web app in headless Chrome (Playwright, `channel: '
   down onto the lower jaw, the prep of 36 ringed and inside the viewport → a click on 35 refused (nothing runs) → a
   click in the ring → the draft reviewed in one verdict line, checks folded, Accept the only primary → Accept said in
   the status line inside the window → Finalize → export → the ending, with Parameters and Finalize done on the rail →
-  `?` opens the help sheet → Start your own case → Case setup with the dentist's-view chart (24 px pitch, inside the
-  wider panel). Screenshots go to `out/e2e/first-run/`.
+  `?` opens the help sheet → the theme (light on the landing renders' ground; Dark theme switches the editor and its
+  scene and is remembered; with dark saved the sign-in screen stays light) → Start your own case → Case setup with the
+  dentist's-view chart (24 px pitch, inside the wider panel). Also checks that the sign-in screen is white and set in
+  Hanken Grotesk. Screenshots go to `out/e2e/first-run/`.
 
 Scripts that set an inlay, onlay, wing, implant or reduced unit open "More types" for that tooth first (`moreTypes`).
 

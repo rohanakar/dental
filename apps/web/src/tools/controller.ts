@@ -1,6 +1,7 @@
 import { bridgeOf, type ScanRole, type StepId, unitKind } from '@dcad/shared';
 import type { MeshBVH } from 'three-mesh-bvh';
 import { useDesignStore } from '../design/store';
+import { AXIS_COLORS } from '../engine/axisColors';
 import type { Viewer } from '../engine/Viewer';
 import { bvhRayCaster } from '../geometry/raycast';
 import { sceneController } from '../state/sceneController';
@@ -22,7 +23,7 @@ import { useToolStore } from './toolStore';
 import { isWing } from './wing';
 import { DEMO_PREP_RADIUS_MM, demoPrep, ringPoints } from './demoPrep';
 
-export const FRAME_COLORS = { occlusal: '#4c8dff', mesial: '#2fbf71', buccal: '#f0a030', distal: '#a970ff' } as const;
+export const FRAME_COLORS = AXIS_COLORS;
 const AXIS_COLOR = '#b07cff';
 /** Steps that work on the prep surface: the antagonist is hidden so it does not block the view. */
 const HIDE_ANTAGONIST: readonly StepId[] = ['frame', 'margin', 'axis'];
