@@ -110,6 +110,8 @@ const u2 = await doc();
 expect(!u2.pose && !u2.frame, 'second Ctrl+Z returns to before auto-design');
 // Undoing the draft goes back to where its run started (Tooth frame), says so, and leaves no crown legend; redo returns.
 const where = () => state(() => ({ step: window.__dcad.design.getState().activeStep, legend: window.__dcad.tools.getState().legend?.title ?? null }));
+// The legend goes once the crown view catches up with the undo (one recompute later): wait for it, briefly.
+await waitFor(() => !window.__dcad.tools.getState().legend, null, 10000).catch(() => {});
 const u2At = await where();
 expect(u2At.step === 'frame' && !u2At.legend && /^Undone/.test(u2.message ?? ''), 'undoing the draft: back on Tooth frame, its own notice, no legend', JSON.stringify({ ...u2At, message: u2.message }));
 await page.keyboard.press('Control+Shift+z');

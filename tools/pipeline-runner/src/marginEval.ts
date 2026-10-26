@@ -121,6 +121,9 @@ export interface MarginOutcome {
   confidence?: number;
   /** Tool calls (model loop) or traces (refiner) the method used. */
   steps?: number;
+  /** The refiner's wander and kept share, for deciding whether a passing margin is still suspect. */
+  wander?: number;
+  kept?: number;
   costUsd?: number;
   note?: string;
 }
@@ -148,7 +151,7 @@ export const refineMethod: MarginMethod = async (c) => {
   if (!r) return { points: [], lengthMm: 0, anchors: [], steps: 0, note: 'no ridge' };
   const points: V3[] = [];
   for (let i = 0; i < r.points.length; i += 3) points.push([r.points[i]!, r.points[i + 1]!, r.points[i + 2]!]);
-  return { points, lengthMm: r.lengthMm, anchors: r.anchors, confidence: r.passes ? r.confidence : 0, steps: r.candidates.length, note: `${r.name}; wander ${r.wander.toFixed(2)}, kept ${r.kept.toFixed(2)}` };
+  return { points, lengthMm: r.lengthMm, anchors: r.anchors, confidence: r.passes ? r.confidence : 0, steps: r.candidates.length, wander: r.wander, kept: r.kept, note: `${r.name}; wander ${r.wander.toFixed(2)}, kept ${r.kept.toFixed(2)}` };
 };
 
 const scanOf = (c: PreparedCase): MarginScan => ({ positions: c.positions, indices: c.indices, ray: c.ray, graph: c.surface.graph, weight: liveWireWeight(c.surface.curvature), frame: c.frame });
@@ -164,12 +167,18 @@ function modelFromEnv() {
  * The model repairing the margin with the margin tools (ai/marginAgent.ts), from the plain margin, or from the
  * refiner's (calling the model only when the refiner fails).
  */
+const SUSPECT_WANDER = 1.08;
+const SUSPECT_KEPT = 0.75;
+
 function agentMethod(start: 'plain' | 'refine'): MarginMethod {
   return async (c) => {
     const llm = modelFromEnv();
     if (!llm) return { points: [], lengthMm: 0, anchors: [], note: 'no model: set ANTHROPIC_BASE_URL (tools/claude-bridge)' };
     const from = await (start === 'plain' ? plainMethod : refineMethod)(c);
-    if (start === 'refine' && from.confidence !== undefined && from.confidence > 0) return { ...from, steps: 0, note: `refiner passed; no model call (${from.note ?? ''})` };
+    // The model only when the refiner fails, or passes while it looks doubtful (a detour close to the limit, or many
+    // anchors dropped): at heavy noise such a margin can pass the gate yet sit 0.3–0.4 mm off.
+    const suspect = (from.wander ?? 0) > SUSPECT_WANDER || (from.kept ?? 1) < SUSPECT_KEPT;
+    if (start === 'refine' && from.confidence !== undefined && from.confidence > 0 && !suspect) return { ...from, steps: 0, note: `refiner passed; no model call (${from.note ?? ''})` };
     const work: MarginWork = { anchors: from.anchors, points: from.points, lengthMm: from.lengthMm, profilesRun: 16, found: from.anchors.length };
     if (work.anchors.length < 3) return { ...from, note: 'no margin to repair' };
     const cost0 = llm.costUsd();

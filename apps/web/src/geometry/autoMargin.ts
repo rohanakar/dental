@@ -35,11 +35,26 @@ export interface AutoMarginInput {
   windowMm?: number;
   /** Minimum slope change (dimensionless) for a profile to count as finding the margin. */
   minConvexity?: number;
+  /** Also return every strong convex edge of each profile (AutoMarginProfile.candidates). */
+  withCandidates?: boolean;
+}
+
+/** One convex edge on a profile: a possible margin point (the first is what the profile picked). */
+export interface ProfileCandidate {
+  point: V3;
+  radiusMm: number;
+  dropMm: number;
+  convexity: number;
 }
 
 export interface AutoMarginProfile {
   angleDeg: number;
   found: boolean;
+  /**
+   * Every strong convex edge on the profile, outward order (with `withCandidates`): on a noisy scan the first one can
+   * be a false edge, and the margin refiner picks one per profile so the ring round the prep stays smooth.
+   */
+  candidates?: ProfileCandidate[];
   radiusMm?: number;
   dropMm?: number;
   /** Slope change across the anchor (dimensionless; larger = sharper convex edge). */
@@ -172,11 +187,23 @@ export function proposeMarginAnchors(input: AutoMarginInput): AutoMarginResult {
     }
     const found = Boolean(best && best.score > (input.minConvexity ?? 0.5));
     if (found) anchors.push(points[best!.i]!);
+    let candidates: ProfileCandidate[] | undefined;
+    if (input.withCandidates) {
+      // Every local convexity peak at least a third of the profile's maximum (the first-peak rule uses a half).
+      candidates = [];
+      const floor = Math.max(input.minConvexity ?? 0.5, maxScore / 3);
+      for (let i = 1; i + 1 < scores.length; i++) {
+        if (scores[i]! >= floor && scores[i]! >= scores[i - 1]! && scores[i]! > scores[i + 1]!) {
+          candidates.push({ point: points[i]!, radiusMm: rs[i]!, dropMm: -hs[i]!, convexity: scores[i]! });
+        }
+      }
+    }
     profiles.push({
       angleDeg: (theta * 180) / Math.PI,
       found,
       stop,
       ...(best ? { radiusMm: rs[best.i]!, dropMm: -hs[best.i]!, convexity: best.score } : {}),
+      ...(candidates ? { candidates } : {}),
     });
   }
   return { anchors, profiles, confidence: anchors.length / count };

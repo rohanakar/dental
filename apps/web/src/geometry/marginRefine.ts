@@ -1,4 +1,4 @@
-import { proposeMarginAnchors, type AutoMarginProfile } from './autoMargin';
+import { proposeMarginAnchors, type AutoMarginProfile, type ProfileCandidate } from './autoMargin';
 import { marginFromAnchors, type EdgeWeight } from './livewire';
 import { MARGIN_LENGTH_MM, MARGIN_MAX_TURN_DEG, MARGIN_MAX_WANDER, sharpestTurnDeg } from './marginShape';
 import type { V3 } from './pca';
@@ -11,7 +11,8 @@ import type { SurfaceGraph } from './surface';
  * On a scan with noise a few radial profiles pick a false edge 1–2 mm off the finish line, and the live-wire then
  * has to pass through those anchors: the margin makes an excursion and often doubles back (a kink). Between good
  * anchors the live-wire also follows the noise, which reads as a kink over the gate's 0.6 mm stride. So the refiner:
- * 1. rejects anchors that leave the smooth ring their neighbours make (radius and drop along the profiles);
+ * 1. picks, per profile, the edge that keeps the ring round the prep smooth (a cyclic dynamic program over every
+ *    convex edge of each profile), or rejects anchors that leave the ring their neighbours make;
  * 2. traces through the rest with the live-wire;
  * 3. smooths the traced line over a few tenths of a millimetre and puts it back on the scan.
  * It tries a few profile counts and keeps the best candidate: one that passes the gate's shape checks without
@@ -80,6 +81,60 @@ export function ringConsistentAnchors(anchors: V3[], profiles: AutoMarginProfile
     const p = found[i]!;
     return Math.abs(p.radiusMm! - median(near.map((q) => q.radiusMm!))) <= RING_RADIUS_MM && Math.abs(p.dropMm! - median(near.map((q) => q.dropMm!))) <= RING_DROP_MM;
   });
+}
+
+/** Ring DP weights: a margin's drop below the prep top and its radius change slowly round the tooth. */
+const DP_DROP = 5;
+const DP_RADIUS = 2;
+/** A stronger edge is preferred, mildly (capped so one sharp noise peak cannot buy a jump). */
+const DP_CONVEXITY = 0.5;
+const DP_CONVEXITY_CAP = 3;
+
+/**
+ * One edge per profile so the ring round the prep is smooth: a cyclic dynamic program over each profile's candidate
+ * edges (AutoMarginProfile.candidates), costing changes of drop and radius between neighbours against edge strength.
+ * On a noisy scan false edges come in runs (several neighbouring profiles pick the same wrong ledge, so a median
+ * filter keeps them); a run costs a jump in and a jump out, so the ring stays on the finish line.
+ */
+export function ringDpAnchors(profiles: AutoMarginProfile[]): V3[] {
+  const steps = profiles.map((p) => p.candidates ?? []).filter((c) => c.length > 0);
+  const n = steps.length;
+  if (n < 3) return [];
+  const unary = (c: ProfileCandidate) => -DP_CONVEXITY * Math.min(c.convexity, DP_CONVEXITY_CAP);
+  const pair = (a: ProfileCandidate, b: ProfileCandidate) => DP_DROP * Math.abs(a.dropMm - b.dropMm) + DP_RADIUS * Math.abs(a.radiusMm - b.radiusMm);
+  let best: { cost: number; picks: number[] } = { cost: Infinity, picks: [] };
+  for (let first = 0; first < steps[0]!.length; first++) {
+    // cost[j] = best cost of a path from the fixed first pick to candidate j of the current profile.
+    let cost = steps[0]!.map((c, j) => (j === first ? unary(c) : Infinity));
+    const back: number[][] = [];
+    for (let k = 1; k < n; k++) {
+      const prev = steps[k - 1]!, cur = steps[k]!;
+      const next: number[] = [];
+      const from: number[] = [];
+      for (let j = 0; j < cur.length; j++) {
+        let m = Infinity, arg = 0;
+        for (let i = 0; i < prev.length; i++) {
+          const v = cost[i]! + pair(prev[i]!, cur[j]!);
+          if (v < m) [m, arg] = [v, i];
+        }
+        next.push(m + unary(cur[j]!));
+        from.push(arg);
+      }
+      back.push(from);
+      cost = next;
+    }
+    // Close the ring back to the first pick.
+    for (let j = 0; j < steps[n - 1]!.length; j++) {
+      const total = cost[j]! + pair(steps[n - 1]![j]!, steps[0]![first]!);
+      if (total < best.cost) {
+        const picks = new Array<number>(n);
+        picks[n - 1] = j;
+        for (let k = n - 1; k >= 1; k--) picks[k - 1] = back[k - 1]![picks[k]!]!;
+        best = { cost: total, picks };
+      }
+    }
+  }
+  return best.picks.map((j, k) => steps[k]![j]!.point);
 }
 
 const at = (a: Float32Array, i: number): V3 => [a[i * 3]!, a[i * 3 + 1]!, a[i * 3 + 2]!];
@@ -152,10 +207,13 @@ const better = (a: RefineCandidate, b: RefineCandidate): number => Number(b.pass
 export function refineMargin(input: RefineInput): RefineResult | null {
   const candidates: RefineCandidate[] = [];
   for (const count of [16, 24, 32, 48]) {
-    const proposal = proposeMarginAnchors({ positions: input.positions, indices: input.indices, ray: input.ray, frame: input.frame, count });
+    const proposal = proposeMarginAnchors({ positions: input.positions, indices: input.indices, ray: input.ray, frame: input.frame, count, withCandidates: true });
     const found = proposal.anchors.length;
     const ring = ringConsistentAnchors(proposal.anchors, proposal.profiles);
+    const dp = ringDpAnchors(proposal.profiles);
     for (const smooth of [false, true]) {
+      const smoothRing = candidate(`${count} profiles, ring DP${smooth ? ', smoothed' : ''}`, input, dp, found, count, smooth);
+      if (smoothRing) candidates.push(smoothRing);
       if (count === 16) {
         const plain = candidate(`${count} profiles${smooth ? ', smoothed' : ''}`, input, proposal.anchors, found, count, smooth);
         if (plain) candidates.push(plain);
