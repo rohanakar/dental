@@ -368,3 +368,10 @@ with Auto-design next.
 - A bridge's frames in the wrong order or far too far apart are reported.
 - 115 tests. See [2026-10-26-auto-frames.md](2026-10-26-auto-frames.md).
 
+
+**2026-10-26: margin refiner on main.** One-click's automatic margin now survives scan noise:
+- 16 of 17 synthetic prepped cases are correct (6 of 17 before), and every natural tooth is still rejected.
+- The refiner is deterministic and takes under a second.
+- A model repair loop (Opus 5.5 through a local `claude -p` bridge) stays as a harness tool. Wiring it into
+  one-click was tried and dropped: it added no accuracy, only minutes and cost.
+- 118 tests. See [2026-10-26-margin-ai.md](2026-10-26-margin-ai.md).
