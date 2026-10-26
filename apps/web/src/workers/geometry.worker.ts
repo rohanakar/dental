@@ -24,6 +24,8 @@ import { bvhRayCaster, type RayCaster } from '../geometry/raycast';
 import { analyzeSurface, smoothVertexNormals, type SurfaceAnalysis } from '../geometry/surface';
 import { proposeMarginAnchors } from '../geometry/autoMargin';
 import { designCrown } from '../geometry/crown';
+import type { PreopScan } from '../geometry/inlay';
+import { designInlayUnit } from '../geometry/inlayUnit';
 import { initMeshBoolean } from '../geometry/meshBoolean';
 import { syntheticArch } from '../geometry/synthetic';
 import { estimateToothFrame } from '../geometry/toothFrame';
@@ -43,6 +45,7 @@ import type {
   CrownRequest,
   CrownResult,
   FocusFacesRequest,
+  InlayRequest,
   FrameEstimate,
   FrameRequest,
   MarginTrace,
@@ -102,6 +105,13 @@ function regionFor(scan: RetainedScan, margin: Float32Array, occlusal: V3, seed?
     if (seedVertex === null) throw new Error('Could not find the prep inside the margin');
     return { ...prepRegion({ positions: scan.positions, indices: scan.indices, graph, loopVertices, seedVertex }), loopVertices };
   });
+}
+
+/** An inlay's pre-op scan (imported like the jaws); its absence fails the pre-op source with a clear message. */
+function preopOf(request: InlayRequest): PreopScan | undefined {
+  if (request.source !== 'preop' || !request.preopSha || !registry.has(request.preopSha)) return undefined;
+  const scan = registry.get(request.preopSha);
+  return { positions: scan.positions, indices: scan.indices, ray: rayOf(scan) };
 }
 
 /** Implant crowns, the scan-body match and the synthetic implant library (implantApi.ts). */
@@ -324,7 +334,30 @@ const api = {
     const scan = registry.get(request.jawSha);
     const antagonist = request.antagonistSha && registry.has(request.antagonistSha) ? registry.get(request.antagonistSha) : null;
     const region = regionFor(scan, request.margin, request.frame.occlusal);
-    if (!region.closed) throw new Error('The prep region is not closed by the margin; fix the margin first');
+    if (!region.closed) throw new Error(`The ${request.inlay ? 'cavity' : 'prep region'} is not closed by the margin; fix the margin first`);
+    if (request.inlay) {
+      // An inlay or onlay: snap and subtract in the cavity (two booleans).
+      await initMeshBoolean({ wasmUrl: manifoldWasmUrl });
+      const preop = preopOf(request.inlay);
+      const { mesh, inlayPatch: _patch, ...inlay } = designInlayUnit({
+        fdi: request.fdi,
+        type: request.inlay.type,
+        jaw: { positions: scan.positions, indices: scan.indices, graph: surfaceOf(scan).graph, smoothNormals: smoothNormalsOf(scan), ray: rayOf(scan) },
+        antagonist: antagonist ? rayOf(antagonist) : undefined,
+        region,
+        margin: request.margin,
+        axis: request.axis,
+        params: request.params,
+        frame: request.frame,
+        source: request.inlay.source,
+        ...(preop ? { preop } : {}),
+        ...(request.inlay.source === 'library' && request.pose ? { pose: request.pose } : {}),
+        maps: request.maps,
+      });
+      const result: CrownResult = { ...inlay, positions: mesh.positions, indices: mesh.indices, ms: performance.now() - t0 };
+      const maps = Object.values(inlay.maps ?? {}).map((m) => (m as Float32Array).buffer as ArrayBuffer);
+      return Comlink.transfer(result, [mesh.positions.buffer as ArrayBuffer, mesh.indices.buffer as ArrayBuffer, inlay.moveWeights.buffer as ArrayBuffer, ...maps]);
+    }
     const design = designCrown({
       fdi: request.fdi,
       jaw: { positions: scan.positions, indices: scan.indices, graph: surfaceOf(scan).graph, smoothNormals: smoothNormalsOf(scan), ray: rayOf(scan) },
@@ -424,15 +457,20 @@ const api = {
   async designBridge(request: BridgeRequest): Promise<BridgeResultView> {
     const t0 = performance.now();
     // Implant crowns cut their screw channels with the boolean engine too.
-    if (request.union || request.units.some((u) => u.implant)) await initMeshBoolean({ wasmUrl: manifoldWasmUrl });
+    if (request.union || request.units.some((u) => u.implant || u.inlay)) await initMeshBoolean({ wasmUrl: manifoldWasmUrl });
     const scan = registry.get(request.jawSha);
     const antagonist = request.antagonistSha && registry.has(request.antagonistSha) ? registry.get(request.antagonistSha) : null;
-    const units: BridgeUnitInput[] = request.units.map(({ implant, ...u }) => {
+    const units: BridgeUnitInput[] = request.units.map(({ implant, inlay, ...u }) => {
       if (u.kind === 'pontic') return u;
       if (implant) return { ...u, implant: implants.unitOf(implant) };
       if (!u.frame || !u.margin) throw new Error(`Abutment ${u.fdi} needs a frame and a margin`);
       const region = regionFor(scan, u.margin, u.frame.occlusal, u.wing ? u.frame.origin : undefined);
       if (!region.closed) throw new Error(`Abutment ${u.fdi}: the ${u.wing ? 'wing outline does not close a region' : 'prep region is not closed by the margin'}; fix the ${u.wing ? 'outline' : 'margin'} first`);
+      if (inlay) {
+        const preop = preopOf(inlay);
+        // The pre-op scan's hash keys the cached unit (the scan itself is not hashed).
+        return { ...u, region, inlay: { type: inlay.type, source: inlay.source, ...(preop ? { preop, preopKey: inlay.preopSha } : {}) } };
+      }
       return { ...u, region };
     });
     const design = designBridge({
@@ -451,7 +489,8 @@ const api = {
     // Unit and connector results live on in the cache: send copies of their buffers.
     const transfer: ArrayBuffer[] = [];
     const unitViews = design.units.map((r): BridgeUnitView => {
-      const { mesh, maps, moveWeights, ...rest } = r.design;
+      // An inlay's fitting patch (large arrays, for the seating on the union) stays in the worker.
+      const { mesh, maps, moveWeights, inlayPatch: _patch, ...rest } = r.design;
       const implant = implants.viewOf(r.design, transfer);
       return {
         ...rest,

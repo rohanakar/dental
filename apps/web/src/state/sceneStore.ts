@@ -42,7 +42,8 @@ export const useSceneStore = create<SceneState>()((set) => ({
         name,
         role,
         phase: 'reading',
-        visible: true,
+        // The pre-op scan lies over the prepared jaw and hides the cavity: it starts hidden.
+        visible: role !== 'preop',
         opacity: 1,
         useVertexColors: true,
         hasColors: false,

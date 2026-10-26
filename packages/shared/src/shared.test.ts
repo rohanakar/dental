@@ -29,6 +29,9 @@ describe('shared schemas', () => {
     // Maryland wings connect to pontics (a cantilever is valid), never to crowns.
     expect(validate([unit(11, 'maryland-wing'), unit(12, 'pontic')], [[11, 12]]).errors).toEqual([]);
     expect(errorCodes([unit(11, 'maryland-wing'), unit(21)], [[11, 21]])).toEqual(['connector-not-permitted']);
+    // Inlays and onlays are retainers next to a pontic, never connected to a crown.
+    expect(validate([unit(35, 'inlay'), unit(36, 'pontic'), unit(37, 'onlay')], chain([35, 36, 37])).errors).toEqual([]);
+    expect(errorCodes([unit(35, 'inlay'), unit(36)], [[35, 36]])).toEqual(['connector-not-permitted']);
 
     // Warning only: lithium disilicate past 3 units.
     const ld = midline.map((t) => ({ ...t, material: 'lithium-disilicate' as const }));

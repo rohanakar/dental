@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { CaseSetup, DesignParams, Fdi, FdiPair } from './case';
-import { ConnectorArea, ConnectorOffset, Crown, ImplantDesign, InsertionAxis, MarginLine, ScanRef, ScanRole, StepId, ToothFrame } from './design';
+import { ConnectorArea, ConnectorOffset, Crown, ImplantDesign, InsertionAxis, MarginLine, OuterSource, ScanRef, ScanRole, StepId, ToothFrame } from './design';
 import { CutbackCollar, CutbackMode, CutbackThickness } from './framework';
 
 /**
@@ -48,6 +48,12 @@ export const SetCrown = z.object({
   type: z.literal('setCrown'),
   fdi: Fdi,
   crown: Crown,
+});
+/** Inlays and onlays: the outer surface's source (the proposal is redone). */
+export const SetOuterSource = z.object({
+  type: z.literal('setOuterSource'),
+  fdi: Fdi,
+  source: OuterSource,
 });
 /** Implant crowns: the scan-body match (the "Implant position" step). */
 export const SetImplant = z.object({
@@ -154,7 +160,7 @@ export const RunStep = z
   })
   .describe('Run the automatic proposer for one design step.');
 
-export const DOCUMENT_COMMANDS = [SetCaseSetup, AddScan, RemoveScan, SetFrame, SetMargin, SetAxis, SetParams, SetCrown, SetImplant] as const;
+export const DOCUMENT_COMMANDS = [SetCaseSetup, AddScan, RemoveScan, SetFrame, SetMargin, SetAxis, SetParams, SetCrown, SetImplant, SetOuterSource] as const;
 export const CLINICAL_COMMANDS = [MoveCrown, RotateCrown, ScaleCrown, SetContact, AdaptOcclusion, SetConnector, SetScrewChannel, SetCutback, SetParam, RunStep] as const;
 
 export const Command = z.discriminatedUnion('type', [...DOCUMENT_COMMANDS, ...CLINICAL_COMMANDS]);

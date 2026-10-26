@@ -4,6 +4,7 @@ import { useDesignStore } from '../../design/store';
 import { marginProblems, type MarginProblems } from '../../tools/marginCheck';
 import './MarginIssues.css';
 import { isWing } from '../../tools/wing';
+import { isCavity } from '../../tools/inlay';
 
 /** The problems of a tooth's closed margin (null when it has none, or no margin). */
 function problemsOf(tooth: ToothDesign | undefined): MarginProblems | null {
@@ -36,11 +37,13 @@ function problemLines(p: MarginProblems): string[] {
 export function MarginWarning({ fdi }: { fdi: number }) {
   const tooth = useDesignStore((s) => s.doc.teeth.find((t) => t.fdi === fdi));
   const wing = useDesignStore((s) => isWing(s.doc.setup, fdi));
+  // A cavity margin gets the same check: its box corners turn about 90° over their fillets, never back on themselves.
+  const unit = useDesignStore((s) => (isCavity(s.doc.setup, fdi) ? s.doc.setup.teeth.find((t) => t.fdi === fdi)!.restoration : 'crown'));
   const problems = useMemo(() => problemsOf(tooth), [tooth]);
   if (!problems || wing) return null;
   return (
     <div className="warning margin-problems" role="status">
-      <strong>The crown would fold at this margin.</strong>
+      <strong>The {unit} would fold at this margin.</strong>
       <ul>
         {problemLines(problems).map((line) => (
           <li key={line}>{line}</li>

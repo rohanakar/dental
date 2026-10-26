@@ -3,6 +3,7 @@ import type { IndexedMesh } from '../geometry/mesh';
 import type { MeshValidation } from '../geometry/meshValidate';
 import { writeBinaryStl } from '../geometry/stl';
 import type { WingUnitReport } from '../geometry/wingUnit';
+import type { InlayUnitReport } from '../geometry/inlayUnit';
 import type { ImplantResultView } from '../workers/analysisTypes';
 import { implantSidecar } from './implantExport';
 
@@ -25,6 +26,8 @@ export interface ConstructionInfoInput {
     gapCheck?: unknown;
     /** Implant crowns: the screw channel and the Ti-base fit. */
     implant?: ImplantResultView;
+    /** Inlays and onlays. */
+    inlay?: InlayUnitReport;
   };
   /** ISO timestamp; defaults to now. */
   createdAt?: string;
@@ -57,6 +60,8 @@ export function constructionInfo(input: ConstructionInfoInput) {
       minAxialThicknessMm: result.minAxialThicknessMm,
       gapCheck: result.gapCheck,
     },
+    // Inlays and onlays: the outer source, the margin fit and the isthmus thickness.
+    ...(result.inlay ? { inlay: inlayConstructionInfo(result.inlay) } : {}),
     units: 'mm' as const,
   };
 }
@@ -88,6 +93,8 @@ export interface BridgeConstructionInput {
       base?: unknown;
       /** Maryland wings. */
       wing?: WingUnitReport;
+      /** Inlays and onlays. */
+      inlay?: InlayUnitReport;
       /** Implant crowns: the screw channel and the Ti-base fit. */
       implant?: ImplantResultView;
     }>;
@@ -111,6 +118,7 @@ export interface BridgeConstructionInput {
         seating: unknown;
         ponticBase: unknown;
         wings?: unknown;
+        inlays?: unknown;
         failures: readonly string[];
         ok: boolean;
       };
@@ -155,6 +163,8 @@ export function bridgeConstructionInfo(input: BridgeConstructionInput) {
         metrics: { minAxialThicknessMm: u.minAxialThicknessMm, gapCheck: u.gapCheck, ...(u.base ? { ponticBase: u.base } : {}) },
         // Maryland wings: the outline is `margin`; the wing's thickness, fit, space and bonded / blocked-out area.
         ...(u.wing ? { wing: wingConstructionInfo(u.wing) } : {}),
+        // Inlays and onlays: the cavity margin is `margin`; the outer source, margin fit and isthmus thickness.
+        ...(u.inlay ? { inlay: inlayConstructionInfo(u.inlay) } : {}),
       };
     }),
     connectors: result.connectors.map((c) => {
@@ -171,7 +181,7 @@ export function bridgeConstructionInfo(input: BridgeConstructionInput) {
     }),
     warnings: [...result.warnings],
     validation: checks
-      ? { ok: checks.ok, union: checks.union, seating: checks.seating, ponticBase: checks.ponticBase, ...(checks.wings ? { wings: checks.wings } : {}), failures: [...checks.failures] }
+      ? { ok: checks.ok, union: checks.union, seating: checks.seating, ponticBase: checks.ponticBase, ...(checks.wings ? { wings: checks.wings } : {}), ...(checks.inlays ? { inlays: checks.inlays } : {}), failures: [...checks.failures] }
       : null,
     /** Length unit of every value (`units` lists the bridge's units). */
     lengthUnit: 'mm' as const,
@@ -187,6 +197,21 @@ function wingConstructionInfo(w: WingUnitReport) {
     area: w.area,
     blockout: w.blockout,
     space: w.space ? { targetMm: w.space.targetMm, minClearanceMm: w.space.minClearanceMm, thinnedMm: w.space.thinning?.maxMm ?? 0, conflict: w.space.conflict ?? null } : null,
+  };
+}
+
+/** The sidecar fields of an inlay or onlay (plain numbers; the library pose is the crown record's). */
+function inlayConstructionInfo(r: InlayUnitReport) {
+  return {
+    type: r.type,
+    outerSource: r.source,
+    marginFitMm: { mean: r.marginFit.meanMm, max: r.marginFit.maxMm, beforeRelax: r.marginFit.crossingMaxMm, limit: r.marginFit.limitMm, samples: r.marginFit.samples, ok: r.marginFit.ok },
+    isthmusMm: { min: r.isthmus.minMm, mean: r.isthmus.meanMm, threshold: r.isthmus.thresholdMm, ok: r.isthmus.ok },
+    fit: r.fit,
+    blockout: { liftedVertices: r.blockout.liftedVertices, areaMm2: r.blockout.areaMm2, undercutFaces: r.blockout.undercutFaces, outlineUndercutPoints: r.blockout.outlineUndercutPoints },
+    library: r.library ? { templateId: r.library.templateId, residualMm: { p95: r.library.residual.p95Mm, mean: r.library.residual.meanMm, max: r.library.residual.maxMm }, limitMm: r.library.limitMm, ok: r.library.ok } : null,
+    coronalHeightMm: r.coronalHeightMm,
+    failures: r.failures.map((f) => f.message),
   };
 }
 

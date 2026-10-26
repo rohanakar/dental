@@ -74,6 +74,8 @@ export interface CrownStatus {
   gapCheck?: GapCheck;
   thickness?: { minMm: number; pushedVertices: number; maxPushMm: number };
   adapt?: CrownResult['adapt'];
+  /** Inlays and onlays: margin fit, isthmus, library fit (the Adapt panel and the Finalize rows). */
+  inlay?: CrownResult['inlay'];
   warnings: string[];
   ms?: number;
 }

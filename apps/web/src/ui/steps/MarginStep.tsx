@@ -3,12 +3,19 @@ import { useDesignStore, selectActiveTooth } from '../../design/store';
 import { marginTool } from '../../tools/marginTool';
 import { useToolStore } from '../../tools/toolStore';
 import { isWing } from '../../tools/wing';
+import { isCavity } from '../../tools/inlay';
 
 /** The Margin step's hint for a Maryland wing's outline. */
 function wingOutlineHint(drafting: boolean, anchors: number, drawn: boolean): string {
   if (drafting) return anchors < 3 ? 'Keep clicking around the wing area.' : 'Click the first point (or press Enter) to close the outline.';
   if (drawn) return 'Drag a point to adjust the outline, or click on the tooth to start drawing it again.';
   return 'Click around the area the wing covers on the lingual surface: 0.5 mm above the gingiva, 1 mm below the incisal edge, wrapping onto the side facing the pontic.';
+}
+/** The Margin step's hint for an inlay's or onlay's cavity margin. */
+function cavityMarginHint(drafting: boolean, anchors: number, drawn: boolean): string {
+  if (drafting) return anchors < 3 ? 'Keep clicking along the cavosurface edge, around the occlusal outline and each proximal box.' : 'Click the first point (or press Enter) to close the margin.';
+  if (drawn) return 'Drag a point to adjust the cavity margin, or click on the tooth to start drawing it again.';
+  return 'Click on the cavosurface edge of the cavity to place the first point, then work around the occlusal outline and the proximal boxes.';
 }
 import { ImplantPositionPanel, useIsImplant } from './ImplantPanel';
 import { MarginWarning } from './MarginIssues';
@@ -28,6 +35,7 @@ export function MarginStep() {
   const pontic = useDesignStore((s) => unitKind(s.doc.setup, s.activeFdi) === 'pontic');
   const anchors = useToolStore((s) => s.marginAnchors);
   const wing = useDesignStore((s) => isWing(s.doc.setup, s.activeFdi));
+  const cavity = useDesignStore((s) => isCavity(s.doc.setup, s.activeFdi));
   const surface = useToolStore((s) => s.surface);
   const implant = useIsImplant();
   if (!tooth) return null;
@@ -42,6 +50,8 @@ export function MarginStep() {
       <p className="hint-box">
         {wing
           ? wingOutlineHint(drafting, anchors.length, Boolean(margin))
+          : cavity
+          ? cavityMarginHint(drafting, anchors.length, Boolean(margin))
           : drafting
           ? anchors.length < 3
             ? 'Keep clicking along the margin. The path follows the margin ridge between clicks.'

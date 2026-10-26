@@ -12,6 +12,8 @@ import { useDesignStore } from '../../design/store';
 import { useBridgeStore } from '../../tools/bridgeTool';
 import { userEdit } from '../../tools/nudge';
 import { isWing } from '../../tools/wing';
+import { isCavity } from '../../tools/inlay';
+import { INLAY_PARAM_DEFAULTS, INLAY_PARAM_GROUP } from './inlayParams';
 import type { BridgeUnitView } from '../../workers/analysisTypes';
 import { BridgeConnectors, BridgeResultPanel } from './BridgePanels';
 import { CrownStatusView } from './CrownStatusView';
@@ -38,19 +40,23 @@ export const WING_PARAM_GROUP: { title: string; fields: Array<{ key: keyof Desig
   ],
 };
 
-/** The parameter groups of a unit: a wing adds its own. */
+/** The parameter groups of a unit: a wing, an inlay or an onlay adds its own. */
 export const paramGroupsFor = <G,>(setup: Pick<CaseSetup, 'teeth'>, fdi: number, groups: G[]): Array<G | typeof WING_PARAM_GROUP> =>
-  isWing(setup, fdi) ? [...groups, WING_PARAM_GROUP] : groups;
+  isWing(setup, fdi) ? [...groups, WING_PARAM_GROUP] : isCavity(setup, fdi) ? [...groups, INLAY_PARAM_GROUP] : groups;
 
-/** A parameter's value in use (an unset wing parameter shows its default). */
-export const paramValue = (params: DesignParams, key: keyof DesignParams): number => params[key] ?? WING_PARAM_DEFAULTS[key] ?? Number.NaN;
+/** A parameter's value in use (an unset wing or inlay parameter shows its default). */
+export const paramValue = (params: DesignParams, key: keyof DesignParams): number => params[key] ?? WING_PARAM_DEFAULTS[key] ?? INLAY_PARAM_DEFAULTS[key] ?? Number.NaN;
 
-/** The step label for a unit: a wing's margin is its outline. */
+/** The step label for a unit: a wing's margin is its outline, an inlay's or onlay's the cavity margin. */
 export const stepLabelFor = (setup: Pick<CaseSetup, 'teeth'>, fdi: number, id: StepId, label: string): string =>
-  isWing(setup, fdi) && id === 'margin' ? 'Wing outline' : label;
+  id !== 'margin' ? label : isWing(setup, fdi) ? 'Wing outline' : isCavity(setup, fdi) ? 'Cavity margin' : label;
 
-/** What a unit is, in a word: crown, pontic or wing. */
-export const unitName = (setup: Pick<CaseSetup, 'teeth'>, fdi: number): string => (isWing(setup, fdi) ? 'wing' : unitKind(setup, fdi) === 'pontic' ? 'pontic' : 'crown');
+/** What a unit is, in a word: crown, pontic, wing, inlay or onlay. */
+export const unitName = (setup: Pick<CaseSetup, 'teeth'>, fdi: number): string => {
+  if (isWing(setup, fdi)) return 'wing';
+  if (isCavity(setup, fdi)) return setup.teeth.find((t) => t.fdi === fdi)!.restoration;
+  return unitKind(setup, fdi) === 'pontic' ? 'pontic' : 'crown';
+};
 
 // ---- Setup ------------------------------------------------------------------------------------------
 

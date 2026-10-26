@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   deriveBridges,
+  isCavityRestoration,
   jawOf,
   MATERIAL_PRESETS,
   RESTORATION_ROLE,
@@ -32,6 +33,9 @@ import {
   snapToVertex,
   writeBinaryStl,
   type BridgeUnitInput,
+  type InlayType,
+  type InlayUnitReport,
+  type PreopScan,
   type ToothClearance,
   type WingUnitReport,
   type ProcessedScan,
@@ -152,6 +156,8 @@ export interface BridgeCaseMetrics {
   wings?: Array<{ fdi: number } & WingUnitReport>;
   /** Reduced units: framework, veneer space, shortfall, overpress and reassembly (frameworkPipeline.ts). */
   framework?: FrameworkMetrics;
+  /** Inlays and onlays: margin fit, isthmus, library fit, and (pre-op source) the distance to the pre-op tooth. */
+  inlays?: Array<{ fdi: number; report: InlayUnitReport; preop?: { outerToPreopMm: number; preopToOuterMm: number; maxMm: number } }>;
   warnings: string[];
   checks: QaCheck[];
 }
@@ -170,6 +176,38 @@ const normalize = (a: V3): V3 => {
   const l = Math.hypot(a[0], a[1], a[2]) || 1;
   return [a[0] / l, a[1] / l, a[2] / l];
 };
+
+/**
+ * An inlay's outer surface against the pre-op tooth, both ways: the mean distance from its outer vertices to the
+ * pre-op scan, and from the pre-op vertices over the cavity (inside the restoration's bounds, more than 0.05 mm off
+ * the jaw scan) to the restoration; and the largest of either.
+ */
+function preopDistance(mesh: { positions: Float32Array; indices: Uint32Array }, shellStart: number, preop: PreopScan, jaw: { closestPoint(p: V3, max?: number): { distance: number } | null }) {
+  const P = mesh.positions;
+  let s1 = 0, n1 = 0, max = 0;
+  for (let v = shellStart; v < P.length / 3; v++) {
+    const d = preop.ray.closestPoint([P[v * 3]!, P[v * 3 + 1]!, P[v * 3 + 2]!], 5)?.distance ?? 5;
+    s1 += d;
+    n1++;
+    max = Math.max(max, d);
+  }
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < P.length; i += 3) for (let k = 0; k < 3; k++) [lo[k], hi[k]] = [Math.min(lo[k]!, P[i + k]!), Math.max(hi[k]!, P[i + k]!)];
+  const restoration = bvhRayCaster(createBvh({ positions: P.slice(), indices: mesh.indices.slice() }));
+  let s2 = 0, n2 = 0;
+  const Q = preop.positions;
+  for (let v = 0; v < Q.length / 3; v++) {
+    const p: V3 = [Q[v * 3]!, Q[v * 3 + 1]!, Q[v * 3 + 2]!];
+    if (p.some((x, k) => x < lo[k]! || x > hi[k]!)) continue;
+    const onJaw = jaw.closestPoint(p, 0.05);
+    if (onJaw) continue;
+    const d = restoration.closestPoint(p, 5)?.distance ?? 5;
+    s2 += d;
+    n2++;
+    max = Math.max(max, d);
+  }
+  return { outerToPreopMm: n1 ? s1 / n1 : Number.NaN, preopToOuterMm: n2 ? s2 / n2 : Number.NaN, maxMm: max };
+}
 
 /** The tooth next to `fdi` on its mesial side (the other central across the midline). */
 const mesialNeighbour = (fdi: number): number => {
@@ -207,6 +245,12 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
   const bridge = bridges[0]!;
   const kindOf = (fdi: number): UnitKind => RESTORATION_ROLE[bridgeSpec.units.find((u) => u.fdi === fdi)!.restoration].role;
   const isWing = (fdi: number): boolean => bridgeSpec.units.find((u) => u.fdi === fdi)!.restoration === 'maryland-wing';
+  // Inlays and onlays: the cavity margin is always scripted (the auto margin assumes a stump); the region is filled
+  // from the click on the cavity floor.
+  const cavityOf = (fdi: number) => {
+    const u = bridgeSpec.units.find((x) => x.fdi === fdi)!;
+    return isCavityRestoration(u.restoration) ? { type: u.restoration as InlayType, source: u.outerSource ?? (spec.scans.preop ? ('preop' as const) : ('library' as const)) } : null;
+  };
 
   const prepJaw = jawOf(bridge.teeth[0]!);
   const antagonistJaw = prepJaw === 'lower' ? 'upper' : 'lower';
@@ -225,6 +269,14 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
   const smoothNormals = await time('smoothNormals', () => smoothVertexNormals(normals, analysis.graph, 3));
   const antagonist = scans[antagonistJaw];
   const antagonistRay = antagonist ? bvhRayCaster(createBvh({ positions: antagonist.mesh.positions, indices: antagonist.mesh.indices })) : undefined;
+  // Inlays: the pre-op scan (assumed aligned with the jaw scan).
+  let preopScan: (PreopScan & { sha256: string; triangles: number }) | undefined;
+  if (spec.scans.preop) {
+    const file = spec.scans.preop;
+    const pre = await time('import.preop', () => processScan(new Uint8Array(readFileSync(join(baseDir, file))), file));
+    const idx = pre.mesh.indices;
+    preopScan = { positions: pre.mesh.positions, indices: idx, ray: bvhRayCaster(createBvh({ positions: pre.mesh.positions, indices: idx })), sha256: pre.sha256, triangles: pre.stats.triangles };
+  }
 
   // Abutment frames from the clicks, then aligned to the arch curve (fit once for the jaw).
   const params = MATERIAL_PRESETS[spec.material];
@@ -253,7 +305,7 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
         const aligned = archAlignedFrame({ frame: estimate, fdi: u.fdi, curve, ray });
         const frame = { ...aligned.frame, warnings: estimate.warnings };
         // A wing's outline is always the scripted one (the outline proposer is an AI item); its region is filled from the click.
-        const auto = options.auto && !isWing(u.fdi) ? proposeMarginAnchors({ positions, indices, ray, frame }) : null;
+        const auto = options.auto && !isWing(u.fdi) && !cavityOf(u.fdi) ? proposeMarginAnchors({ positions, indices, ray, frame }) : null;
         const trace = marginFromAnchors({
           positions,
           indices,
@@ -262,7 +314,7 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
           ray,
           anchors: auto ? auto.anchors : marginAnchors,
         });
-        const seedVertex = isWing(u.fdi)
+        const seedVertex = isWing(u.fdi) || cavityOf(u.fdi)
           ? snapToVertex(positions, indices, ray, u.seed!)
           : prepSeedVertex({ positions, indices, ray, loopVertices: trace.loopVertices, occlusal: frame.occlusal });
         if (seedVertex === null) throw new Error(`Case ${spec.id}: could not find the ${u.fdi} prep top inside the margin`);
@@ -309,6 +361,12 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
       margin: a.trace.points,
       region: { ...a.region, loopVertices: a.trace.loopVertices },
       ...(isWing(fdi) ? { wing: true } : {}),
+      ...(() => {
+        const cavity = cavityOf(fdi);
+        if (!cavity) return {};
+        if (cavity.source === 'preop' && !preopScan) throw new Error(`Case ${spec.id}: inlay ${fdi} uses the pre-op scan, but the case has none`);
+        return { inlay: { ...cavity, ...(cavity.source === 'preop' ? { preop: preopScan, preopKey: preopScan!.sha256 } : {}) } };
+      })(),
       adapt: {
         occlusion: { clearanceMm: params.occlusalClearanceMm },
         ...(a.frame.mesialContact ? { mesial: contactTarget } : {}),
@@ -454,6 +512,22 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
     check(`connector.maryland.${label}`, c.heightMm >= 3 && c.widthMm >= 2, `Connector ${label}: at least 3 mm high and 2 mm wide (Maryland minimum; height, mm)`, c.heightMm, 3);
     check(`connector.toothClearance.${label}`, c.toothClearance.clashSamples === 0, `Connector ${label}: clear of the abutment tooth, at its place and along the insertion path (mm)`, c.toothClearance.minMm);
   }
+  // Inlays and onlays: the inlay gate (margin fit, isthmus, margin undercut, library fit), inlay-bridge connectors of at
+  // least 3 × 3 mm, and with the pre-op source the outer surface against the pre-op tooth (an exact reference).
+  for (const w of union.checks.inlays ?? []) for (const c of w.checks) checks.push(c);
+  const inlayUnits = result.units.filter((r) => r.design.inlay);
+  for (const c of result.connectors) {
+    if (!c.between.some((f) => inlayUnits.some((r) => r.fdi === f))) continue;
+    const label = `${c.between[0]}-${c.between[1]}`;
+    check(`connector.inlay.${label}`, c.heightMm >= 3 && c.widthMm >= 3, `Connector ${label}: at least 3 × 3 mm (inlay bridge; height, mm)`, Math.min(c.heightMm, c.widthMm), 3);
+  }
+  const preopFit: Array<{ fdi: number; outerToPreopMm: number; preopToOuterMm: number; maxMm: number }> = [];
+  for (const r of inlayUnits) {
+    if (r.design.inlay!.source !== 'preop' || !preopScan) continue;
+    const m = preopDistance(r.design.mesh, r.design.shellStart, preopScan, ray);
+    preopFit.push({ fdi: r.fdi, outerToPreopMm: round(m.outerToPreopMm, 4), preopToOuterMm: round(m.preopToOuterMm, 4), maxMm: round(m.maxMm) });
+    check(`inlay.preopMatch.${r.fdi}`, Math.max(m.outerToPreopMm, m.preopToOuterMm) <= 0.05, `${r.fdi}: outer surface matches the pre-op tooth (mean Hausdorff, both ways, mm)`, Math.max(m.outerToPreopMm, m.preopToOuterMm), 0.05);
+  }
   const framework = await time('framework', () => frameworkChecks(result, check));
 
   const metrics: BridgeCaseMetrics = {
@@ -530,6 +604,14 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
     ponticBase: union.checks.ponticBase.map((p) => ({ fdi: p.fdi, samples: p.samples, minGapMm: round(p.minGapMm, 5), meanGapMm: round(p.meanGapMm, 5), targetMm: p.targetMm })),
     ...(wings.length ? { wings } : {}),
     ...(framework ? { framework: framework.metrics } : {}),
+    ...(inlayUnits.length
+      ? {
+          inlays: inlayUnits.map((r) => {
+            const p = preopFit.find((x) => x.fdi === r.fdi);
+            return { fdi: r.fdi, report: r.design.inlay!, ...(p ? { preop: { outerToPreopMm: p.outerToPreopMm, preopToOuterMm: p.preopToOuterMm, maxMm: p.maxMm } } : {}) };
+          }),
+        }
+      : {}),
     warnings: result.warnings,
     checks,
   };

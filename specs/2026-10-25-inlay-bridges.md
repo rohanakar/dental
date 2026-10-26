@@ -1,6 +1,6 @@
 # Inlay and onlay retainers (inlay bridges)
 
-Status: **in progress** (2026-10-26). Phase A (synthetic cavities, inlay/onlay geometry) has landed; phase B (schemas, reducer, designBridge dispatch, box-limited connectors, UI, runner case) is next.
+Status: **done** (2026-10-26). Phase A (synthetic cavities, inlay/onlay geometry), phase B (inlays and onlays in the editor, inlay bridges, the runner case) and the AI items (inlay proposer, auto-design, gate, assistant) have landed. The defaults await domain QA.
 Depends on:
 - [2026-10-25-bridge-mode.md](2026-10-25-bridge-mode.md) (pontics, connectors, union)
 - [2026-10-25-maryland-bridges.md](2026-10-25-maryland-bridges.md) (the patch intaglio in `patchRetainer.ts`)
@@ -244,3 +244,126 @@ Also:
   - `buildFittingPatch` can fold where it lifts isolated wall vertices.
   - Grids with 0.12 mm rows are too coarse for the 0.05 mm margin tolerance, so the runner case must use 2000×250.
   - On the library source, the onlay's occlusion is not adapted yet.
+
+### Phase B (2026-10-26): inlays and onlays in the editor, inlay bridges, runner case
+- **Shared:**
+  - `inlay` and `onlay` types: role abutment, connecting to pontics only (`isCavityRestoration`).
+  - Optional `DesignParams.retainerMinThicknessMm` (0.5–3 mm, default 1.5).
+  - `ToothDesign.outerSource`, read with `outerSourceOf`: the pre-op scan while the case has one, unless the library
+    tooth was chosen.
+  - The `SetOuterSource` command.
+- **Reducer** (`apps/web/src/design/inlay.ts`):
+  - Switching between the crown, wing and cavity families redoes the margin.
+  - `setOuterSource` applies to cavity teeth only, and to `preop` only with a pre-op scan; a change redoes the
+    proposal.
+  - Adding, replacing or removing the pre-op scan redoes or invalidates the proposals that depend on it.
+  - A pre-op inlay cannot be moved: it follows the scan.
+  - Inlay abutments share the common axis like crowns.
+- **Geometry:**
+  - `geometry/inlayUnit.ts`: `designInlayUnit` returns an inlay as a crown-shaped unit (fitting surface first; the
+    pre-op one has the placeholder template `inlay-preop`).
+  - `geometry/inlayChecks.ts` holds the inlay gate: margin fit, isthmus, margin undercut and library fit.
+  - `designBridge` dispatches inlay units. The pre-op scan's hash is part of the unit's cache key, and the unit's
+    fitting surface is its first `fittingFaces` faces.
+  - Connectors to an inlay (`ConnectorUnit.inlay`, `INLAY_BRIDGE_CONNECTOR`):
+    - centred between the walls of the proximal box they pass through;
+    - bottom at least 0.5 mm above the box floor;
+    - at least 3 mm wide (widening only adds area);
+    - when the box floor sets the bottom and the height is short, the failure is `box-too-shallow`.
+  - The union measures inlay seating with `measureCavitySeating` and adds the inlay checks.
+  - An edentulous gap over 12 mm is a warning.
+- **Worker, tools and UI:**
+  - The worker serves single inlays and inlay bridge units from the pre-op scan's sha (`InlayRequest`). The fitting
+    patch stays in the worker.
+  - The pre-op scan starts hidden.
+  - Setup gets Inlay and Onlay. The margin step is "Cavity margin", with its own hints.
+  - Parameters get an "Inlay / onlay" group.
+  - Proposal gets "Propose inlay", the outer surface switch, and no nudges on a pre-op inlay.
+  - Adapt gets an inlay panel: source, margin fit, isthmus, library fit, fitting gap and the bridge's connectors.
+  - Finalize drops the adaptation rows and adds margin fit, isthmus, seat and library fit.
+  - The sidecar carries the outer source, margin fit, isthmus, fit, blockout, library residual and coronal height.
+  - Export all names "inlay bridge 35–37" and "36 inlay".
+- **Kinked-margin warning: kept for cavity margins.** The rule flags a line that turns more than 120° within 0.6 mm,
+  which is a tracing error on any margin. MOD box corners turn about 90° over 0.4 mm fillets and are not flagged
+  (none on the synthetic MOD margins, clicked or scripted). The warning names the restoration.
+- **Runner:**
+  - `synthetic-inlay-bridge-35-37` (pre-op source) and `synthetic-inlay-bridge-35-37-library`, at 2000 × 250, with
+    16 analytic margin anchors per cavity.
+  - `GoldenCase.scans.preop` holds the pre-op scan.
+  - New checks: connectors at least 3 × 3 mm, and `inlay.preopMatch` (outer surface to pre-op, both ways, mean
+    ≤ 0.05 mm).
+- **Test:** `pipeline.test.ts` "passes every check on the synthetic inlay bridge, and fails a connector moved out of
+  the proximal box" (110 → 111). The shared test (inlays connect to pontics, not crowns) and the reducer bridge test
+  (common axis, the source switch, no moves on a pre-op inlay) are extended.
+- **Deviation: the anatomy is built on S's fitting vertices, for both sources** (`sampledTop` in
+  `geometry/inlay.ts`).
+  - Each fitting vertex except the margin is raised along the slab direction to the anatomy over it: the pre-op
+    surface where a ray from under it leaves the pre-op tooth, or the fitted library tooth.
+  - Each is also kept at least 0.02 mm above itself.
+  - The margin and the collar stay on the scan, and `lowerCollar` drops the collar into S.
+  - Inside the margin, A and S are then the same triangles seen along the slab direction, with A at or above S on
+    every corner, so A − S meets the traced margin exactly.
+  - This replaces the phase A pre-op crop (the pre-op scan's own triangles) and the snap's lift and margin-column
+    rules. The relax stays as a guard.
+  - Why: the crossing used to land within one scan edge of the margin. Edges on steep box walls are 0.2–0.3 mm, so
+    the gap reached 0.044–0.045 mm in the runner and 0.054 mm (pre-op) and 0.068 mm (library) in the editor, where
+    the clicks land up to 0.2 mm off the cavity edge. The relax could not close it: the boolean's slivers flip, and
+    undoing it locally moves the fold elsewhere.
+  - Now every margin fit is 0.000 mm (runner, editor, both sources), and designing the two pre-op inlays takes
+    2.4 s, against 3.3 s before.
+- **Deviation:** the margin fit is measured against the margin as traced on the scan (the loop through its
+  vertices). The dense points are a resampling of it that cuts its corners by up to a scan edge.
+- **Runner numbers** (both cases 45/45; the existing cases' inputs and outputs are byte-identical to main, timings
+  aside):
+  - Margin fit 0.000 mm on 35 and 37 (455 and 550 boundary vertices).
+  - Pre-op source: outer surface to the pre-op tooth 0.0002 / 0.0015 mm mean both ways (largest 0.063 / 0.068 mm);
+    isthmus 2.437 / 2.436 mm.
+  - Library source: collar residual p95 0.135 / 0.078 mm (limit 0.15); isthmus 2.663 / 2.722 mm.
+  - Fitting gap error ≤ 0.0082 mm. Seating on the union unchanged: same samples, Δ ≤ 6 µm.
+  - Connectors measured at 9.0045 mm²: 3.39 × 3.39 and 3.31 × 3.47 mm (pre-op); 3.39 × 3.39 and 3.19 × 3.60 mm
+    (library).
+  - The union is one printable solid of genus 0 (94,738 triangles).
+- **E2E:** `tools/e2e/inlay.mjs`, 23/23.
+  - Setup, the three scans (pre-op hidden), frames on the cavity floors and pontic placement.
+  - The clicked cavity margins: every click within 0.22 mm of the analytic edge, the trace within 0.21 mm of it.
+  - The common axis; Propose bridge as one undo entry; both pre-op inlays at margin fit 0, isthmus 2.44 mm.
+  - Connectors of at least 3 × 3 mm; the switch to the library tooth and back (p95 0.12 mm, margin fit 0).
+  - Check bridge, the Finalize rows, the sidecar, Export all (ready) and a single inlay.
+  - The exported STL is one closed solid of genus 0.
+
+### AI items (2026-10-26): inlay proposer, auto-design, gate, assistant
+- **`classical.inlay-outer@1`** (`apps/web/src/ai/proposers.ts`) is the proposal step of a single inlay or onlay.
+  - It designs from the case's outer source: the pre-op scan when there is one, else the fitted library tooth.
+  - Gate: the crown gate (closed, printable, thick enough) plus the inlay checks.
+  - In a bridge the bridge proposal designs the inlays, and `bridgeGate` adds their checks from the union.
+- **Auto-design:**
+  - The automatic margin (`classical.margin-ridge`) never runs on a cavity: its ridge search assumes a stump.
+  - The cavity margin is traced by hand. Without one, the axis step says so.
+  - A run starts at the first step at or after the requested one that has a proposer for the tooth, so a single
+    inlay with its frame starts at the axis. Before, it fell back to the frame and re-proposed it.
+  - Single inlays skip the adaptation; in a bridge, the inlays get no adaptation targets.
+  - The auto-design panel says what it does for inlays and that the margin is traced first.
+- **Assistant:** the prompt explains inlays and onlays, their outer source (a pre-op one is never moved),
+  `retainerMinThicknessMm` and the 3 × 3 mm connector in the proximal box ("box too shallow").
+- **Export all** lists each wing and inlay check once (the unit rows), not again from the gate.
+- **Tests** (no new ones):
+  - `qa.test.ts`: the inlay checks inside `bridgeGate` pass, then fail on a 0.068 mm margin fit, a 1.1 mm isthmus
+    and a `box-too-shallow` connector.
+  - `orchestrator.test.ts`: a single inlay with its frame starts at the axis. This fails on the old start rule.
+- **Verified on the integrated tree** (main + the AI items + this):
+  - typecheck, 111 tests, build;
+  - runner `--synthetic` 8/8;
+  - the browser tests `bridge.mjs` 34/34, `ai-bridge.mjs` 16/16, `implant.mjs` 31/31, `maryland.mjs` 16/16,
+    `anterior-export.mjs` 13/13, `framework.mjs` 22/22, `inlay.mjs` 23/23, `ai-implant.mjs` 13/13,
+    `ai-maryland.mjs` 7/7 and `ai-framework.mjs` 6/6, with no console errors.
+- **Open:**
+  - Real pre-op scans must be aligned with the jaw scan first (out of scope). A misaligned one leaves a step at the
+    margin.
+  - The anatomy is a height field along the slab direction: an outer contour that overhangs the margin seen along
+    the axis is filled straight up.
+  - Onlays from the library tooth get no occlusal adaptation.
+  - Coarse scans: on the 1000 × 500 grid (0.12 mm rows) the margins still fit exactly, but on both sources 37's
+    restoration intersects itself (7–8 triangle pairs) and the 35–36 connector gets 2.74–2.86 mm of height. So the
+    golden case stays at 2000 × 250, and real scans this coarse need a look.
+  - The assistant's metrics do not report margin fit or isthmus yet.
+  - The defaults (1.5 mm isthmus, 3 × 3 mm connectors, 0.05 mm margin fit) still await domain QA.

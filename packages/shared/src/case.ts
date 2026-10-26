@@ -52,7 +52,7 @@ export function facingSide(a: number, b: number): ProximalSide {
   return b % 10 < a % 10 ? 'mesial' : 'distal';
 }
 
-export const RestorationType = z.enum(['anatomic-crown', 'pontic', 'maryland-wing', 'implant-crown', 'reduced-crown', 'reduced-pontic']);
+export const RestorationType = z.enum(['anatomic-crown', 'pontic', 'maryland-wing', 'implant-crown', 'reduced-crown', 'reduced-pontic', 'inlay', 'onlay']);
 export type RestorationType = z.infer<typeof RestorationType>;
 
 /** What a unit is in a bridge: an abutment sits on a prep (retainer), a pontic replaces a missing tooth. */
@@ -81,7 +81,16 @@ export const RESTORATION_ROLE: Record<RestorationType, RestorationRole> = {
   'implant-crown': { role: 'abutment', connectors: true },
   'reduced-crown': { role: 'abutment', connectors: true, reduced: true },
   'reduced-pontic': { role: 'pontic', connectors: true, reduced: true },
+  /**
+   * Inlay and onlay: the missing part of a tooth in a cavity prep (specs/2026-10-25-inlay-bridges.md), single or as an
+   * inlay-bridge retainer. They share the geometry; an onlay's cavity takes in the cusps.
+   */
+  inlay: { role: 'abutment', connectors: true, connectsTo: ['pontic'] },
+  onlay: { role: 'abutment', connectors: true, connectsTo: ['pontic'] },
 };
+
+/** Inlays and onlays: a cavity margin, a patch fitting surface and an outer surface from the pre-op scan or the library. */
+export const isCavityRestoration = (restoration: RestorationType): boolean => restoration === 'inlay' || restoration === 'onlay';
 
 /** Abutments supported by an implant (not a prepared tooth). A bridge may not mix the two supports. */
 export const isImplantRestoration = (restoration: RestorationType): boolean => restoration === 'implant-crown';
@@ -153,6 +162,8 @@ export const DesignParams = z.object({
   wingThicknessMm: z.number().min(0.5).max(1.5).optional(),
   /** Maryland wings only: thickness at the outline, rising to the wing thickness within 1 mm (default 0.2 mm). */
   wingEdgeThicknessMm: z.number().min(0.05).max(0.5).optional(),
+  /** Inlays and onlays: minimum thickness over the cavity floor (the isthmus); omitted = 1.5 mm. */
+  retainerMinThicknessMm: z.number().min(0.5).max(3).optional(),
   /** Implant crowns only: bonding gap to the Ti-base; omitted = the library's. */
   tiBaseGapMm: z.number().min(0).max(0.2).optional(),
   /** Implant crowns only: minimum material around the screw channel; omitted = 0.8 mm. */

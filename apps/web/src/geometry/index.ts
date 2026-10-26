@@ -61,3 +61,5 @@ export * from './syntheticCavity';
 export * from './anatomyFit';
 export * from './faceSets';
 export * from './inlay';
+export * from './inlayUnit';
+export * from './inlayChecks';

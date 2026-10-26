@@ -6,6 +6,7 @@ import type { Viewer } from '../engine/Viewer';
 import { crownTool } from './crownTool';
 import { userEdit } from './nudge';
 import { isWing } from './wing';
+import { followsPreop } from '../design/inlay';
 
 /** Schema limit for one moveCrown command. */
 const MAX_STEP_MM = 2;
@@ -90,7 +91,8 @@ class GizmoTool {
     const frame = tooth?.frame;
     const crown = tooth?.crown;
     // A Maryland wing follows its outline: it has no pose to move.
-    const on = enabled && useGizmoStore.getState().enabled && Boolean(frame) && crown?.kind === 'template' && !isWing(doc.setup, activeFdi);
+    // A pre-op inlay follows the pre-op scan: nothing to move either.
+    const on = enabled && useGizmoStore.getState().enabled && Boolean(frame) && crown?.kind === 'template' && !isWing(doc.setup, activeFdi) && !followsPreop(doc, activeFdi);
     const key = on ? [frame, crown, activeFdi, crownTool.current()] : [];
     if (key.length === this.shown.length && key.every((x, i) => x === this.shown[i])) return;
     this.shown = key;

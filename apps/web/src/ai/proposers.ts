@@ -29,6 +29,8 @@ import { ALIGN_MIN_DEG, bridgeFramesRequest } from '../tools/frameTool';
 import { entryFor, implantCrownRequest, implantMatchCommands, implantTool, isImplantTooth } from '../tools/implantTool';
 import { PREP_MARGIN } from '../tools/marginView';
 import { isWing, wingSeed } from '../tools/wing';
+import { inlayRequestOf, isCavity } from '../tools/inlay';
+import { inlayChecks } from '../geometry/inlayChecks';
 import type { BridgeRequest, BridgeUnitView, CrownRequest, CrownResult, FrameView } from '../workers/analysisTypes';
 import { analysis } from '../workers/geometryClient';
 import type { BridgeStepArtifact } from './events';
@@ -88,6 +90,8 @@ export interface Proposer {
 
 /** The tooth is a crown on a prepared natural tooth (not an implant crown, not a Maryland wing). */
 const naturalPrep = (doc: DesignDocument, fdi: number): boolean => !isImplantTooth(doc, fdi) && !isWing(doc.setup, fdi);
+/** A crown prep (a stump): the automatic margin's ridge search assumes one, so cavity margins are traced by hand. */
+const crownPrep = (doc: DesignDocument, fdi: number): boolean => naturalPrep(doc, fdi) && !isCavity(doc.setup, fdi);
 const reducedUnit = (doc: DesignDocument, fdi: number): boolean => cutbackFor(doc, fdi) !== undefined;
 
 const v3 = (p: readonly number[]): V3 => [p[0]!, p[1]!, p[2]!];
@@ -119,7 +123,10 @@ function crownRequest(ctx: ToothContext, opts: { withPose: boolean; adapt?: Crow
   }
   const { frame, margin, axis, params, crown } = ctx.tooth;
   if (!frame || !margin || !axis) throw new Error('The crown needs a frame, a margin and an axis');
+  // An inlay or onlay: designed in its cavity from its outer source (as crownTool asks for it).
+  const inlay = inlayRequestOf(useDesignStore.getState().doc, ctx.fdi);
   return {
+    ...(inlay ? { inlay } : {}),
     jawSha: ctx.jaw.sha256,
     antagonistSha: ctx.antagonist?.sha256,
     fdi: ctx.fdi,
@@ -191,7 +198,7 @@ export const frameProposer: Proposer = {
 export const marginProposer: Proposer = {
   id: 'classical.margin-ridge@1',
   step: 'margin',
-  appliesTo: naturalPrep,
+  appliesTo: crownPrep,
   async run({ fdi }) {
     const ctx = requireContext(fdi);
     const frame = ctx.tooth.frame;
@@ -329,6 +336,7 @@ export const axisProposer: Proposer = {
   async run({ fdi }) {
     const ctx = requireContext(fdi);
     const { frame, margin } = ctx.tooth;
+    if (frame && !margin && isCavity(useDesignStore.getState().doc.setup, ctx.fdi)) throw new Error(`Trace the cavity margin of ${ctx.fdi} first: auto-design does not trace cavity margins`);
     if (!frame || !margin) throw new Error('The axis proposer needs a frame and a margin');
     const result = await analysis.axisUnlatched({ jawSha: ctx.jaw.sha256, margin: fromMarginPoints(margin.points), occlusal: v3(frame.occlusal) });
     return {
@@ -343,6 +351,7 @@ export const axisProposer: Proposer = {
 export const crownProposer: Proposer = {
   id: 'classical.template-crown@1',
   step: 'proposal',
+  appliesTo: (doc, fdi) => !isCavity(doc.setup, fdi),
   async run({ fdi }) {
     const ctx = requireContext(fdi);
     const result = await analysis.designCrownUnlatched(crownRequest(ctx, { withPose: false }));
@@ -355,6 +364,37 @@ export const crownProposer: Proposer = {
       output: { commands: [{ type: 'setCrown', fdi: ctx.fdi, crown }], artifact: crown },
       qa: [...crownGate(result, ctx.tooth.params), ...(result.implant ? implantSeatGate(result.implant) : [])],
       rationale: `Template ${result.templateId} ${placed} sized to the contacts, margin and antagonist space.${result.warnings.length ? ` ${result.warnings.join(' ')}` : ''}`,
+    };
+  },
+};
+
+/**
+ * Inlay or onlay (classical.inlay-outer@1), the proposal step of a single cavity restoration: its outer surface from
+ * the case's outer source (the pre-op scan when there is one, else the library tooth fitted to the natural surface
+ * around the cavity), snapped and subtracted in the cavity. Gated on the restoration (closed, printable) and the inlay
+ * checks: it meets the cavity margin, is thick enough over the cavity floor, seats along the axis and, from the
+ * library, the tooth fits around the cavity. In a bridge the bridge proposal designs it, and the union gate checks it.
+ */
+export const inlayOuterProposer: Proposer = {
+  id: 'classical.inlay-outer@1',
+  step: 'proposal',
+  appliesTo: (doc, fdi) => isCavity(doc.setup, fdi),
+  async run({ fdi }) {
+    const ctx = requireContext(fdi);
+    const result = await analysis.designCrownUnlatched(crownRequest(ctx, { withPose: false }));
+    const report = result.inlay;
+    if (!report) throw new Error(`${ctx.fdi} was not designed as an inlay`);
+    const crown = { kind: 'template' as const, templateId: result.templateId, pose: result.pose };
+    const name = report.type === 'onlay' ? 'Onlay' : 'Inlay';
+    const outer =
+      report.source === 'preop'
+        ? 'from the pre-op scan over the cavity'
+        : `from the library tooth ${report.library?.templateId ?? ''}, fitted to the natural surface around the cavity to ${(report.library?.residual.p95Mm ?? Number.NaN).toFixed(2)} mm (95th percentile)`;
+    return {
+      proposerId: this.id,
+      output: { commands: [{ type: 'setCrown', fdi: ctx.fdi, crown }], artifact: crown },
+      qa: [...crownGate(result, ctx.tooth.params), ...inlayChecks(ctx.fdi, report)],
+      rationale: `${name} ${outer}: it meets the cavity margin within ${report.marginFit.maxMm.toFixed(3)} mm and is ${report.isthmus.minMm.toFixed(2)} mm thick over the cavity floor.${result.warnings.length ? ` ${result.warnings.join(' ')}` : ''}`,
     };
   },
 };
@@ -482,6 +522,8 @@ const paramsOf = (doc: DesignDocument, fdi: number): ToothDesign['params'] => do
 export const adaptProposer: Proposer = {
   id: 'classical.adapt@1',
   step: 'adapt',
+  // An inlay's outer surface is its source's: a single one has nothing to adapt (a bridge adapts its other units).
+  appliesTo: (doc, fdi) => Boolean(bridgeOf(doc, fdi)) || !isCavity(doc.setup, fdi),
   async run({ fdi }) {
     const ctx = requireContext(fdi);
     const doc = useDesignStore.getState().doc;
@@ -514,8 +556,8 @@ async function adaptBridge(id: ProposerId, doc: DesignDocument, ctx: ToothContex
   for (const fdi of bridge.teeth) {
     const tooth = doc.teeth.find((t) => t.fdi === fdi)!;
     // A Maryland wing follows its outline: its space against the antagonist is a wing check (bridgeGate), not an
-    // adaptation, and it has no contacts.
-    targets[fdi] = isWing(doc.setup, fdi) ? {} : adaptTargets(tooth, connectedSides(doc, fdi), Boolean(ctx.antagonist));
+    // adaptation, and it has no contacts. An inlay's outer surface is its source's (the pre-op scan or library tooth).
+    targets[fdi] = isWing(doc.setup, fdi) || isCavity(doc.setup, fdi) ? {} : adaptTargets(tooth, connectedSides(doc, fdi), Boolean(ctx.antagonist));
     commands.push(...adaptCommands(fdi, targets[fdi]));
   }
   const artifact: BridgeStepArtifact = { units: bridge.teeth.map((fdi) => ({ fdi, artifact: targets[fdi] })), connectors: bridge.connectors };
@@ -537,6 +579,7 @@ async function adaptBridge(id: ProposerId, doc: DesignDocument, ctx: ToothContex
     rationale: [
       `Every unit adapted to the antagonist (${params.occlusalClearanceMm} mm) and, on free sides, to its natural neighbour (${params.proximalContactMm} mm). Sides joined by a connector have no contact.`,
       bridge.teeth.some((t) => isWing(doc.setup, t)) ? 'Wings follow their outline: their space to the antagonist is checked with the bridge.' : '',
+      bridge.teeth.some((t) => isCavity(doc.setup, t)) ? 'Inlays and onlays keep the outer surface of their source.' : '',
     ]
       .filter(Boolean)
       .join(' '),
@@ -782,7 +825,11 @@ export const bridgeProposalProposer: Proposer = {
     const abutments = result.units.filter((u) => u.kind === 'abutment');
     const retainers = abutments.some((u) => u.implant)
       ? 'Implant crowns placed on the gingival openings around their implants'
-      : [abutments.some((u) => u.wing) ? 'Wings derived from their outlines' : '', abutments.some((u) => !u.wing) ? 'retainers placed on their margins' : '']
+      : [
+          abutments.some((u) => u.wing) ? 'Wings derived from their outlines' : '',
+          abutments.some((u) => u.inlay) ? 'inlays filled in their cavities from their outer sources' : '',
+          abutments.some((u) => !u.wing && !u.inlay) ? 'retainers placed on their margins' : '',
+        ]
           .filter(Boolean)
           .join(', ')
           .replace(/^./, (c) => c.toUpperCase());
@@ -826,9 +873,10 @@ export const connectorsProposer: Proposer = {
 };
 
 /**
- * Single-unit auto-design order: frame → margin (a prepared tooth) or implant position (an implant crown) → axis (the
- * implant axis comes with the implant position) → crown → screw channel (implant crowns) → adaptation → cutback
- * (reduced crowns). The orchestrator keeps the proposers that apply to the tooth.
+ * Single-unit auto-design order: frame → margin (a crown prep; a cavity margin is traced by hand) or implant position
+ * (an implant crown) → axis (the implant axis comes with the implant position) → crown, or inlay / onlay → screw
+ * channel (implant crowns) → adaptation (not for an inlay) → cutback (reduced crowns). The orchestrator keeps the
+ * proposers that apply to the tooth.
  */
 export const PROPOSERS: readonly Proposer[] = [
   frameProposer,
@@ -836,6 +884,7 @@ export const PROPOSERS: readonly Proposer[] = [
   scanBodyProposer,
   axisProposer,
   crownProposer,
+  inlayOuterProposer,
   screwChannelProposer,
   adaptProposer,
   cutbackProposer,

@@ -194,6 +194,32 @@ describe('applyCommand', () => {
       angleDeg: 20,
       azimuthDeg: 270,
     });
+
+    // Inlay bridges: an inlay abutment shares the common axis like a crown abutment. Its outer surface is the library
+    // tooth until the case has a pre-op scan, then the pre-op scan: the switch redoes the proposal, and a pre-op inlay
+    // has no pose to move. setOuterSource applies to inlays and onlays only, and to the pre-op scan only when there is one.
+    const inlayTeeth = [order(35, 'anatomic-crown'), order(36, 'pontic'), order(37, 'anatomic-crown')].map((t) => (t.fdi === 35 ? { ...t, restoration: 'inlay' as const } : t));
+    doc = applyCommand(newDocument(), { type: 'setCaseSetup', setup: { patientRef: '', notes: '', teeth: inlayTeeth, connections: [[35, 36], [36, 37]] } });
+    doc = applyCommands(doc, [
+      ...[35, 37].flatMap((fdi): Command[] => [
+        { type: 'setFrame', fdi, frame },
+        { type: 'setMargin', fdi, margin },
+      ]),
+      { type: 'setAxis', fdi: 37, axis: tilted },
+      { type: 'setCrown', fdi: 35, crown },
+    ]);
+    expect(tooth(35).axis).toEqual(tilted);
+    expect(() => applyCommand(doc, { type: 'setOuterSource', fdi: 37, source: 'library' })).toThrow(CommandError);
+    expect(() => applyCommand(doc, { type: 'setOuterSource', fdi: 35, source: 'preop' })).toThrow(CommandError);
+    expect(applyCommand(doc, { type: 'moveCrown', fdi: 35, direction: 'buccal', mm: 0.1 }).teeth.find((t) => t.fdi === 35)!.crown).not.toEqual(crown);
+    doc = applyCommand(doc, { type: 'addScan', scan: scan('preop') });
+    expect(tooth(35)).not.toHaveProperty('crown');
+    expect(tooth(35).steps.proposal).toBe('pending');
+    doc = applyCommand(doc, { type: 'setCrown', fdi: 35, crown });
+    expect(() => applyCommand(doc, { type: 'moveCrown', fdi: 35, direction: 'buccal', mm: 0.1 })).toThrow(CommandError);
+    doc = applyCommand(doc, { type: 'setOuterSource', fdi: 35, source: 'library' });
+    expect(tooth(35)).not.toHaveProperty('crown');
+    expect(tooth(35).outerSource).toBe('library');
   });
 
   it('never mutates its input', () => {

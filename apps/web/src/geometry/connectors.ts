@@ -39,6 +39,14 @@ import { signedIntaglioDistance, type IntaglioSurface } from './thickness';
  * measured over the part of the end inside the wing; the rest of the
  * connector must clear the natural tooth by the cement gap, at its place and
  * along the insertion path ('tooth-clash').
+ *
+ * Inlays and onlays (ConnectorUnit.inlay): the connector sits in the proximal
+ * box facing the other unit, centred between its walls; its bottom is also at least
+ * boxFloorClearanceMm above the box's gingival floor (the lowest fitting
+ * point within INLAY_BOX_BAND_MM of the side facing the other unit); when
+ * that floor sets the bottom and the height is short, it fails with
+ * 'box-too-shallow'. Its width is at least minWidthMm (3 mm for inlay
+ * bridges): a narrower section is widened, which only adds area.
  */
 
 export const CONNECTOR_HYGIENE_MM = 1.0;
@@ -71,6 +79,8 @@ const FIT_CLEARANCE_TOLERANCE_MM = 1e-4;
 const FIT_SEARCH_MM = 5;
 /** Smallest cross-section dimension of the generated tube (a failed connector still gets a visible mesh). */
 const MIN_TUBE_MM = 0.5;
+/** An inlay's proximal box: its fitting surface within this distance of the side facing the other unit. */
+export const INLAY_BOX_BAND_MM = 2;
 
 const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -107,6 +117,11 @@ export interface ConnectorUnit {
    * connector must clear the tooth (toothClearance): by the cement gap, and along the insertion path.
    */
   wing?: { maxSinkMm: number; cementGapMm: number };
+  /**
+   * An inlay or onlay: the connector sits in the proximal box, at least `boxFloorClearanceMm` above its gingival
+   * floor, and is at least `minWidthMm` wide.
+   */
+  inlay?: { boxFloorClearanceMm: number; minWidthMm: number };
 }
 
 export interface ConnectorInput {
@@ -133,9 +148,10 @@ export interface ConnectorInput {
  * 'insufficient-height': less room than the minimum height; 'too-wide': wider than CONNECTOR_MAX_WIDTH_FRACTION of
  * the narrower unit; 'fit-clearance': an end closer than CONNECTOR_FIT_CLEARANCE_MM to its unit's fitting surface;
  * 'tooth-clash': a connector to a Maryland wing hits the natural tooth, or passes it closer than the cement gap,
- * where it is not inside the wing, at its place or along the insertion path.
+ * where it is not inside the wing, at its place or along the insertion path; 'box-too-shallow': less room than the
+ * minimum height because an inlay's proximal box floor sets the bottom.
  */
-export type ConnectorFailureCode = 'insufficient-height' | 'too-wide' | 'fit-clearance' | 'tooth-clash';
+export type ConnectorFailureCode = 'insufficient-height' | 'box-too-shallow' | 'too-wide' | 'fit-clearance' | 'tooth-clash';
 
 export interface ConnectorFailure {
   code: ConnectorFailureCode;
@@ -180,6 +196,28 @@ export interface ConnectorGeometry {
   toothClearance?: ToothClearance;
   failures: ConnectorFailure[];
   warnings: string[];
+}
+
+/**
+ * An inlay's proximal box toward `dir` (its fitting surface within INLAY_BOX_BAND_MM of the side facing `dir`): the
+ * floor (its lowest point along `axis`) and the middle of its walls along `widthDir`.
+ */
+function proximalBox(unit: ConnectorUnit, dir: V3, axis: V3, widthDir: V3): { floor: number; middle: number } {
+  const P = unit.mesh.positions;
+  let max = -Infinity;
+  for (let v = 0; v < unit.shellStart; v++) max = Math.max(max, dot(pointAt(P, v), dir));
+  let floor = Infinity;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let v = 0; v < unit.shellStart; v++) {
+    const p = pointAt(P, v);
+    if (dot(p, dir) < max - INLAY_BOX_BAND_MM) continue;
+    floor = Math.min(floor, dot(p, axis));
+    const w = dot(p, widthDir);
+    lo = Math.min(lo, w);
+    hi = Math.max(hi, w);
+  }
+  return { floor, middle: (lo + hi) / 2 };
 }
 
 /** The unit's facing area toward `dir`: the mean of its shell points near the extreme, and the marginal ridge height there. */
@@ -303,6 +341,11 @@ export function designConnector(input: ConnectorInput): ConnectorGeometry {
   // there, lingual of the contact area); along the line it stays between the units.
   const wingPart = a.wing ? proximalPart(a, direction) : b.wing ? proximalPart(b, scale(direction, -1)) : null;
   if (wingPart) auto = add(auto, reject(sub(wingPart, auto), direction));
+  // An inlay: the section is centred bucco-lingually on the proximal box it passes through.
+  const boxes = ([[a, direction], [b, scale(direction, -1)]] as Array<[ConnectorUnit, V3]>)
+    .filter(([unit]) => unit.inlay)
+    .map(([unit, dir]) => ({ unit, box: proximalBox(unit, dir, axis, widthDir) }));
+  if (boxes.length) auto = add(auto, scale(widthDir, boxes.reduce((s, x) => s + x.box.middle, 0) / boxes.length - dot(auto, widthDir)));
   const c0 = add(auto, add(scale(widthDir, input.buccalMm), scale(axis, input.occlusalMm)));
 
   // Available height on the connector's vertical line.
@@ -315,6 +358,11 @@ export function designConnector(input: ConnectorInput): ConnectorGeometry {
     bottom = -Infinity;
   }
   const top = Math.min(fa.ridge, fb.ridge) - CONNECTOR_EMBRASURE_MM;
+  // An inlay's proximal box: the connector stays above its gingival floor.
+  let boxBottom = -Infinity;
+  for (const { unit, box } of boxes) boxBottom = Math.max(boxBottom, box.floor + unit.inlay!.boxFloorClearanceMm);
+  const boxLimited = boxBottom > bottom;
+  if (boxLimited) bottom = boxBottom;
   const lowest = Number.isFinite(bottom) ? bottom : top - 3 * minHeightMm;
   const availableMm = top - lowest;
 
@@ -323,14 +371,25 @@ export function designConnector(input: ConnectorInput): ConnectorGeometry {
   const circle = Math.sqrt((4 * area) / Math.PI);
   const heightMm = Math.min(availableMm, Math.max(circle, minHeightMm));
   const tubeHeight = Math.max(heightMm, MIN_TUBE_MM);
-  const widthMm = (4 * area) / (Math.PI * tubeHeight);
+  // An inlay bridge's connector is at least its minimum width (widening only adds area).
+  const minWidthMm = Math.max(a.inlay?.minWidthMm ?? 0, b.inlay?.minWidthMm ?? 0);
+  const widthMm = Math.max((4 * area) / (Math.PI * tubeHeight), minWidthMm);
   if (heightMm < minHeightMm - 1e-9) {
-    failures.push({
-      code: 'insufficient-height',
-      message: `Insufficient connector height (${label}): ${Math.max(0, availableMm).toFixed(2)} mm available, ${minHeightMm} mm required.`,
-      valueMm: heightMm,
-      limitMm: minHeightMm,
-    });
+    failures.push(
+      boxLimited
+        ? {
+            code: 'box-too-shallow',
+            message: `Insufficient connector height: box too shallow (${label}): ${Math.max(0, availableMm).toFixed(2)} mm between the box floor and the marginal ridge, ${minHeightMm} mm required.`,
+            valueMm: heightMm,
+            limitMm: minHeightMm,
+          }
+        : {
+            code: 'insufficient-height',
+            message: `Insufficient connector height (${label}): ${Math.max(0, availableMm).toFixed(2)} mm available, ${minHeightMm} mm required.`,
+            valueMm: heightMm,
+            limitMm: minHeightMm,
+          },
+    );
   }
   const maxWidth = CONNECTOR_MAX_WIDTH_FRACTION * Math.min(a.blMm, b.blMm);
   if (widthMm > maxWidth) {

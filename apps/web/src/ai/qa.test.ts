@@ -2,6 +2,7 @@ import type { QaCheck } from '@dcad/shared';
 import { describe, expect, it } from 'vitest';
 import type { BridgeChecks, ConnectorCheck } from '../geometry/bridgeUnion';
 import type { ConnectorFailure } from '../geometry/connectors';
+import { inlayChecks } from '../geometry/inlayChecks';
 import { wingChecks } from '../geometry/wingUnit';
 import {
   adaptGate,
@@ -51,7 +52,7 @@ describe('QA gates', () => {
     expect(sharpestTurnDeg(spiked)).toBeGreaterThan(120);
   });
 
-  it('axis, crown, adapt, implant, cutback and bridge: pass the good case, fail each defect (undercut, thin, conflict, poor fit, divergence, channel, veneer, connector, union, seating, wing)', () => {
+  it('axis, crown, adapt, implant, cutback and bridge: pass the good case, fail each defect (undercut, thin, conflict, poor fit, divergence, channel, veneer, connector, union, seating, wing, inlay)', () => {
     expect(passed(axisGate({ marginUndercutCount: 0, angleFromOcclusalDeg: 3, prepClosed: true }))).toBe(true);
     expect(passed(axisGate({ marginUndercutCount: 4, angleFromOcclusalDeg: 3, prepClosed: true }))).toBe(false);
     expect(passed(axisGate({ marginUndercutCount: 0, angleFromOcclusalDeg: 30, prepClosed: true }))).toBe(false);
@@ -128,5 +129,20 @@ describe('QA gates', () => {
     const outline = { anchors: 12, points: new Float32Array(circle(2.5, 80).flat()), regionClosed: true, areaMm2: 18.4 };
     expect(passed(wingOutlineGate(outline))).toBe(true);
     expect(failedIds(wingOutlineGate({ ...outline, regionClosed: false }))).toEqual(['wing.outline.region']);
+
+    // Inlay bridge 35i–[36]–37: the inlay checks (inlayChecks) are part of the gate; a proximal box too shallow for a
+    // 3 mm connector fails that connector.
+    const inlay = {
+      type: 'inlay' as const,
+      marginFit: { samples: 455, meanMm: 0, maxMm: 0, crossingMaxMm: 0, limitMm: 0.05, ok: true },
+      isthmus: { samples: 900, minMm: 2.44, meanMm: 2.6, at: [0, 0, 0] as V3, thresholdMm: 1.5, ok: true },
+      blockout: { ...wing.blockout },
+    };
+    const withInlay = (i: typeof inlay) => ({ ...bridge, union: { checks: { ...checks, inlays: [{ fdi: 35, checks: inlayChecks(35, i), ok: true }] } } });
+    expect(passed(bridgeGate(withInlay(inlay)))).toBe(true);
+    expect(failedIds(bridgeGate(withInlay({ ...inlay, marginFit: { ...inlay.marginFit, maxMm: 0.068, ok: false } })))).toEqual(['inlay.35.marginFit']);
+    expect(failedIds(bridgeGate(withInlay({ ...inlay, isthmus: { ...inlay.isthmus, minMm: 1.1, ok: false } })))).toEqual(['inlay.35.isthmus']);
+    const shallow: ConnectorFailure = { code: 'box-too-shallow', message: 'insufficient connector height: box too shallow', valueMm: 2.2, limitMm: 3 };
+    expect(failedIds(bridgeGate({ ...withInlay(inlay), connectors: [{ between: [35, 36], failures: [shallow] }, bridge.connectors[1]!] }))).toEqual(['bridge.connector.35-36.box-too-shallow']);
   });
 });

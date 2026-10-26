@@ -25,6 +25,8 @@ import { ReducedSwitch } from './FrameworkPanels';
 import '../bridge.css';
 import { isWing } from '../../tools/wing';
 import { WingButton } from './WingPanel';
+import { InlayButtons } from './InlayPanel';
+import { isCavity } from '../../tools/inlay';
 
 export const MATERIAL_LABEL: Record<Material, string> = {
   zirconia: 'Zirconia',
@@ -136,6 +138,7 @@ export function SetupStep() {
     const restoration = setup.teeth.find((t) => t.fdi === fdi)?.restoration ?? 'anatomic-crown';
     const implant = restoration === 'implant-crown';
     const wing = restoration === 'maryland-wing';
+    const cavity = isCavity(setup, fdi);
     // A reduced unit stays reduced when it switches between crown and pontic.
     const reduced = isReduced(restoration);
     const set = (restoration: RestorationType) =>
@@ -146,9 +149,10 @@ export function SetupStep() {
     return (
       <>
         <div className="seg" role="group" aria-label={`Restoration for ${fdi}`}>
-          <button type="button" className="btn" aria-pressed={!pontic && !implant && !wing} onClick={() => (pontic || implant || wing) && set('anatomic-crown')}>
+          <button type="button" className="btn" aria-pressed={!pontic && !implant && !wing && !cavity} onClick={() => (pontic || implant || wing || cavity) && set('anatomic-crown')}>
             Crown
           </button>
+          <InlayButtons setup={setup} fdi={fdi} commit={commit} />
           <WingButton setup={setup} fdi={fdi} commit={commit} />
           <button type="button" className="btn" aria-pressed={implant} title="Screw-retained on a Ti-base" onClick={() => !implant && set('implant-crown')}>
             Implant

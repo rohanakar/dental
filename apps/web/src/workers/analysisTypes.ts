@@ -7,6 +7,8 @@ import type { MeshValidation } from '../geometry/meshValidate';
 import type { PonticBaseGap } from '../geometry/pontic';
 import type { ToothClearance } from '../geometry/connectors';
 import type { WingUnitReport } from '../geometry/wingUnit';
+import type { InlayUnitReport } from '../geometry/inlayUnit';
+import type { InlayType, OuterSource } from '../geometry/inlay';
 import type { ScrewChannelReport } from '../geometry/implantCrown';
 import type { TiBaseGapCheck } from '../geometry/tiBase';
 
@@ -96,6 +98,16 @@ export interface CrownRequest {
   cutback?: Cutback;
   /** With a cutback that has overpress: also make the overpress part (loads the boolean engine). */
   overpress?: boolean;
+  /** Inlays and onlays: snap and subtract in the cavity (designInlayUnit; loads the boolean engine). */
+  inlay?: InlayRequest;
+}
+
+/** An inlay or onlay unit: its type and outer source (the pre-op scan is the request's preopSha). */
+export interface InlayRequest {
+  type: InlayType;
+  source: OuterSource;
+  /** The pre-op scan (pre-op source; imported like the jaws). */
+  preopSha?: string;
 }
 
 export interface AdaptConflict {
@@ -138,6 +150,8 @@ export interface CrownResult {
   implant?: ImplantResultView;
   /** A reduced unit: its framework (positions with the same indices) and the cutback report. */
   framework?: FrameworkView;
+  /** Inlays and onlays: margin fit, isthmus, fitting surface, library fit. */
+  inlay?: InlayUnitReport;
 }
 
 /** Jaw faces to draw in focus while the crown is adjusted: the prep region inside the margin. */
@@ -292,6 +306,8 @@ export interface BridgeUnitRequest {
   centre?: V3;
   /** Abutments: a Maryland wing on the outline, flood-filled from the frame origin (no pose; designWingUnit). */
   wing?: boolean;
+  /** Abutments: an inlay or onlay in the cavity inside the margin (designInlayUnit; a pre-op one has no pose). */
+  inlay?: InlayRequest;
   /** Implant crowns: the Ti-base and the scan-body pose, instead of a margin. */
   implant?: ImplantUnitRequest;
   /** Reduced units: the cutback; their frameworks join the connectors and the union. */

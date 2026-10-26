@@ -153,6 +153,10 @@ export const ScrewChannel = z.object({
 });
 export type ScrewChannel = z.infer<typeof ScrewChannel>;
 
+/** Where an inlay's or onlay's outer surface comes from: the pre-op scan (exact) or the library tooth fitted to the tooth. */
+export const OuterSource = z.enum(['preop', 'library']);
+export type OuterSource = z.infer<typeof OuterSource>;
+
 export const ToothDesign = z.object({
   fdi: Fdi,
   params: DesignParams,
@@ -167,8 +171,19 @@ export const ToothDesign = z.object({
   steps: z.record(StepId, StepStatus),
   /** Reduced units: how the anatomy is cut back (omitted = CUTBACK_DEFAULTS). Kept when the unit switches back to anatomic. */
   cutback: Cutback.optional(),
+  /** Inlays and onlays: the outer surface's chosen source (outerSourceOf: without a pre-op scan it is the library). */
+  outerSource: OuterSource.optional(),
 });
 export type ToothDesign = z.infer<typeof ToothDesign>;
+
+/**
+ * The outer source an inlay or onlay uses: the pre-op scan while the case has one, unless the library tooth was chosen;
+ * the library tooth without a pre-op scan (whatever was chosen).
+ */
+export function outerSourceOf(doc: { scans: ReadonlyArray<{ role: ScanRole }>; teeth: ReadonlyArray<Pick<ToothDesign, 'fdi' | 'outerSource'>> }, fdi: number): OuterSource {
+  const preop = doc.scans.some((s) => s.role === 'preop');
+  return preop && doc.teeth.find((t) => t.fdi === fdi)?.outerSource !== 'library' ? 'preop' : 'library';
+}
 
 /** Connector cross-section limits; the material minimum (minConnectorAreaMm2) is enforced by the reducer. */
 export const ConnectorArea = z.number().min(1).max(50);

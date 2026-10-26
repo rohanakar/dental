@@ -1,4 +1,4 @@
-import type { Pose } from '@dcad/shared';
+import type { DesignParams, OuterSource, Pose, RestorationType } from '@dcad/shared';
 import { fitAnatomy, type AnatomyResidual } from './anatomyFit';
 import { CONNECTOR_EMBRASURE_MM, CONNECTOR_HYGIENE_MM, type ConnectorUnit } from './connectors';
 import type { CrownFrame } from './crown';
@@ -10,7 +10,7 @@ import { differenceMeshes, meshBooleanReady } from './meshBoolean';
 import { buildFittingPatch, fittingSurfaceOf, measurePatchGap, validatePatchSolid, type FittingPatch, type PatchGapCheck, type PatchJaw, type PatchRegionInput, type PatchValidation } from './patchRetainer';
 import type { V3 } from './pca';
 import { bvhRayCaster, createBvh, type RayCaster } from './raycast';
-import { extentAlong, extractFaces, fillHoles, fixPinches, largestComponent, PolylineIndex, removeEars, slabDirection, slabSolid, type OpenSurface } from './faceSets';
+import { extentAlong, extractFaces, fillHoles, fixPinches, PolylineIndex, removeEars, slabDirection, slabSolid, type OpenSurface } from './faceSets';
 
 /**
  * Inlay and onlay restorations (single, or retainers of an inlay bridge):
@@ -26,21 +26,24 @@ import { extentAlong, extractFaces, fillHoles, fixPinches, largestComponent, Pol
  *    moved along −up and walls between them. `up` is the direction within
  *    15° of the axis in which that surface is a height field
  *    (slabDirection), so the slab never intersects itself.
- * 3. Anatomy A, on the scan's own resolution over the cavity and a 2 mm
- *    collar: the pre-op scan (cropped by where it lies over the cavity and
- *    collar), or the library tooth fitted to the collar (anatomyFit.ts:
- *    least-squares pose and scale, RBF pin of the collar onto the scan)
- *    sampled straight above every cavity vertex. Closed as a slab like S.
- * 4. Snap (shapeAnatomy): A's vertices on the natural surface outside the
- *    margin go 0.1 mm inside S, and 1 mm right next to the margin, so A
- *    drops through S on the margin; vertices on the margin stay on it;
- *    vertices next to the cavity floor are kept just above the fitting
- *    surface. Every move is along `up`, which keeps A a height field.
+ * 3. Anatomy A, on S's top surface's own vertices over the cavity and a
+ *    2 mm collar (sampledTop): every fitting vertex except the margin is
+ *    raised along `up` to the anatomy over it, and at least 0.02 mm above
+ *    itself (a feather edge where the margin was drawn on uncut tooth); the
+ *    margin and the collar stay on the scan. The anatomy is the pre-op scan,
+ *    or the library tooth fitted to the collar (anatomyFit.ts: least-squares
+ *    pose and scale, RBF pin of the collar onto the scan).
+ * 4. Drop (lowerCollar): A's collar goes 0.1 mm inside S, and 1 mm right
+ *    next to the margin. Inside the margin A and S are then the same
+ *    triangles seen along `up`, A at or above S on every corner, and outside
+ *    A is below S, so A crosses S exactly on the margin. Every move is along
+ *    `up`, which keeps A a height field; A is closed as a slab like S.
  * 5. Subtract: restoration = A − S (manifold-3d). The component with the
  *    most fitting surface is kept; other pieces are dropped and reported.
- * 6. Relax: the restoration's boundary (where A crosses S) moves onto the
- *    drawn margin, the vertices around it following a smooth field; the
- *    move is undone if it would add a self-intersection.
+ * 6. Relax (a guard; step 4 puts the crossing on the margin): boundary
+ *    vertices off the drawn margin move onto it, the vertices around them
+ *    following a smooth field; the move is undone if it would add a
+ *    self-intersection.
  *
  * Checks: closed and printable; margin fit (boundary within 0.05 mm of the
  * drawn margin); isthmus thickness (fitting surface → outer surface along
@@ -51,18 +54,18 @@ import { extentAlong, extractFaces, fillHoles, fixPinches, largestComponent, Pol
  * gap). inlayConnectorLimit gives the connector height the proximal box
  * leaves.
  *
- * Local types until phase B moves them into the shared schemas: the
- * restoration types `inlay` and `onlay` (InlayType), ToothDesign.outerSource
- * (OuterSource) and DesignParams.retainerMinThicknessMm (InlayParams).
+ * The restoration types `inlay` and `onlay` (InlayType), ToothDesign.outerSource
+ * (OuterSource) and DesignParams.retainerMinThicknessMm (InlayParams) are the
+ * shared schemas'.
  */
 
-/** Restoration types (phase B: RestorationType 'inlay' | 'onlay', role abutment). They share the geometry. */
-export type InlayType = 'inlay' | 'onlay';
-/** Where the outer surface comes from (phase B: ToothDesign.outerSource). */
-export type OuterSource = 'preop' | 'library';
+/** The cavity restoration types (role abutment). They share the geometry. */
+export type InlayType = Extract<RestorationType, 'inlay' | 'onlay'>;
+/** Where the outer surface comes from (ToothDesign.outerSource). */
+export type { OuterSource };
 
-/** The design parameters an inlay uses: the cement gap ramp, plus the minimum isthmus thickness (phase B: DesignParams.retainerMinThicknessMm). */
-export type InlayParams = GapParams & { retainerMinThicknessMm?: number };
+/** The design parameters an inlay uses: the cement gap ramp, plus the minimum isthmus thickness. */
+export type InlayParams = GapParams & Pick<DesignParams, 'retainerMinThicknessMm'>;
 
 export const INLAY_DEFAULTS = {
   /** Minimum isthmus thickness of a retainer (spec placeholder, to confirm in domain QA). */
@@ -71,8 +74,6 @@ export const INLAY_DEFAULTS = {
   collarMm: 3,
   /** Collar of the anatomy A (inside S's, so their side walls never meet). */
   anatomyCollarMm: 2,
-  /** The anatomy's vertices this close to the scan are shaped (on it, for the pre-op scan and the sampled library tooth). */
-  snapReachMm: 0.05,
   /** Outside the margin the anatomy goes this far below the scan (inside S)... */
   snapDepthMm: 0.1,
   /** ... at most this far along the slab direction on steep faces (plus nearDepthMm next to the margin). */
@@ -81,11 +82,7 @@ export const INLAY_DEFAULTS = {
   overhangMm: 0.5,
   /** ... and this deep, so it drops through S within one of its edges of the margin. */
   nearDepthMm: 1.0,
-  /** Anatomy vertices straight above the margin (within this) go just under it... */
-  marginColumnMm: 0.03,
-  /** ... this far (a vertex touching a face of S upsets the boolean; one on a vertex of S does not). */
-  marginPinDepthMm: 0.005,
-  /** Inside the margin, anatomy next to the scan is kept this far above the fitting surface (feather edge). */
+  /** Inside the margin the anatomy is kept this far above the fitting surface (feather edge on uncut tooth). */
   liftMm: 0.02,
   /** Dropped pieces thicker than this are reported (the anatomy stood out of the remaining tooth outside the margin). */
   sliverMm: 0.05,
@@ -131,7 +128,11 @@ export interface InlayInput {
   jaw: PatchJaw;
   /** The cavity region: prepRegion from a seed on the cavity floor, plus the traced margin loop. */
   region: PatchRegionInput;
-  /** The drawn margin: dense points on the scan (marginFromAnchors(...).points), closed. */
+  /**
+   * The drawn margin: dense points on the scan (marginFromAnchors(...).points), closed. The margin fit is measured
+   * against the margin as traced on the scan (the loop through its vertices that bounds the cavity region,
+   * region.loopVertices): the dense points are a resampling of it that cuts its corners by up to a scan edge.
+   */
   margin: Float32Array;
   /** Insertion axis toward the antagonist (the bridge's common axis). */
   axis: V3;
@@ -143,7 +144,7 @@ export interface InlayInput {
 export interface InlayMarginFit {
   /** Restoration boundary vertices (where the fitting surface meets the outer surface). */
   samples: number;
-  /** Distance to the drawn margin, after relaxing. */
+  /** Distance to the traced margin (the region's loop), after relaxing. */
   meanMm: number;
   maxMm: number;
   /** Before relaxing (where A crossed S). */
@@ -211,7 +212,7 @@ export interface InlayDesign {
     source: OuterSource;
     /** Library source: the fitted pose (store with setCrown), the collar residual and whether it passes. */
     library?: { pose: Pose; templateId: string; residual: AnatomyResidual; poseRmsMm: number; iterations: number; pins: number; anchors: number; ok: boolean };
-    /** A's vertices moved inside S (outside the margin), and lifted above it (inside, next to the scan). */
+    /** A's collar vertices lowered into S, and fitting vertices kept liftMm above themselves (the anatomy lay on or under them). */
     snappedVertices: number;
     liftedVertices: number;
   };
@@ -368,32 +369,14 @@ function remainingTooth(jaw: PatchJaw, patch: FittingPatch, collarMm: number): R
 
 // ---- The anatomy ---------------------------------------------------------------------
 
-/** A vertex this close to the scan is on it (the pre-op scan where it was not cut); this close to the margin loop, on the margin. */
-const ON_SURFACE_MM = 1e-4;
-const ON_MARGIN_MM = 1e-3;
-/** A point straight below a vertex this close to a margin vertex is that vertex. */
-const ON_MARGIN_VERTEX_MM = 1e-6;
-
-interface ShapeOptions {
-  /** Vertices this close to the scan are moved. */
-  reach: number;
-  /** Outside the margin: this far below the scan (inside S). */
-  depth: number;
-  /** Inside the margin: at least this far above the fitting surface (S). */
-  lift: number;
-  /** Outside the margin and this close to it, vertices are lowered whatever their height (no overhang past the margin)... */
-  overhangMm: number;
-  /** ... and this far below the scan. */
-  nearDepth: number;
-  /** A vertex whose scan point straight below is this close to the margin goes just under that point... */
-  marginColumnMm: number;
-  /** ... this far under it (exactly onto it when it is a margin vertex). */
-  marginPinDepth: number;
-  /** The slab direction: every move is along it. */
-  up: V3;
-  /** The largest move (plus nearDepth next to the margin). */
-  maxMoveMm: number;
-}
+/**
+ * The pre-op surface over a fitting vertex is searched from this far under it (inside the tooth also where the margin
+ * was drawn on uncut tooth, whose fitting surface stands the cement gap off it), up to PREOP_RAY_MM above it.
+ */
+const PREOP_RAY_START_MM = 0.2;
+const PREOP_RAY_MM = 30;
+/** A fitting vertex this close above the anatomy is on it. */
+const ON_ANATOMY_MM = 1e-6;
 
 /** A surface with face lookups (BVH-ordered index copy) for closest points and face normals. */
 interface FaceSurface {
@@ -412,164 +395,45 @@ function faceNormal(s: Pick<FaceSurface, 'positions' | 'indices'>, f: number): V
   return normalize(cross(sub(b, a), sub(c, a)));
 }
 
-/**
- * Shape the anatomy around the margin so that it crosses the remaining
- * tooth S on the drawn margin, and only rises above S inside it. Per vertex
- * of the anatomy surface (on the scan's own vertices: the pre-op scan, or the
- * library tooth sampled onto the scan):
- * - exactly on the margin loop: left on S;
- * - straight above the margin (the scan point below along −up within
- *   marginColumnMm of it, e.g. the pre-op over a cut margin vertex): put just
- *   under that point (onto it when it is a margin vertex; a vertex touching a
- *   face of S upsets the boolean, one on a vertex of S does not);
- * - on the natural-surface side (the closest scan point outside the margin,
- *   or for a vertex beside the scan, the scan straight below it): within
- *   `reach` of the scan, `depth` below it (the snap); within `overhangMm` of
- *   the margin, `nearDepth` below it whatever its height, so the anatomy
- *   drops through S within one of its edges of the margin and never
- *   overhangs it;
- * - on the cavity side, within `reach` of the scan and over the fitting
- *   surface: lifted to `lift` above it, so the restoration reaches the margin
- *   (a feather edge where the margin was drawn on uncut tooth).
- * Heights are measured against the local face (scan or fitting surface) and
- * every move is along `up`, which keeps a height field a height field (the
- * slab stays valid where the scan has near-vertical faces).
- */
-function shapeAnatomy(positions: Float32Array, jaw: PatchJaw, fitting: FaceSurface, s: RemainingTooth, opts: ShapeOptions): { lowered: number; lifted: number } {
-  const { up } = opts;
-  const down = scale(up, -1);
-  const margin = new PolylineIndex(s.marginChain, Math.max(opts.overhangMm, opts.marginColumnMm));
-  const jawFaces = { positions: jaw.positions, indices: jaw.indices };
-  let lowered = 0, lifted = 0;
-  /** Move along up so the height over a face of normal n changes by −amount. */
-  const moveBy = (i: number, p: V3, amount: number, n: V3, cap: number) => {
-    const along = dot(n, up);
-    if (along <= 1e-3) return false;
-    positions.set(sub(p, scale(up, Math.max(-cap, Math.min(cap, amount / along)))), i * 3);
-    return true;
-  };
-  const search = Math.max(opts.reach, opts.overhangMm);
-  for (let i = 0; i < positions.length / 3; i++) {
-    const p = pointAt(positions, i);
-    const cp = jaw.ray.closestPoint(p, search);
-    if (!cp || cp.faceIndex < 0) continue;
-    const onSurface = cp.distance <= ON_SURFACE_MM;
-    const toMargin = margin.distance(cp.point);
-    if (onSurface && toMargin <= ON_MARGIN_MM) continue;
-    let inside: boolean;
-    if (onSurface) inside = s.cavityFace[cp.faceIndex] === 1;
-    else {
-      const below = jaw.ray.first(add(p, scale(up, 1e-3)), down, 20);
-      const belowToMargin = below ? margin.distance(below.point) : Infinity;
-      if (below && belowToMargin <= opts.marginColumnMm) {
-        positions.set(belowToMargin <= ON_MARGIN_VERTEX_MM ? below.point : sub(below.point, scale(up, opts.marginPinDepth)), i * 3);
-        lowered++;
-        continue;
-      }
-      inside = s.cavityFace[(below && below.faceIndex >= 0 ? below : cp).faceIndex] === 1;
-    }
-    if (inside) {
-      if (cp.distance > opts.reach) continue;
-      const cf = fitting.ray.closestPoint(p, opts.reach + 1);
-      if (!cf || cf.faceIndex < 0) continue;
-      const n = faceNormal(fitting, cf.faceIndex);
-      const offset = sub(p, cf.point);
-      const height = dot(offset, n);
-      if (height >= opts.lift) continue;
-      // Only over the surface (the closest point is the foot of the normal), not beside a crease of it.
-      if (Math.hypot(...cross(offset, n)) > 1e-3 + 0.2 * Math.abs(height)) continue;
-      if (moveBy(i, p, height - opts.lift, n, opts.maxMoveMm)) lifted++;
-      continue;
-    }
-    const near = toMargin <= opts.overhangMm;
-    if (!near && cp.distance > opts.reach) continue;
-    const n = faceNormal(jawFaces, cp.faceIndex);
-    const height = dot(sub(p, cp.point), n);
-    if (moveBy(i, p, height + (near ? opts.nearDepth : opts.depth), n, near ? opts.nearDepth + opts.maxMoveMm : opts.maxMoveMm)) lowered++;
-  }
-  return { lowered, lifted };
-}
+/** The anatomy surface A before it is closed: on S's top surface's vertices; `fixed` marks the fitting patch's. */
+type AnatomyTop = OpenSurface & { fixed: Uint8Array; lifted: number };
 
 /**
- * The pre-op scan's surface over the cavity and the anatomy collar. A pre-op
- * vertex on the natural surface (within `onSurfaceMm` of the jaw scan) is in
- * when its closest scan point is in the cavity or the collar; a vertex above
- * the cavity is in when its closest scan point is there, or the scan
- * straight under it along −axis is (next to a neighbouring tooth the closest
- * point can be on the neighbour). Holes are filled, the largest component
- * kept and pinches removed.
+ * The anatomy as a surface on S's top surface's own vertices, over the
+ * cavity and the anatomy collar: every fitting vertex except the margin is
+ * raised along `axis` to the anatomy over it (`heightAt` of its column), and
+ * kept at least `liftMm` above itself, so A stays above S inside the margin
+ * where the anatomy lies on the tooth (a margin drawn on uncut tooth, a
+ * library tooth just under the natural one) and the restoration has a
+ * feather edge there. Margin and collar vertices stay on the scan. A and S
+ * are then the same triangles seen along the axis inside the margin, with A
+ * at or above S on every corner, so A − S meets the margin exactly. Fitting
+ * vertices with no anatomy over them (or the anatomy below them) are filled
+ * harmonically between the covered ones and the margin.
  */
-function cropPreop(preop: PreopScan, jaw: PatchJaw, s: RemainingTooth, axis: V3, collarMm: number, onSurfaceMm: number, bounds: [V3, V3]): OpenSurface {
-  const P = preop.positions;
-  const nv = P.length / 3;
-  const inside = new Uint8Array(nv);
-  const [lo, hi] = bounds;
-  const faceIn = (face: number) => {
-    let worst = 0;
-    for (let k = 0; k < 3; k++) {
-      const jv = jaw.indices[face * 3 + k]!;
-      worst = Math.max(worst, s.cavityVertex[jv] ? 0 : s.collarDistance[jv]!);
-    }
-    return worst <= collarMm;
-  };
-  const down = scale(axis, -1);
-  for (let v = 0; v < nv; v++) {
-    const p = pointAt(P, v);
-    if (p[0] < lo[0] || p[1] < lo[1] || p[2] < lo[2] || p[0] > hi[0] || p[1] > hi[1] || p[2] > hi[2]) continue;
-    const cp = jaw.ray.closestPoint(p, 8);
-    if (!cp || cp.faceIndex < 0) continue;
-    if (faceIn(cp.faceIndex)) inside[v] = 1;
-    else if (cp.distance > onSurfaceMm) {
-      const hit = jaw.ray.first(add(p, scale(axis, 1e-3)), down, 20);
-      if (hit && hit.faceIndex >= 0 && faceIn(hit.faceIndex)) inside[v] = 1;
-    }
-  }
-  let faces: number[] = [];
-  for (let f = 0; f < preop.indices.length / 3; f++) {
-    if (inside[preop.indices[f * 3]!] && inside[preop.indices[f * 3 + 1]!] && inside[preop.indices[f * 3 + 2]!]) faces.push(f);
-  }
-  faces = largestComponent(preop.indices, faces, nv);
-  faces = fillHoles(P, preop.indices, faces);
-  faces = removeEars(preop.indices, nv, faces, () => true);
-  faces = fixPinches(preop.indices, nv, faces).faces;
-  const { positions, indices } = extractFaces(P, preop.indices, faces);
-  return { positions, indices };
-}
-
-/**
- * The library tooth as a "pre-op scan": S's top surface (the scan's own
- * vertices) over the cavity and the anatomy collar, with every cavity vertex
- * except the margin raised to the fitted tooth's surface straight above it
- * (along the axis). The collar and the margin stay on the scan, so the
- * library anatomy is shaped and closed exactly like a pre-op scan, at the
- * scan's resolution. Cavity vertices with no tooth surface above them (or
- * the tooth below them) are filled harmonically between the covered ones and
- * the margin.
- */
-function libraryTop(solid: IndexedMesh, s: RemainingTooth, patch: FittingPatch, axis: V3, collarMm: number): OpenSurface {
-  const ray = bvhRayCaster(createBvh({ positions: solid.positions, indices: solid.indices.slice() }));
+function sampledTop(heightAt: (column: V3) => number | null, s: RemainingTooth, patch: FittingPatch, liftMm: number, axis: V3, collarMm: number): AnatomyTop {
   const n = patch.mesh.positions.length / 3;
   const positions = s.top.positions.slice();
   const onBoundary = new Uint8Array(n);
   for (const v of patch.boundary) onBoundary[v] = 1;
-  const down = scale(axis, -1);
-  // Height along the axis per patch vertex: the tooth surface above it, or (none above) filled in below.
+  // Heights along the axis per fitting vertex: its own (base), and the anatomy over it, or (none over it) filled in.
+  const base = new Float64Array(n);
   const height = new Float64Array(n);
   const known = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
-    const tooth = pointAt(patch.tooth, i);
-    height[i] = dot(tooth, axis);
+    const fit = pointAt(positions, i);
+    base[i] = height[i] = dot(fit, axis);
     if (onBoundary[i]) {
       known[i] = 1;
       continue;
     }
-    const hit = ray.first(add(tooth, scale(axis, 30)), down, 60);
-    if (hit && dot(sub(hit.point, tooth), axis) > 0) {
-      height[i] = dot(hit.point, axis);
+    const h = heightAt(fit);
+    if (h !== null && h >= base[i]! - ON_ANATOMY_MM) {
+      height[i] = Math.max(h, base[i]!);
       known[i] = 1;
     }
   }
-  // Cavity vertices beyond the library tooth (e.g. the corners of a box floor when the tooth is shorter than the
+  // Fitting vertices beyond the anatomy (e.g. the corners of a box floor when the library tooth is shorter than the
   // natural one): a harmonic fill between the covered anatomy and the margin, never below the cavity.
   const unknown: number[] = [];
   for (let i = 0; i < n; i++) if (!known[i]) unknown.push(i);
@@ -584,16 +448,21 @@ function libraryTop(solid: IndexedMesh, s: RemainingTooth, patch: FittingPatch, 
           count++;
         }
         if (count === 0) continue;
-        const h = Math.max(sum / count, dot(pointAt(patch.tooth, i), axis));
+        const h = Math.max(sum / count, base[i]!);
         change = Math.max(change, Math.abs(h - height[i]!));
         height[i] = h;
       }
       if (change < 1e-5) break;
     }
   }
+  let lifted = 0;
   for (let i = 0; i < n; i++) {
-    const tooth = pointAt(patch.tooth, i);
-    positions.set(add(tooth, scale(axis, height[i]! - dot(tooth, axis))), i * 3);
+    if (onBoundary[i]) continue;
+    if (height[i]! < base[i]! + liftMm) {
+      height[i] = base[i]! + liftMm;
+      lifted++;
+    }
+    positions.set(add(pointAt(positions, i), scale(axis, height[i]! - base[i]!)), i * 3);
   }
   const nTop = positions.length / 3;
   const keep = new Uint8Array(nTop);
@@ -603,8 +472,46 @@ function libraryTop(solid: IndexedMesh, s: RemainingTooth, patch: FittingPatch, 
   for (let f = 0; f < I.length / 3; f++) if (keep[I[f * 3]!] && keep[I[f * 3 + 1]!] && keep[I[f * 3 + 2]!]) faces.push(f);
   faces = removeEars(I, nTop, faces, (f) => I[f * 3]! >= n || I[f * 3 + 1]! >= n || I[f * 3 + 2]! >= n);
   faces = fixPinches(I, nTop, faces).faces;
-  const { positions: p, indices } = extractFaces(positions, I, faces);
-  return { positions: p, indices };
+  const out = extractFaces(positions, I, faces);
+  return { positions: out.positions, indices: out.indices, fixed: Uint8Array.from(out.source, (v) => (v < n ? 1 : 0)), lifted };
+}
+
+/**
+ * Lower the anatomy's collar into the remaining tooth S, so that A drops
+ * through S on the margin: every collar vertex (on the scan, outside the
+ * margin; the fitting patch's vertices are `fixed`) goes `depth` below the
+ * scan, and `nearDepth` below within `overhangMm` of the margin, so the
+ * restoration never overhangs the margin. Depths are measured against the
+ * local scan face and every move is along `up` (at most `maxMoveMm`, plus
+ * nearDepth next to the margin), which keeps A a height field: its slab stays
+ * valid where the scan has near-vertical faces.
+ */
+function lowerCollar(
+  top: AnatomyTop,
+  jaw: PatchJaw,
+  s: RemainingTooth,
+  opts: { depth: number; nearDepth: number; overhangMm: number; up: V3; maxMoveMm: number },
+): number {
+  const { up } = opts;
+  const P = top.positions;
+  const margin = new PolylineIndex(s.marginChain, opts.overhangMm);
+  const jawFaces = { positions: jaw.positions, indices: jaw.indices };
+  let lowered = 0;
+  for (let i = 0; i < P.length / 3; i++) {
+    if (top.fixed[i]) continue;
+    const p = pointAt(P, i);
+    const cp = jaw.ray.closestPoint(p, opts.overhangMm);
+    if (!cp || cp.faceIndex < 0) continue;
+    const n = faceNormal(jawFaces, cp.faceIndex);
+    const along = dot(n, up);
+    if (along <= 1e-3) continue;
+    const near = margin.distance(cp.point) <= opts.overhangMm;
+    const cap = near ? opts.nearDepth + opts.maxMoveMm : opts.maxMoveMm;
+    const amount = dot(sub(p, cp.point), n) + (near ? opts.nearDepth : opts.depth);
+    P.set(sub(p, scale(up, Math.max(-cap, Math.min(cap, amount / along)))), i * 3);
+    lowered++;
+  }
+  return lowered;
 }
 
 // ---- Restoration assembly ------------------------------------------------------------
@@ -950,27 +857,28 @@ export function designInlay(input: InlayInput): InlayDesign {
   const up = slabDirection(s.top, axis);
   lap('remaining');
 
-  // 3. Anatomy (a scan-like surface over the cavity and its collar), shaped around the margin and closed as a slab.
-  let shaped = { lowered: 0, lifted: 0 };
+  // 3. Anatomy (a surface on S's top surface's vertices over the cavity and its collar), dropped through S outside the
+  // margin and closed as a slab.
   let library: InlayDesign['outer']['library'];
   const [sLo] = extentAlong([s.top.positions], up);
-  let top: OpenSurface;
+  let top: AnatomyTop;
   if (input.outer.source === 'preop') {
-    let lo: V3 = [Infinity, Infinity, Infinity], hi: V3 = [-Infinity, -Infinity, -Infinity];
-    for (let i = 0; i < s.top.positions.length / 3; i++) {
-      const p = pointAt(s.top.positions, i);
-      lo = [Math.min(lo[0], p[0]), Math.min(lo[1], p[1]), Math.min(lo[2], p[2])];
-      hi = [Math.max(hi[0], p[0]), Math.max(hi[1], p[1]), Math.max(hi[2], p[2])];
-    }
-    // The pre-op surface over the cavity rises above the cavity: allow the restored height along the axis.
-    const pad = 8;
-    const bounds: [V3, V3] = [sub(lo, [1, 1, 1]), add(hi, [1, 1, 1])];
-    for (let k = 0; k < 3; k++) {
-      if (up[k]! > 0) bounds[1][k] = bounds[1][k]! + pad * up[k]!;
-      else bounds[0][k] = bounds[0][k]! + pad * up[k]!;
-    }
-    top = cropPreop(input.outer.preop, jaw, s, up, opts.anatomyCollarMm, opts.snapReachMm, bounds);
-    lap('anatomy.crop');
+    // The pre-op tooth over each fitting vertex: where a ray from under it leaves the pre-op tooth upward (a ray that
+    // starts outside the tooth, e.g. beside a box wall, meets an underside first, as under a neighbour's contour: no
+    // anatomy there).
+    const { ray } = input.outer.preop;
+    top = sampledTop(
+      (column) => {
+        const hit = ray.first(sub(column, scale(up, PREOP_RAY_START_MM)), up, PREOP_RAY_MM);
+        return hit && dot(hit.normal, up) > 0 ? dot(hit.point, up) : null;
+      },
+      s,
+      patch,
+      opts.liftMm,
+      up,
+      opts.anatomyCollarMm,
+    );
+    lap('anatomy.sample');
   } else {
     const template = input.outer.template ?? templateForTooth(input.fdi);
     // The margin first (sampling keeps the first point per cell), then the collar nearest the margin first.
@@ -993,20 +901,23 @@ export function designInlay(input: InlayInput): InlayDesign {
         limit: opts.libraryResidualMaxMm,
       });
     }
-    top = libraryTop(fit.solid, s, patch, up, opts.anatomyCollarMm);
+    // The fitted tooth over each fitting vertex: its surface straight above it.
+    const ray = bvhRayCaster(createBvh({ positions: fit.solid.positions, indices: fit.solid.indices.slice() }));
+    const down = scale(up, -1);
+    top = sampledTop(
+      (column) => {
+        const hit = ray.first(add(column, scale(up, 30)), down, 60);
+        return hit ? dot(hit.point, up) : null;
+      },
+      s,
+      patch,
+      opts.liftMm,
+      up,
+      opts.anatomyCollarMm,
+    );
     lap('anatomy.sample');
   }
-  shaped = shapeAnatomy(top.positions, jaw, fitting, s, {
-    reach: opts.snapReachMm,
-    depth: opts.snapDepthMm,
-    lift: opts.liftMm,
-    overhangMm: opts.overhangMm,
-    nearDepth: opts.nearDepthMm,
-    marginColumnMm: opts.marginColumnMm,
-    marginPinDepth: opts.marginPinDepthMm,
-    up,
-    maxMoveMm: opts.snapMaxMoveMm,
-  });
+  const lowered = lowerCollar(top, jaw, s, { depth: opts.snapDepthMm, nearDepth: opts.nearDepthMm, overhangMm: opts.overhangMm, up, maxMoveMm: opts.snapMaxMoveMm });
   lap('anatomy.snap');
   // A's slab reaches below every point of S's top surface; S's slab reaches a millimetre further.
   const [, topHi] = extentAlong([top.positions], up);
@@ -1025,12 +936,12 @@ export function designInlay(input: InlayInput): InlayDesign {
   const { mesh, fittingVertices, fittingFaces } = classified;
 
   // 6. Relax the boundary onto the margin (fitting-side vertices stay on the remaining tooth's surface). Kept only
-  // when it adds no self-intersection: the crossing is usually within the tolerance already.
+  // when it adds no self-intersection. A guard: the anatomy's construction puts the crossing on the margin already.
   let validation = validatePatchSolid(mesh);
   lap('validate');
   const unrelaxed = mesh.positions.slice();
   const remainingRay = bvhRayCaster(createBvh({ positions: s.top.positions, indices: s.top.indices.slice() }));
-  let relax = relaxBoundary(mesh, fittingVertices, fittingFaces, input.margin, opts.relaxReachMm, remainingRay);
+  let relax = relaxBoundary(mesh, fittingVertices, fittingFaces, s.marginChain, opts.relaxReachMm, remainingRay);
   lap('relax');
   if (relax.relaxed > 0) {
     const relaxed = validatePatchSolid(mesh);
@@ -1115,7 +1026,7 @@ export function designInlay(input: InlayInput): InlayDesign {
     seating,
     marginFit,
     isthmus,
-    outer: { source, ...(library ? { library } : {}), snappedVertices: shaped.lowered, liftedVertices: shaped.lifted },
+    outer: { source, ...(library ? { library } : {}), snappedVertices: lowered, liftedVertices: top.lifted },
     pieces: { kept: classified.kept, dropped: classified.dropped },
     coronalHeightMm,
     failures,

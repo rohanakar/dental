@@ -63,7 +63,11 @@ const bridgeStub = (step: StepId, id: string, out: (fdi: number) => Proposal['ou
 vi.mock('./proposers', () => ({
   PROPOSERS: [
     stub('frame', 'classical.frame-seed@1', () => ({ type: 'setFrame', fdi: 36, frame }), () => true, () => { const { source: _s, ...f } = frame; return f; }),
-    stub('margin', 'classical.margin-ridge@1', () => ({ type: 'setMargin', fdi: 36, margin }), () => true, () => ({ anchors: margin.anchors.map((a) => a.p), points: margin.points.map((m) => m.p) })),
+    {
+      ...stub('margin', 'classical.margin-ridge@1', () => ({ type: 'setMargin', fdi: 36, margin }), () => true, () => ({ anchors: margin.anchors.map((a) => a.p), points: margin.points.map((m) => m.p) })),
+      // As the real proposer: never on a cavity (its margin is traced by hand).
+      appliesTo: (doc: DesignDocument, fdi: number) => !doc.setup.teeth.some((t) => t.fdi === fdi && t.restoration === 'inlay'),
+    },
     stub('axis', 'classical.axis-least-undercut@1', () => ({ type: 'setAxis', fdi: 36, axis }), () => behaviour.axisPasses, () => ({ direction: axis.direction })),
   ],
   BRIDGE_PROPOSERS: [
@@ -236,5 +240,19 @@ describe('auto-design orchestrator', () => {
     useEventLog.setState({ queued: [] });
     recordEditsOnSave();
     expect(useEventLog.getState().queued).toEqual([]);
+
+    // A single inlay with its frame: no proposer covers the (hand-traced) cavity margin, so the run starts at the axis.
+    const inlay = applyCommands(newDocument(), [
+      { type: 'setCaseSetup', setup: { patientRef: '', notes: '', teeth: [{ fdi: 36, restoration: 'inlay', material: 'zirconia' }], connections: [] } },
+      { type: 'setFrame', fdi: 36, frame },
+    ]);
+    useDesignStore.getState().load(inlay, 0);
+    useDesignStore.getState().setActiveFdi(36);
+    await runAutoDesign();
+    expect(useOrchestrator.getState().steps.map((s) => [s.proposerId, s.status])).toEqual([
+      ['classical.frame-seed@1', 'skipped'],
+      ['classical.axis-least-undercut@1', 'passed'],
+    ]);
+    reject();
   });
 });

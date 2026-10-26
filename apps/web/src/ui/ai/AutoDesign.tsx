@@ -8,6 +8,7 @@ import { crownTool } from '../../tools/crownTool';
 import { isImplantTooth } from '../../tools/implantTool';
 import { useToolStore } from '../../tools/toolStore';
 import { isWing } from '../../tools/wing';
+import { isCavity } from '../../tools/inlay';
 import { CheckIcon, FailIcon } from '../icons';
 import './AutoDesign.css';
 
@@ -27,6 +28,7 @@ const PROPOSER_LABEL: Record<string, string> = {
   'classical.wing-outline@1': 'Wing outline',
   'classical.screw-channel@1': 'Screw channel',
   'classical.cutback@1': 'Cutback',
+  'classical.inlay-outer@1': 'Inlay / onlay',
 };
 
 /** Rows of a bridge run that read differently from a single crown's. */
@@ -50,7 +52,9 @@ const rowLabel = (run: StepRun | undefined, bridge: boolean): string => {
 function describeRun(doc: DesignDocument, teeth: readonly number[], bridge: boolean): { what: string; click: string } {
   const implant = teeth.some((f) => isImplantTooth(doc, f));
   const wing = teeth.some((f) => isWing(doc.setup, f));
-  const prep = teeth.some((f) => unitKind(doc.setup, f) === 'abutment' && !isImplantTooth(doc, f) && !isWing(doc.setup, f));
+  // Cavities (inlays, onlays): their margins are traced by hand, and their outer surface needs no adaptation.
+  const cavity = teeth.some((f) => isCavity(doc.setup, f));
+  const prep = teeth.some((f) => unitKind(doc.setup, f) === 'abutment' && !isImplantTooth(doc, f) && !isWing(doc.setup, f) && !isCavity(doc.setup, f));
   const reduced = teeth.some((f) => cutbackFor(doc, f) !== undefined);
   const list = (xs: readonly string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}` : (xs[0] ?? ''));
   const first = [
@@ -58,16 +62,17 @@ function describeRun(doc: DesignDocument, teeth: readonly number[], bridge: bool
     ...(implant ? [bridge ? 'matches each scan body' : 'matches the scan body (its implant axis is the insertion axis)'] : []),
   ];
   const proposes = [
-    ...(implant ? [] : wing ? [prep ? "each abutment's margin or wing outline" : bridge ? 'each wing outline' : 'the wing outline'] : [bridge ? "each abutment's margin" : 'the margin']),
+    ...(implant ? [] : wing ? [prep ? "each abutment's margin or wing outline" : bridge ? 'each wing outline' : 'the wing outline'] : prep ? [bridge ? "each abutment's margin" : 'the margin'] : []),
     ...(bridge ? [implant ? 'the common path over the implant axes' : 'the common insertion axis'] : implant ? [] : ['the insertion axis']),
-    bridge ? 'every unit' : 'the crown',
+    bridge ? 'every unit' : cavity ? 'the inlay from its outer source' : 'the crown',
     ...(implant ? [bridge ? 'the screw channels' : 'the screw channel'] : []),
-    'the adaptation',
+    ...(bridge || !cavity ? ['the adaptation'] : []),
     ...(reduced ? ['the cutback for veneering'] : []),
   ];
   const lead = first.length ? `${list(first)}, then proposes ${list(proposes)}` : `proposes ${list(proposes)}`;
-  const what = `${lead[0]!.toUpperCase()}${lead.slice(1)}${bridge ? ', and checks the connectors and the merged bridge' : ''}.`;
-  return { what, click: implant ? 'one click on each scan body' : wing ? 'one click on the lingual surface of each wing abutment' : 'one click on each prep' };
+  const traced = cavity ? ` Trace ${bridge ? 'each cavity margin' : 'the cavity margin'} first: it is not proposed.` : '';
+  const what = `${lead[0]!.toUpperCase()}${lead.slice(1)}${bridge ? ', and checks the connectors and the merged bridge' : ''}.${traced}`;
+  return { what, click: implant ? 'one click on each scan body' : wing ? 'one click on the lingual surface of each wing abutment' : cavity ? 'one click on each cavity floor' : 'one click on each prep' };
 }
 
 /**
@@ -188,6 +193,7 @@ export function AutoDesign({ seed, compact = false, primary = true }: { seed?: V
   const unframed = bridge ? bridge.teeth.filter((f) => unitKind(doc.setup, f) === 'abutment' && !doc.teeth.find((t) => t.fdi === f)?.frame) : [];
   const run = describeRun(doc, bridge?.teeth ?? (tooth ? [tooth.fdi] : []), Boolean(bridge));
   const implant = Boolean(tooth && isImplantTooth(doc, tooth.fdi));
+  const unit = tooth && isCavity(doc.setup, tooth.fdi) ? doc.setup.teeth.find((t) => t.fdi === tooth.fdi)!.restoration : 'crown';
   const ready = bridge ? unframed.length === 0 : Boolean(tooth && (tooth.frame || seed));
   const canStart = ready && !running && !transaction;
   const ownDraft = pendingReview && transaction?.author === 'proposer';
@@ -200,7 +206,7 @@ export function AutoDesign({ seed, compact = false, primary = true }: { seed?: V
         <>
           <div className="row">
             <button className={`btn${primary ? ' primary' : ''}`} disabled={!canStart} onClick={() => void runAutoDesign(seed ? { seed } : {})}>
-              {running ? 'Designing…' : bridge ? 'Auto-design bridge' : 'Auto-design crown'}
+              {running ? 'Designing…' : bridge ? 'Auto-design bridge' : `Auto-design ${unit}`}
             </button>
             {bridge
               ? unframed.length > 0 && <span className="muted small">Set the tooth frame on {unframed.join(' and ')} first ({run.click}).</span>

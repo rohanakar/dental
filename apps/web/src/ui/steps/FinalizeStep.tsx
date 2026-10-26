@@ -16,6 +16,7 @@ import { IMPLANT_NEEDS, implantReadiness } from './implantReadiness';
 import { useIsImplant } from './ImplantPanel';
 import { useImplantStore } from '../../tools/implantTool';
 import { MATERIAL_LABEL } from './SetupStep';
+import { withInlayRows } from './InlayPanel';
 import './NudgePad.css';
 
 const STATUS_ICON = { pass: CheckIcon, fail: FailIcon, unknown: UnknownIcon } satisfies Record<ReadinessStatus, unknown>;
@@ -58,6 +59,7 @@ export function FinalizeStep() {
 function CrownFinalize() {
   const tooth = useDesignStore(selectActiveTooth);
   const material = useDesignStore((s) => s.doc.setup.teeth.find((t) => t.fdi === s.activeFdi)?.material);
+  const setup = useDesignStore((s) => s.doc.setup);
   const kind = useDesignStore((s) => unitKind(s.doc.setup, s.activeFdi));
   const crown = useToolStore((s) => s.crown);
   const [axis, setAxis] = useState<AxisReport | null>(null);
@@ -87,7 +89,7 @@ function CrownFinalize() {
   if (!tooth) return null;
   if (!tooth.crown) return <div className="step-body warning">Propose a crown first.</div>;
   const computed = Boolean(crown && !crown.computing && crown.validation);
-  const checks = millReadiness({
+  const rows = millReadiness({
     margin: tooth.margin?.points.map((m) => [m.p[0]!, m.p[1]!, m.p[2]!] as const),
     axis,
     crown,
@@ -97,6 +99,8 @@ function CrownFinalize() {
     neighbours: { mesial: Boolean(tooth.frame?.mesialContact), distal: Boolean(tooth.frame?.distalContact) },
     needs: implant ? IMPLANT_NEEDS : readinessNeeds(kind),
   }).concat(implant ? implantReadiness(tooth, implantView, crown?.computing) : []);
+  // An inlay or onlay: the inlay gate's rows instead of the adaptation rows.
+  const checks = withInlayRows(setup, tooth.fdi, rows, crown?.computing ? undefined : crown?.inlay);
   const items = measuring ? checks.map((i) => (i.id === 'axis' ? { ...i, detail: 'Measuring…' } : i)) : checks;
   const ready = isReady(items);
   const open = items.filter((i) => i.status !== 'pass');

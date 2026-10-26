@@ -41,6 +41,12 @@ These scripts drive the real web app in headless Chrome (Playwright, `channel: '
   `pnpm --filter @dcad/pipeline-runner run --synthetic`): setup (Wing on 11), the frame click on the palatal surface,
   the "Wing outline" live-wire, the common axis, Propose bridge, the Adapt wing panel and Check bridge, Finalize and
   the export (one closed solid of genus 0; the sidecar carries the wing). Screenshots go to `out/e2e/maryland/`.
+- `inlay.mjs` (offline): the inlay bridge 35i–[36]–37i on the golden case `synthetic-inlay-bridge-35-37` (written by
+  the same `--synthetic` run): setup (Inlay on 35 and 37), the jaw, antagonist and pre-op scans (the pre-op scan starts
+  hidden), the frame clicks on the cavity floors, the "Cavity margin" live-wire, the common axis, Propose bridge (outer
+  surfaces from the pre-op scan), the switch to the library tooth and back, the Adapt inlay panel and Check bridge,
+  Finalize, the export (one closed solid of genus 0; the sidecar carries the inlays) and Export all. Screenshots go to
+  `out/e2e/inlay/`.
 - `ai-implant.mjs` (offline): implant auto-design on `lower-implants-35-37.stl` (`fixtures:implant`). The bridge
   35i–[36]–37i one-click (a click on each scan body): the scan-body match replaces the margin, and at the default
   0.8 mm channel wall the draft stops at "Screw channel 35"; Reject, 35's wall at 0.55 mm (the synthetic teeth are

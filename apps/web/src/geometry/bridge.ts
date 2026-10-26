@@ -28,6 +28,9 @@ import { bvhRayCaster, createBvh, type RayCaster } from './raycast';
 import type { IntaglioSurface } from './thickness';
 import { findNeighbourContacts, isFrontTooth, mesialFromBuccal } from './toothFrame';
 import { designWingUnit, type WingUnitReport } from './wingUnit';
+import { designInlayUnit, type InlayUnitReport } from './inlayUnit';
+import { inlayBridgeIndications, type InlayType, type OuterSource, type PreopScan } from './inlay';
+import { fittingSurfaceOf, type FittingPatch } from './patchRetainer';
 import { implantRetainer, implantUnitWidths, unionMeshOf, channelCount } from './implantBridge';
 import type { ImplantUnit } from './implantCrown';
 import { implantToWorld } from './implantLibrary';
@@ -341,6 +344,9 @@ export function archAlignedFrame(input: { frame: CrownFrame; fdi: number; curve:
 
 // ---- Bridge design ---------------------------------------------------------------
 
+/** Connectors of an inlay or onlay retainer (spec): in the proximal box, at least 0.5 mm above its floor, 3 × 3 mm. */
+export const INLAY_BRIDGE_CONNECTOR = { boxFloorClearanceMm: 0.5, minWidthMm: 3 } as const;
+
 export interface BridgeUnitInput {
   fdi: number;
   /** The unit's role (RESTORATION_ROLE[type].role); designBridge dispatches on it. */
@@ -363,6 +369,12 @@ export interface BridgeUnitInput {
   template?: CrownTemplate;
   /** Abutments: a Maryland wing on the outline region (designWingUnit) instead of a crown; it has no pose. */
   wing?: boolean;
+  /**
+   * Abutments: an inlay or onlay in the cavity inside the margin (designInlayUnit) instead of a crown. The pre-op
+   * source has no pose; the library source's pose is the fitted (or moved) library tooth. `preopKey` identifies the
+   * pre-op scan in the cache key.
+   */
+  inlay?: { type: InlayType; source: OuterSource; preop?: PreopScan; preopKey?: string };
   /** Implant crowns (abutments): the Ti-base, the scan-body pose and the screw channel, instead of a margin. */
   implant?: ImplantUnit;
   /** Reduced units: the cutback; the framework joins the connectors and the union (framework.ts). */
@@ -395,7 +407,7 @@ export interface BridgeUnitResult {
   fdi: number;
   kind: UnitKind;
   /** Same shape as a single crown; a pontic adds `base` (its gap to the ridge), a Maryland wing `wing`. */
-  design: CrownDesign & { base?: PonticBaseGap; wing?: WingUnitReport };
+  design: CrownDesign & { base?: PonticBaseGap; wing?: WingUnitReport; inlay?: InlayUnitReport; inlayPatch?: FittingPatch };
   /** The frame it was designed in: an abutment's without contacts toward connected units, or the pontic frame. */
   frame: CrownFrame;
   /** True when no pose was given: design.pose is a proposal (the app stores it with setCrown, one batch per bridge). */
@@ -588,7 +600,9 @@ export function designBridge(input: BridgeInput): BridgeResult {
         result: { fdi: u.fdi, kind: u.kind, design: d, frame, proposed: false, connectedSides: sidesOf(u.fdi), cached: false, ms: performance.now() - t0 },
         key,
         solid: solidOf(d.mesh),
-        inner: innerSurface(d.mesh, d.intaglioVertices),
+        // An inlay's boundary vertices are among its first vertices, so faces of its outer surface can have all corners
+        // there: its fitting surface is the first fittingFaces faces instead.
+        inner: d.inlay ? fittingSurfaceOf(d.mesh, d.intaglioVertices, d.inlay.fittingFaces) : innerSurface(d.mesh, d.intaglioVertices),
         blMm: Math.abs(d.pose.scale[1]) * template.size.bl,
       };
       cache?.set(key, w);
@@ -634,6 +648,18 @@ export function designBridge(input: BridgeInput): BridgeResult {
         }
         return { ...d, pose: { ...d.pose, position: curve.pointAt((lo + hi) / 2) } };
       };
+      work.set(u.fdi, unit(u, keyParts, frame, u.pose ? null : { pose: { position: [0, 0, 0], quaternion: [0, 0, 0, 1], scale: [1, 1, 1] }, warnings: [] }, design));
+      continue;
+    }
+    if (u.inlay) {
+      // An inlay or onlay restores its cavity; the pre-op source has no pose, the library source proposes the fitted one.
+      const { type, source, preop, preopKey } = u.inlay;
+      const region = u.region;
+      const pose = source === 'library' ? u.pose : undefined;
+      const keyParts = ['inlay', ...common, u.fdi, u.params, frame, u.margin, type, source, preopKey ?? '', pose ?? null, u.template?.id ?? null];
+      const margin = u.margin;
+      const design = () =>
+        designInlayUnit({ fdi: u.fdi, type, role: 'retainer', jaw, antagonist, region, margin, axis, params: u.params, frame, source, preop, pose, template: u.template, maps: input.maps });
       work.set(u.fdi, unit(u, keyParts, frame, u.pose ? null : { pose: { position: [0, 0, 0], quaternion: [0, 0, 0, 1], scale: [1, 1, 1] }, warnings: [] }, design));
       continue;
     }
@@ -701,6 +727,8 @@ export function designBridge(input: BridgeInput): BridgeResult {
       work.set(u.fdi, unit(u, keyParts, frame, proposal, design, layout));
     }
     lap('pontics');
+    // Inlay-retained bridges: the edentulous gap (the widths the arch gives the pontics) is at most 12 mm.
+    if (units.some((u) => u.inlay)) warnings.push(...inlayBridgeIndications({ gapMm: layouts.reduce((sum, l) => sum + l.mdMm, 0), retainers: [] }));
   }
   // Reduced units: the connectors and the union use their frameworks.
   applyFrameworks(work, units, cache, warnings);
@@ -734,6 +762,8 @@ export function designBridge(input: BridgeInput): BridgeResult {
           blMm: w.blMm,
           // The end sinks only into the wing, never deeper than its thickness − 0.2 mm, and must clear the tooth.
           ...(wing ? { wing: { maxSinkMm: Math.max(0, wing.params.wingThicknessMm - 0.2), cementGapMm: wing.params.cementGapMm } } : {}),
+          // An inlay: the connector sits in the proximal box, above its floor, and is at least 3 mm wide.
+          ...(w.result.design.inlay ? { inlay: INLAY_BRIDGE_CONNECTOR } : {}),
         };
       };
       geometry = designConnector({

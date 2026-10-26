@@ -234,7 +234,8 @@ export interface BridgeGateInput {
  *   + PONTIC_BASE_MAX_EXCESS_MM;
  * - per implant crown (`bridge.channel.35.*`): its screw channel exits occlusally (lingually on anterior teeth) with
  *   at least the minimum wall, and was cut;
- * - per Maryland wing: the wing checks measured with the union (outline and surface undercut, thickness, space).
+ * - per Maryland wing: the wing checks measured with the union (outline and surface undercut, thickness, space);
+ * - per inlay or onlay: the inlay checks (margin fit, isthmus thickness, margin undercut, library fit).
  * The per-unit crown and adapt gates run separately.
  */
 export function bridgeGate(result: BridgeGateInput): QaCheck[] {
@@ -298,6 +299,7 @@ export function bridgeGate(result: BridgeGateInput): QaCheck[] {
     qa.push(...channelChecks(`bridge.channel.${fdi}`, `Implant crown ${fdi}: the screw channel`, implant.channel, cut));
   }
   for (const w of checks?.wings ?? []) qa.push(...w.checks);
+  for (const i of checks?.inlays ?? []) qa.push(...i.checks);
   return qa;
 }
 

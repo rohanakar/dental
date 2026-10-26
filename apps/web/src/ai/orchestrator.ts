@@ -1,4 +1,4 @@
-import { bridgeOf, cutbackOf, type DesignDocument, type ProposalEvent, type ProposerId, type QaCheck, type StepId, unitKind } from '@dcad/shared';
+import { bridgeOf, cutbackOf, type DesignDocument, type ProposalEvent, type ProposerId, type QaCheck, STEP_ORDER, type StepId, unitKind } from '@dcad/shared';
 import { create } from 'zustand';
 import { useDesignStore } from '../design/store';
 import { crownTool } from '../tools/crownTool';
@@ -54,6 +54,13 @@ interface PlanItem {
 }
 
 const applies = (p: Proposer, doc: DesignDocument, fdi: number): boolean => p.appliesTo?.(doc, fdi) ?? true;
+
+/**
+ * The first row of a plan at or after a step: a step none of the tooth's proposers covers (an inlay's margin, traced by
+ * hand) starts the run at the next one.
+ */
+const firstAtOrAfter = (plan: readonly PlanItem[], step: StepId): number =>
+  Math.max(0, plan.findIndex((p) => STEP_ORDER.indexOf(p.proposer.step) >= STEP_ORDER.indexOf(step)));
 
 /** Outputs of the current run, for events (accept/reject). */
 interface RunRecord {
@@ -119,7 +126,7 @@ export async function runAutoDesign(opts: { seed?: V3; from?: StepId } = {}): Pr
   const plan = PROPOSERS.filter((p) => applies(p, design.doc, tooth.fdi)).map(
     (p): PlanItem => ({ key: p.id, proposer: p, fdi: tooth.fdi, bridgeWide: false, ...(opts.seed ? { seed: opts.seed } : {}) }),
   );
-  const startIndex = Math.max(0, plan.findIndex((p) => p.proposer.step === start));
+  const startIndex = firstAtOrAfter(plan, start);
   await execute({ plan, startIndex, label: 'Auto-design', bridge: null });
 }
 
@@ -157,7 +164,7 @@ async function runBridgeAutoDesign(opts: { seed?: V3; from?: StepId }): Promise<
       plan.push({ key: p.id, proposer: p, fdi: activeFdi, bridgeWide: true });
     }
   }
-  const startIndex = opts.from ? Math.max(0, plan.findIndex((p) => p.proposer.step === opts.from)) : 0;
+  const startIndex = opts.from ? firstAtOrAfter(plan, opts.from) : 0;
   await execute({ plan, startIndex, label: `Auto-design bridge ${bridge.teeth[0]}–${bridge.teeth.at(-1)}`, bridge: [...bridge.teeth] });
 }
 

@@ -3,6 +3,7 @@ import {
   bridgeOf,
   connectedSides,
   connectionMinAreaMm2,
+  isCavityRestoration,
   isImplantRestoration,
   isReduced,
   MARYLAND_CONNECTOR,
@@ -71,6 +72,8 @@ const UNIT_NAME: Record<RestorationType, string> = {
   'implant-crown': 'implant crown',
   'reduced-crown': 'reduced crown',
   'reduced-pontic': 'reduced pontic',
+  inlay: 'inlay',
+  onlay: 'onlay',
 };
 
 /** Bridge paragraphs of the system prompt: its units, connectors and connected sides. */
@@ -85,6 +88,7 @@ function bridgeLines(bridge: BridgePromptContext, fdi: number): string[] {
     ...(has((r) => r === 'anatomic-crown' || r === 'reduced-crown') ? ['a crown sits on a prepared abutment tooth'] : []),
     ...(has(isImplantRestoration) ? ['an implant crown on an implant'] : []),
     ...(has((r) => r === 'maryland-wing') ? ['a wing is bonded to an unprepared abutment tooth'] : []),
+    ...(has(isCavityRestoration) ? ['an inlay or onlay fills a cavity prep in an abutment tooth'] : []),
   ];
   return [
     `The bridge (${bridge.material}) has ${bridge.units.length} units in arch order: ${units}. The active unit is ${fdi}.`,
@@ -125,6 +129,16 @@ function restorationLines(context: RestorationPromptContext): string[] {
       'there is insufficient space for the wing against the antagonist, explain it (it needs a minimal prep or an',
       'occlusal adjustment) instead of thinning it below the minimum. A connector to a wing must be at least',
       `${MARYLAND_CONNECTOR.minHeightMm} mm high and ${MARYLAND_CONNECTOR.minWidthMm} mm wide, and must not touch the natural tooth.`,
+    );
+  }
+  if (has(isCavityRestoration)) {
+    lines.push(
+      'Inlays and onlays fill a cavity prep (an onlay also replaces cusps): the cavity margin was traced on the',
+      'cavosurface edge, and the outer surface comes from the pre-op scan (the tooth as it was; it is never moved,',
+      'rotated or scaled) or from the library tooth fitted to the natural surface around the cavity (move, rotate and',
+      'scale adjust it). It needs no adaptation. retainerMinThicknessMm (set_param) is the minimum thickness over the',
+      'cavity floor. In an inlay bridge the connector sits in the proximal box and is at least 3 mm high and 3 mm wide;',
+      '"box too shallow" means the box leaves too little height: explain it rather than shrinking the connector.',
     );
   }
   if (has(isReduced)) {

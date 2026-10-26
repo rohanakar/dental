@@ -14,6 +14,7 @@ import { frameworkTool } from './frameworkTool';
 import { errorText, fromMarginPoints, toothContext, type ToothContext } from './context';
 import { CROWN_MAPS, crownMapLegend } from './crownLegend';
 import { implantCrownRequest } from './implantTool';
+import { inlayKey, inlayRequestOf } from './inlay';
 import { useToolStore, type LegendSpec } from './toolStore';
 
 export const CROWN_OBJECT_ID = 'crown';
@@ -43,6 +44,7 @@ export function crownRequest(ctx: ToothContext, withPose: boolean, map: CrownMap
   if (ctx.tooth.implant) return implantCrownRequest(ctx, withPose, map);
   const { frame, margin, axis, params, crown } = ctx.tooth;
   if (!frame || !margin || !axis) return null;
+  const inlay = inlayRequestOf(useDesignStore.getState().doc, ctx.fdi);
   return {
     jawSha: ctx.jaw.sha256,
     antagonistSha: ctx.antagonist?.sha256,
@@ -63,6 +65,8 @@ export function crownRequest(ctx: ToothContext, withPose: boolean, map: CrownMap
     adapt: withPose ? activeAdapt(ctx.tooth) : undefined,
     // A reduced crown is cut back on top of its anatomy (frameworkTool shows it).
     cutback: cutbackFor(useDesignStore.getState().doc, ctx.fdi),
+    // An inlay or onlay: snapped into the cavity from the pre-op scan or the library tooth.
+    ...(inlay ? { inlay } : {}),
   };
 }
 
@@ -70,7 +74,8 @@ export function crownRequest(ctx: ToothContext, withPose: boolean, map: CrownMap
 function inputsOf(ctx: ToothContext | null): unknown[] {
   const t = ctx?.tooth;
   const cutback = ctx ? cutbackFor(useDesignStore.getState().doc, ctx.fdi) : undefined;
-  return [ctx?.jaw.sha256, ctx?.antagonist?.sha256, t?.frame, t?.margin, t?.axis, t?.params, t?.crown, t?.steps.adapt, useToolStore.getState().crownMap, t?.implant, t?.screwChannel, cutback];
+  const inlay = ctx ? inlayKey(useDesignStore.getState().doc, ctx.fdi) : '';
+  return [ctx?.jaw.sha256, ctx?.antagonist?.sha256, t?.frame, t?.margin, t?.axis, t?.params, t?.crown, t?.steps.adapt, useToolStore.getState().crownMap, t?.implant, t?.screwChannel, cutback, inlay];
 }
 
 /**
@@ -295,6 +300,7 @@ class CrownTool {
           gapCheck: result.gapCheck,
           thickness: result.thickness,
           adapt: result.adapt,
+          ...(result.inlay ? { inlay: result.inlay } : {}),
           warnings: result.warnings,
           ms: result.ms,
         },

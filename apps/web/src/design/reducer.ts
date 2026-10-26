@@ -31,6 +31,7 @@ import { axisVector, crownCentre, directionVector, movePose, rotatePose, scaleIn
 import { newTooth } from './document';
 import { setCutback } from './framework';
 import { requireNaturalPrep, setImplant, setScrewChannel, switchSupport, syncEngaging } from './implant';
+import { requireMovable, retainerFamily, setOuterSource, syncPreop } from './inlay';
 
 export class CommandError extends Error {
   constructor(message: string) {
@@ -105,8 +106,9 @@ function changeKind(tooth: ToothDesign, kind: UnitKind): ToothDesign {
 }
 
 /**
- * An abutment switched between a crown and a Maryland wing: a prep margin is not a wing outline (nor the other way
- * round), so the margin and everything after it is redone, and the crown (or the wing's placeholder) goes.
+ * An abutment switched between a crown, a Maryland wing and an inlay or onlay: a prep margin is not a wing outline or
+ * a cavity margin (nor the other way round), so the margin and everything after it is redone, and the crown (or the
+ * wing's or inlay's record) goes.
  */
 function changeRetainer(tooth: ToothDesign): ToothDesign {
   const { crown: _crown, ...rest } = tooth;
@@ -147,6 +149,7 @@ function syncScanSteps(doc: DesignDocument, scans: ScanRef[], changedJaw: boolea
  * axes come from the tooth frame; the crown must be a library template.
  */
 function updateCrownPose(doc: DesignDocument, fdi: number, type: string, edit: (pose: Pose, frame: ToothFrame) => Pose): DesignDocument {
+  requireMovable(doc, fdi, type);
   return updateTooth(doc, fdi, (t) => {
     if (!t.frame) throw new CommandError(`${type}: tooth ${fdi} has no tooth frame yet`);
     if (!t.crown) throw new CommandError(`${type}: tooth ${fdi} has no crown yet`);
@@ -214,7 +217,7 @@ function setCaseSetup(doc: DesignDocument, cmd: CommandOf<'setCaseSetup'>): Desi
     }
     const kind = RESTORATION_ROLE[order.restoration].role;
     if (before && RESTORATION_ROLE[before.restoration].role !== kind) tooth = changeKind(tooth, kind);
-    else if (before && (before.restoration === 'maryland-wing') !== (order.restoration === 'maryland-wing')) tooth = changeRetainer(tooth);
+    else if (before && retainerFamily(before.restoration) !== retainerFamily(order.restoration)) tooth = changeRetainer(tooth);
     if (before) tooth = switchSupport(tooth, before.restoration, order.restoration);
     tooth = syncEngaging(tooth, bridges.some((b) => b.teeth.includes(order.fdi)));
     if (axisStale.has(order.fdi)) tooth = { ...tooth, steps: markStaleFrom(tooth.steps, 'axis') };
@@ -279,9 +282,11 @@ export function applyCommand(doc: DesignDocument, cmd: Command): DesignDocument 
     case 'setCaseSetup':
       return setCaseSetup(doc, cmd);
     case 'addScan':
-      return addScan(doc, cmd);
+      return syncPreop(doc, addScan(doc, cmd), markStaleFrom);
     case 'removeScan':
-      return removeScan(doc, cmd);
+      return syncPreop(doc, removeScan(doc, cmd), markStaleFrom);
+    case 'setOuterSource':
+      return setOuterSource(doc, cmd, markStaleFrom);
     case 'setFrame': {
       const next = updateTooth(doc, cmd.fdi, (t) => ({ ...t, frame: cmd.frame, steps: markDone(t.steps, 'frame') }));
       return invalidateBridge(next, cmd.fdi, 'frame');

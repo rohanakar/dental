@@ -33,6 +33,7 @@ import { isImplantTooth } from '../../tools/implantTool';
 import { MATERIAL_LABEL } from './SetupStep';
 import '../bridge.css';
 import { unitName, wingReadinessRows } from './WingPanel';
+import { withInlayRows } from './InlayPanel';
 import { isWing } from '../../tools/wing';
 
 /** The active tooth's bridge (stable reference from the document), or undefined for a single crown. */
@@ -608,7 +609,7 @@ export function BridgeFinalize() {
       .concat(isImplantTooth(doc, tooth.fdi) ? implantReadiness(tooth, view?.implant, computing) : [])
       .map((i) => ({ ...i, id: `${tooth.fdi}-${i.id}`, ...(i.id === 'axis' && !axes ? { detail: 'Measuring…' } : {}) }));
     items.push(...wingReadinessRows(computing ? undefined : view, tooth.margin?.points));
-    return { title: `${tooth.fdi} · ${unitName(doc.setup, tooth.fdi)}`, items };
+    return { title: `${tooth.fdi} · ${unitName(doc.setup, tooth.fdi)}`, items: withInlayRows(doc.setup, tooth.fdi, items, computing ? undefined : view?.inlay, `${tooth.fdi}-`) };
   });
 
   const checked = check.current ? check.result : null;

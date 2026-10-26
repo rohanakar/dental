@@ -18,6 +18,8 @@ import { millReadiness, readinessNeeds, type ReadinessItem } from './readiness';
 import { MATERIAL_LABEL } from './SetupStep';
 import { isWing } from '../../tools/wing';
 import { wingReadinessRows } from './WingPanel';
+import { isCavity } from '../../tools/inlay';
+import { withInlayRows } from './InlayPanel';
 
 /** A restoration of the case: a single crown, or a bridge (its units in arch order). */
 export interface Restoration {
@@ -41,11 +43,14 @@ function nameOf(doc: DesignDocument, kind: Restoration['kind'], teeth: readonly 
         ? 'implant bridge'
         : teeth.some((f) => isWing(doc.setup, f))
           ? 'Maryland bridge'
-          : 'bridge';
+          : teeth.some((f) => isCavity(doc.setup, f))
+            ? 'inlay bridge'
+            : 'bridge';
     return `${type} ${teeth[0]}–${teeth.at(-1)}`;
   }
   const fdi = teeth[0]!;
-  return `${fdi} ${isImplantTooth(doc, fdi) ? 'implant crown' : reducedUnit(doc, fdi) ? 'reduced crown' : isWing(doc.setup, fdi) ? 'wing' : 'crown'}`;
+  const cavity = isCavity(doc.setup, fdi) ? restorationOf(doc, fdi) : undefined;
+  return `${fdi} ${isImplantTooth(doc, fdi) ? 'implant crown' : reducedUnit(doc, fdi) ? 'reduced crown' : isWing(doc.setup, fdi) ? 'wing' : (cavity ?? 'crown')}`;
 }
 
 /** Every restoration of the case in arch order: each bridge once, then each tooth that is in no bridge. */
@@ -130,7 +135,7 @@ async function designCrown(doc: DesignDocument, fdi: number, ref: string, name: 
         ...constructionInfo({ doc, tooth, appVersion: APP_VERSION, result }),
         ...frameworkSidecar({ units: [{ fdi, framework }], overpress: framework?.overpress ? [framework.overpress] : [] }),
       },
-      open: openOf(readinessOf(doc, tooth, { axis, crown: result, neighbours }, result.implant)),
+      open: openOf(withInlayRows(doc.setup, fdi, readinessOf(doc, tooth, { axis, crown: result, neighbours }, result.implant), result.inlay)),
     };
   } catch (e) {
     return { ...r, skipped: `The crown could not be designed: ${errorText(e)}` };
@@ -171,9 +176,11 @@ async function designBridge(doc: DesignDocument, teeth: number[], ref: string, n
       const items = readinessOf(doc, tooth, { axis: axisOf.get(fdi) ?? null, crown: view ? unitStatus(view) : null, neighbours }, view?.implant)
         .filter((i) => !(wing && i.id === 'margin'))
         .concat(wing ? wingReadinessRows(view, tooth.margin?.points) : []);
-      open.push(...openOf(items, `${fdi}: `));
+      open.push(...openOf(withInlayRows(doc.setup, fdi, items, view?.inlay), `${fdi}: `));
     }
-    open.push(...bridgeGate(result).filter((c) => !c.passed).map((c) => ({ label: c.message, detail: gateDetail(c) })));
+    // The wing and inlay checks of the gate are the units' own rows above: listed once.
+    const unitGate = (id: string) => id.startsWith('wing.') || id.startsWith('inlay.');
+    open.push(...bridgeGate(result).filter((c) => !c.passed && !unitGate(c.id)).map((c) => ({ label: c.message, detail: gateDetail(c) })));
     if (!result.union) return { ...r, open, skipped: `The units could not be merged into one solid: ${result.unionError ?? 'unknown reason'}` };
     // With reduced units the merged solid is the framework bridge (as bridgeTool.export names it).
     const base = `${ref}-${teeth[0]}-${teeth.at(-1)}-${result.units.some((u) => u.framework) ? 'framework' : 'bridge'}`;

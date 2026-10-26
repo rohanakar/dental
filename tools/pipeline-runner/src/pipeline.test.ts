@@ -5,7 +5,7 @@ import { minConnectorAreaMm2 } from '@dcad/shared';
 import { afterAll, describe, expect, it } from 'vitest';
 import { runBridgeCase } from './bridgePipeline';
 import { writeSyntheticFrameworkCase } from './frameworkGolden';
-import { writeSyntheticBridgeCase, writeSyntheticCase, writeSyntheticMarylandCase } from './golden';
+import { writeSyntheticBridgeCase, writeSyntheticCase, writeSyntheticInlayCase, writeSyntheticMarylandCase } from './golden';
 import { runCase } from './pipeline';
 import { writeSyntheticImplantCase } from './implantGolden';
 import { runImplantBridgeCase } from './implantPipeline';
@@ -99,6 +99,34 @@ describe('pipeline runner', () => {
     // Moved 1 mm buccally, past the wing onto the tooth: a tooth clash.
     const moved = await runBridgeCase(spec, caseDir, { connectors: { '11-12': { buccalMm: 1 } } });
     expect(moved.metrics.checks.find((x) => x.id === 'connector.toothClearance.11-12')?.passed).toBe(false);
+  });
+
+  // 35i–[36]–37i: MOD inlays as retainers, with the pre-op scan as the outer surface (an exact reference), on the
+  // golden case's 2000 × 250 grid.
+  it('passes every check on the synthetic inlay bridge, and fails a connector moved out of the proximal box', async () => {
+    const caseDir = join(dir, 'inlay');
+    const spec = writeSyntheticInlayCase(caseDir, 'preop');
+    const { metrics, bridgeStl } = await runBridgeCase(spec, caseDir);
+    expect(metrics.checks.filter((c) => !c.passed)).toEqual([]);
+    expect(metrics.union).toMatchObject({ closed: true, printable: true, selfIntersections: 0, components: 1, genus: 0 });
+    // Each inlay meets the cavity margin within 0.05 mm, is at least 1.5 mm thick over the cavity floor, and its outer
+    // surface is the pre-op tooth (mean distance both ways ≤ 0.05 mm).
+    expect(metrics.inlays!.map((i) => i.fdi)).toEqual([35, 37]);
+    for (const { report, preop } of metrics.inlays!) {
+      expect(report.marginFit.maxMm).toBeLessThanOrEqual(0.05);
+      expect(report.isthmus.minMm).toBeGreaterThanOrEqual(1.5);
+      expect(Math.max(preop!.outerToPreopMm, preop!.preopToOuterMm)).toBeLessThanOrEqual(0.05);
+    }
+    // Connectors of at least 3 × 3 mm on the union; the inlays still seat on the merged solid.
+    for (const c of metrics.connectors) {
+      expect(c.measured!.heightMm).toBeGreaterThanOrEqual(3);
+      expect(c.measured!.widthMm).toBeGreaterThanOrEqual(3);
+    }
+    for (const s of metrics.seating) expect(s.ownSamples).toBe(s.samples);
+    expect(bridgeStl.byteLength).toBe(84 + 50 * metrics.union!.triangles);
+    // Moved 1 mm buccally, the connector leaves 35's proximal box through its wall.
+    const moved = await runBridgeCase(spec, caseDir, { connectors: { '35-36': { buccalMm: 1 } } });
+    expect(moved.metrics.checks.find((x) => x.id === 'connector.design.35-36')?.passed).toBe(false);
   });
 
   // The framework variant of 35–[36]–37: reduced crowns and a reduced pontic in CoCr, cut back 1.0 mm, with overpress.

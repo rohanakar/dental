@@ -9,6 +9,8 @@ import type { V3 } from './pca';
 import { bvhRayCaster, createBvh } from './raycast';
 import { countSelfIntersections } from './selfIntersect';
 import { wingChecks, wingGapCheck } from './wingUnit';
+import { inlayChecks } from './inlayChecks';
+import { inlaySeating } from './inlayUnit';
 import { implantSeatingCheck } from './implantBridge';
 
 /**
@@ -99,6 +101,8 @@ export interface BridgeChecks {
   ponticBase: PonticBaseCheck[];
   /** Maryland wings (absent in bridges without wings). */
   wings?: WingCheck[];
+  /** Inlay and onlay retainers (inlayChecks: margin fit, isthmus, margin undercut, library fit). */
+  inlays?: WingCheck[];
   /** One line per failed check. */
   failures: string[];
   ok: boolean;
@@ -176,10 +180,13 @@ export function checkBridgeUnion(input: {
       if (s) (s.ok ? seating : (failures.push(s.failure), seating)).push(s.check);
     }
     if (result.kind === 'abutment' && u.region) {
-      // A wing's seating is its uniform cement gap along the tooth normals (wingGapCheck), a crown's the intaglio gap.
+      // A wing's seating is its uniform cement gap along the tooth normals (wingGapCheck), an inlay's the cavity's gap
+      // from the tooth along its gap directions (inlaySeating), a crown's the intaglio gap.
       const onUnion = design.wing
         ? wingGapCheck({ jaw, region: u.region, gapMm: design.wing.params.cementGapMm, surface: unionRay })
-        : measureIntaglioGap({
+        : design.inlayPatch
+          ? inlaySeating({ inlayPatch: design.inlayPatch }, unionRay)
+          : measureIntaglioGap({
             positions: jaw.positions,
             normals: jaw.smoothNormals,
             vertexMask: u.region.vertexMask,
@@ -242,13 +249,29 @@ export function checkBridgeUnion(input: {
     wings.push({ fdi: result.fdi, checks, ok: checks.every((c) => c.passed) });
   }
 
+  const inlays: WingCheck[] = [];
+  for (const { result } of input.units) {
+    const inlay = result.design.inlay;
+    if (!inlay) continue;
+    const checks = inlayChecks(result.fdi, inlay);
+    for (const c of checks) if (!c.passed) failures.push(`${c.message}${c.value !== undefined ? `: ${c.value}` : ''}.`);
+    inlays.push({ fdi: result.fdi, checks, ok: checks.every((c) => c.passed) });
+  }
+
   return {
     union: solid,
     connectors,
     seating,
     ponticBase,
     ...(wings.length ? { wings } : {}),
+    ...(inlays.length ? { inlays } : {}),
     failures,
-    ok: solid.ok && connectors.every((c) => c.ok) && seating.every((s) => s.ok) && ponticBase.every((p) => p.ok) && wings.every((w) => w.ok),
+    ok:
+      solid.ok &&
+      connectors.every((c) => c.ok) &&
+      seating.every((s) => s.ok) &&
+      ponticBase.every((p) => p.ok) &&
+      wings.every((w) => w.ok) &&
+      inlays.every((w) => w.ok),
   };
 }

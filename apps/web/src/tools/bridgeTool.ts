@@ -30,6 +30,7 @@ import { CROWN_MAPS, crownMapLegend } from './crownLegend';
 import { implantMissing, implantRequestOf, isImplantTooth } from './implantTool';
 import { type CrownStatus, type LegendSpec, useToolStore } from './toolStore';
 import { isWing } from './wing';
+import { inlayKey, inlayRequestOf } from './inlay';
 
 /** One designed bridge: every unit and connector, plus the union and its checks when asked for (worker designBridge). */
 export type BridgeResult = BridgeResultView;
@@ -144,6 +145,7 @@ function buildRequest(ctx: BridgeContext, opts: BridgeRequestOptions): BridgeReq
     // A pontic placed by a click on the ridge (a manual frame) keeps that centre in every proposal; otherwise the
     // proposal is centred by the layout on the retainer shells and the stored frame gives only the axes.
     const centre = kind === 'pontic' && t.frame?.source === 'manual' ? v3(t.frame.origin) : undefined;
+    const inlay = kind === 'pontic' ? undefined : inlayRequestOf(doc, t.fdi);
     return {
       fdi: t.fdi,
       kind,
@@ -152,6 +154,7 @@ function buildRequest(ctx: BridgeContext, opts: BridgeRequestOptions): BridgeReq
       ...(centre ? { centre } : {}),
       ...(kind !== 'pontic' && t.margin ? { margin: fromMarginPoints(t.margin.points) } : {}),
       ...(isWing(doc.setup, t.fdi) ? { wing: true } : {}),
+      ...(inlay ? { inlay } : {}),
       ...(t.implant ? { implant: implantRequestOf(t) } : {}),
       ...(opts.withPoses !== false && crown ? { pose: crown.pose } : {}),
       ...(adapt ? { adapt } : {}),
@@ -209,7 +212,7 @@ function inputsOf(ctx: BridgeContext, map: string): unknown[] {
     ctx.antagonistSha,
     ctx.bridge,
     materialOf(ctx),
-    ...ctx.units.flatMap((t) => [t.frame, t.margin, t.axis, t.params, t.crown, t.steps.adapt, t.implant, t.screwChannel, cutbackFor(ctx.doc, t.fdi)]),
+    ...ctx.units.flatMap((t) => [t.frame, t.margin, t.axis, t.params, t.crown, t.steps.adapt, t.implant, t.screwChannel, cutbackFor(ctx.doc, t.fdi), inlayKey(ctx.doc, t.fdi)]),
     map,
   ];
 }
@@ -225,6 +228,7 @@ export function unitStatus(unit: CrownResult, computing = false): CrownStatus {
     gapCheck: unit.gapCheck,
     thickness: unit.thickness,
     adapt: unit.adapt,
+    ...(unit.inlay ? { inlay: unit.inlay } : {}),
     warnings: unit.warnings,
     ms: unit.ms,
   };

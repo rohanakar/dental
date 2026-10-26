@@ -1,7 +1,18 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Cutback, Fdi, FdiPair, jawOf, Material, RestorationType, Vec3 } from '@dcad/shared';
-import { bvhRayCaster, createBvh, syntheticArch, syntheticPrepMargin, syntheticPrepSeed, syntheticWingOutline, writeBinaryStl } from '@dcad/web/geometry';
+import { Cutback, Fdi, FdiPair, jawOf, Material, OuterSource, RestorationType, Vec3 } from '@dcad/shared';
+import {
+  bvhRayCaster,
+  createBvh,
+  syntheticArch,
+  syntheticCavityMargin,
+  syntheticCavitySeed,
+  syntheticPreop,
+  syntheticPrepMargin,
+  syntheticPrepSeed,
+  syntheticWingOutline,
+  writeBinaryStl,
+} from '@dcad/web/geometry';
 import { z } from 'zod';
 
 /** One unit of a golden bridge. Abutments carry the scripted clicks; pontics need none (they are laid out on the arch). */
@@ -15,6 +26,8 @@ export const GoldenBridgeUnit = z.object({
   marginAnchors: z.array(Vec3).min(3).optional(),
   /** Abutments: reference margin (closed polyline). */
   marginRing: z.array(Vec3).min(3).optional(),
+  /** Inlays and onlays: where the outer surface comes from (omitted = the pre-op scan when the case has one). */
+  outerSource: OuterSource.optional(),
 });
 export type GoldenBridgeUnit = z.infer<typeof GoldenBridgeUnit>;
 
@@ -28,7 +41,7 @@ export const GoldenCase = z.object({
   fdi: Fdi,
   material: Material.default('zirconia'),
   /** Scan file names relative to the case directory (STL or PLY). The prep jaw must be present. */
-  scans: z.object({ upper: z.string().optional(), lower: z.string().optional() }),
+  scans: z.object({ upper: z.string().optional(), lower: z.string().optional(), /** Inlays: the pre-op scan of the prep jaw. */ preop: z.string().optional() }),
   /** "Click the prep" point for the tooth frame. */
   seed: Vec3,
   /** Margin anchor clicks, in order around the prep. */
@@ -215,6 +228,74 @@ export function writeSyntheticMarylandCase(dir: string, options: { along?: numbe
     seed: wing.seed,
     marginAnchors: wing.marginAnchors,
     bridge: { units: [wing, { fdi: m.pontic, restoration: 'pontic' }], connections: [[m.wing, m.pontic]] },
+  };
+  writeFileSync(join(dir, 'case.json'), `${JSON.stringify(spec, null, 2)}\n`);
+  return GoldenCase.parse(spec);
+}
+
+/**
+ * The synthetic inlay bridge: lower 35–[36]–37 with MOD cavities on 35 and 37 and 36 missing, designed once with the
+ * pre-op scan and once with the library tooth as the outer surface. The scan is 2000 × 250 (1M triangles, about
+ * 0.06 × 0.05 mm cells). On the 1000 × 500 grid (0.12 mm rows) the margins still fit exactly, but 37's restoration
+ * intersects itself and the 35–36 connector has less than 3 mm of height.
+ */
+export const SYNTHETIC_INLAY = {
+  id: 'synthetic-inlay-bridge-35-37',
+  libraryId: 'synthetic-inlay-bridge-35-37-library',
+  cavities: [
+    { fdi: 35, kind: 'mod' },
+    { fdi: 37, kind: 'mod' },
+  ] as Array<{ fdi: number; kind: 'mod' }>,
+  missing: [36],
+  scan: 'lower-inlay.stl',
+  preopScan: 'lower-inlay-preop.stl',
+  antagonistScan: 'upper.stl',
+  along: 2000,
+  across: 250,
+} as const;
+
+/** The jaw of the synthetic inlay bridge (with the cavities) and its pre-op scan (the same arch without them). */
+export function syntheticInlayScans(options: { along?: number; across?: number } = {}) {
+  const i = SYNTHETIC_INLAY;
+  const base = { jaw: 'lower' as const, along: options.along ?? i.along, across: options.across ?? i.across, preps: [], missing: [...i.missing], cavities: i.cavities };
+  return { jaw: syntheticArch(base), preop: syntheticPreop(base) };
+}
+
+/**
+ * Write the synthetic inlay bridge (no patient data) into `dir`: the lower jaw with the MOD cavities on 35 and 37 and
+ * 36 missing, its pre-op scan, the natural upper arch as the antagonist, and case.json with scripted cavity-margin
+ * anchors (16 analytic samples) and the click on each cavity floor; `source` picks the outer surface.
+ */
+export function writeSyntheticInlayCase(dir: string, source: 'preop' | 'library', options: { along?: number; across?: number } = {}): GoldenCase {
+  const i = SYNTHETIC_INLAY;
+  const along = options.along ?? i.along;
+  mkdirSync(dir, { recursive: true });
+  const { jaw, preop } = syntheticInlayScans(options);
+  writeFileSync(join(dir, i.scan), writeBinaryStl(jaw));
+  writeFileSync(join(dir, i.preopScan), writeBinaryStl(preop));
+  writeFileSync(join(dir, i.antagonistScan), writeBinaryStl(syntheticArch({ jaw: 'upper', along: 600, across: 250, preps: [] })));
+  const retainers = i.cavities.map((c) => ({
+    fdi: c.fdi,
+    restoration: 'inlay' as const,
+    seed: syntheticCavitySeed({ ...c, along }),
+    marginAnchors: toVec3s(syntheticCavityMargin({ ...c, along, samples: 16 })),
+    marginRing: toVec3s(syntheticCavityMargin({ ...c, along, samples: 512 })),
+    outerSource: source,
+  }));
+  const spec: GoldenCaseInput = {
+    id: source === 'preop' ? i.id : i.libraryId,
+    fdi: retainers[0]!.fdi,
+    material: 'zirconia',
+    scans: { lower: i.scan, upper: i.antagonistScan, preop: i.preopScan },
+    seed: retainers[0]!.seed,
+    marginAnchors: retainers[0]!.marginAnchors,
+    bridge: {
+      units: [retainers[0]!, { fdi: 36, restoration: 'pontic' as const }, retainers[1]!],
+      connections: [
+        [35, 36],
+        [36, 37],
+      ],
+    },
   };
   writeFileSync(join(dir, 'case.json'), `${JSON.stringify(spec, null, 2)}\n`);
   return GoldenCase.parse(spec);

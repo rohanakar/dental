@@ -1,4 +1,4 @@
-import { unitKind } from '@dcad/shared';
+import { outerSourceOf, unitKind } from '@dcad/shared';
 import { useDesignStore, selectActiveTooth } from '../../design/store';
 import { bridgeTool, useBridgeStore } from '../../tools/bridgeTool';
 import { crownTool } from '../../tools/crownTool';
@@ -11,6 +11,7 @@ import { MarginNotice } from './MarginIssues';
 import { NudgePad } from './NudgePad';
 import { isWing } from '../../tools/wing';
 import { ScrewChannelPanel } from './ImplantPanel';
+import { inlayProposalText, OuterSourceSwitch, useCavityType, useFollowsPreop } from './InlayPanel';
 
 /** How the crown (or bridge) is shown: visibility, colour map, opacity and the focus view. */
 function CrownView({ what }: { what: string }) {
@@ -46,6 +47,9 @@ export function ProposalStep() {
   const tooth = useDesignStore(selectActiveTooth);
   const bridge = useActiveBridge();
   const computing = useToolStore((s) => s.crown?.computing ?? false);
+  const cavity = useCavityType();
+  const source = useDesignStore((s) => outerSourceOf(s.doc, s.activeFdi));
+  const fixed = useFollowsPreop();
   if (!tooth) return null;
   if (bridge) return <BridgeProposal />;
   if (!tooth.axis) return <div className="step-body warning">Set the insertion axis first.</div>;
@@ -54,21 +58,24 @@ export function ProposalStep() {
   return (
     <div className="step-body">
       <p className="muted">
-        {tooth.implant
+        {cavity
+          ? inlayProposalText(cavity, source)
+          : tooth.implant
           ? 'A library crown is placed on the gingiva around the implant, sized to the gap between the neighbours and the space to the antagonist. It is bonded to the Ti-base and screwed through its channel.'
           : 'A library crown is placed on the margin in the tooth frame, sized to the gap between the neighbours and the space to the antagonist. The inner surface follows the prep with the cement gap.'}
       </p>
       <MarginNotice />
+      <OuterSourceSwitch />
       <div className="row">
         <button className={`btn${hasCrown ? '' : ' primary'}`} disabled={computing} onClick={() => void crownTool.propose()}>
-          {hasCrown ? 'Re-propose crown' : 'Propose crown'}
+          {hasCrown ? `Re-propose ${cavity ?? 'crown'}` : `Propose ${cavity ?? 'crown'}`}
         </button>
       </div>
       <AutoDesign compact primary={false} />
       {hasCrown && (
         <>
           <CrownStatusView />
-          <NudgePad />
+          {fixed ? <p className="muted small">The {cavity} follows the pre-op scan: switch to the library tooth to move it.</p> : <NudgePad />}
           <ScrewChannelPanel />
           <CrownView what="crown" />
         </>
@@ -89,6 +96,7 @@ function BridgeProposal() {
   const missing = useBridgeStore((s) => s.missing);
   const computing = useToolStore((s) => s.crown?.computing ?? false);
   const busy = useToolStore((s) => s.busy);
+  const fixed = useFollowsPreop();
   if (!bridge) return null;
   const units = bridge.teeth.map((f) => doc.teeth.find((t) => t.fdi === f));
   const placed = units.some((t) => t?.crown);
@@ -112,7 +120,14 @@ function BridgeProposal() {
         <>
           <BridgeResultPanel />
           <CrownStatusView />
-          {isWing(doc.setup, activeFdi) ? <p className="muted small">The wing follows its outline: change the outline or its thickness.</p> : <NudgePad label={`Adjust ${activeFdi}, ${kind}`} />}
+          <OuterSourceSwitch />
+          {isWing(doc.setup, activeFdi) ? (
+            <p className="muted small">The wing follows its outline: change the outline or its thickness.</p>
+          ) : fixed ? (
+            <p className="muted small">{activeFdi} follows the pre-op scan: switch to the library tooth to move it.</p>
+          ) : (
+            <NudgePad label={`Adjust ${activeFdi}, ${kind}`} />
+          )}
           <ScrewChannelPanel />
           <CrownView what="bridge" />
         </>

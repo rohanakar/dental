@@ -297,3 +297,16 @@ See [2026-10-26-anterior-tooth-frame.md](2026-10-26-anterior-tooth-frame.md).
 See the AI items in [2026-10-25-implant-bridges.md](2026-10-25-implant-bridges.md),
 [2026-10-25-maryland-bridges.md](2026-10-25-maryland-bridges.md) and
 [2026-10-25-framework-bridges.md](2026-10-25-framework-bridges.md).
+
+**2026-10-26: inlays, onlays and inlay bridges.** Every bridge type in the bridge-mode spec has now landed.
+- Single inlays and onlays, and inlay-retained bridges, with the outer surface from the pre-op scan or a fitted
+  library tooth.
+- The restoration meets the traced cavity margin exactly: the anatomy is built on the remaining tooth's fitting
+  vertices.
+- Connectors sit in the proximal box (at least 3 × 3 mm; "box too shallow").
+- In the editor: "Cavity margin", the source switch, an inlay Adapt panel, Finalize rows, sidecar and Export all.
+- Auto-design proposes the inlay and never traces a cavity margin.
+- 111 tests; runner 8/8 (the existing outputs unchanged). New browser test `inlay.mjs`.
+
+See [2026-10-25-inlay-bridges.md](2026-10-25-inlay-bridges.md).
+
