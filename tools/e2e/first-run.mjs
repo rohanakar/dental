@@ -1,6 +1,6 @@
 // A first-time visitor's journey (offline, headless Chrome): the sign-in screen → Try the demo case → Tooth frame
-// looking down onto the lower jaw with the prep of 36 ringed → a click on 35 is refused → a click in the ring gives a
-// draft reviewed in one line (checks folded, Accept the only primary) → Accept, said in the status line inside the
+// looking down onto the lower jaw with 36 already framed on its prep → a click on 35 is refused → Auto-design crown
+// gives a draft reviewed in one line (checks folded, Accept the only primary) → Accept, said in the status line inside the
 // window → Finalize → export → the ending, and the rail showing Parameters and Finalize done → the help sheet (?)
 // → the theme: light by default, dark as a remembered opt-in, sign-in always light → Start your own case → Case setup
 // with the dentist's-view chart in the wider panel.
@@ -50,28 +50,32 @@ await page.getByRole('button', { name: 'Try the demo case' }).waitFor();
 const signInLook = await state(() => ({ theme: document.documentElement.dataset.theme ?? null, font: getComputedStyle(document.body).fontFamily, ground: getComputedStyle(document.querySelector('.session-screen')).backgroundColor }));
 expect(!signInLook.theme && /Hanken Grotesk/.test(signInLook.font) && signInLook.ground === 'rgb(255, 255, 255)', 'the sign-in screen is in the light landing world (white, Hanken Grotesk)', JSON.stringify(signInLook));
 await page.getByRole('button', { name: 'Try the demo case' }).click();
-await waitFor(() => window.__dcad?.design.getState().activeStep === 'frame' && Boolean(window.__dcad.viewer));
+// Case setup named 36: Tooth frame opens with its frame already set from the prep found, for review.
+await waitFor(() => window.__dcad?.design.getState().activeStep === 'frame' && Boolean(window.__dcad.viewer) && Boolean(window.__dcad.design.getState().doc.teeth.find((t) => t.fdi === 36)?.frame));
 await settle();
 const seed = await state(async () => (await import('/src/geometry/synthetic.ts')).syntheticPrepSeed({ along: 1000 }));
 const wrong = await state(async () => (await import('/src/geometry/synthetic.ts')).syntheticPrepSeed({ fdi: 35, along: 1000 }));
-const arrival = await state(() => {
+const frameOf36 = () => state(() => window.__dcad.design.getState().doc.teeth.find((t) => t.fdi === 36).frame.origin);
+const arrival = await state((s) => {
   const v = window.__dcad.viewer;
   const dir = v.viewDirection().toArray();
   const up = v.getViewFrame().up;
-  return { ring: v.overlays.has('demo:prep'), down: -(dir[0] * up[0] + dir[1] * up[1] + dir[2] * up[2]) };
-});
-const ringAt = await project(seed);
+  const origin = window.__dcad.design.getState().doc.teeth.find((t) => t.fdi === 36).frame.origin;
+  return { ring: v.overlays.has('demo:prep'), down: -(dir[0] * up[0] + dir[1] * up[1] + dir[2] * up[2]), offPrep: Math.hypot(...origin.map((o, k) => o - s[k])) };
+}, seed);
+const prepAt = await project(seed);
 const canvas = await page.locator('.canvas-host').boundingBox();
-expect(arrival.ring, 'the demo marks the prep of 36 with a ring');
+expect(arrival.offPrep < 1 && !arrival.ring, 'the demo opens with 36 framed on its prep, nothing to click', JSON.stringify(arrival));
 expect(arrival.down > 0.9, 'Tooth frame opens looking down onto the lower jaw', `cos ${arrival.down.toFixed(2)}`);
 expect(
-  Boolean(ringAt && canvas && ringAt.x > canvas.x && ringAt.x < canvas.x + canvas.width && ringAt.y > canvas.y && ringAt.y < canvas.y + canvas.height),
-  'the ringed prep is inside the viewport',
-  JSON.stringify(ringAt),
+  Boolean(prepAt && canvas && prepAt.x > canvas.x && prepAt.x < canvas.x + canvas.width && prepAt.y > canvas.y && prepAt.y < canvas.y + canvas.height),
+  'the framed prep is inside the viewport',
+  JSON.stringify(prepAt),
 );
 await shot('01-demo-arrival');
 
 // ---- A click on the wrong tooth is refused --------------------------------------------------------------------------
+const framed = await frameOf36();
 const at35 = await project(wrong);
 await page.mouse.click(at35.x, at35.y);
 await page.waitForTimeout(400);
@@ -79,14 +83,14 @@ const refused = await state(() => ({
   message: window.__dcad.tools.getState().message,
   running: window.__dcad.orchestrator.getState().running,
   ran: window.__dcad.orchestrator.getState().steps.length,
-  frame: Boolean(window.__dcad.design.getState().doc.teeth.find((t) => t.fdi === 36)?.frame),
 }));
-expect(refused.message?.kind === 'warning' && !refused.running && refused.ran === 0 && !refused.frame, 'a click on 35 is refused and nothing runs', JSON.stringify(refused));
+const unchanged = JSON.stringify(await frameOf36()) === JSON.stringify(framed);
+expect(refused.message?.kind === 'warning' && !refused.running && refused.ran === 0 && unchanged, 'a click on 35 is refused: nothing runs and the frame stays', JSON.stringify(refused));
 expect(inWindow(await page.locator('.status-message').boundingBox()), 'the refusal is in the status line, inside the window');
 await shot('02-wrong-tooth');
 
-// ---- The prep: one click, one draft, one line to review ---------------------------------------------------------
-await page.mouse.click(ringAt.x, ringAt.y);
+// ---- The frame reviewed: one button, one draft, one line to review -------------------------------------------------
+await page.getByRole('region', { name: 'Auto-design' }).getByRole('button', { name: 'Auto-design crown' }).click();
 await waitFor(() => {
   const o = window.__dcad.orchestrator.getState();
   return !o.running && (o.pendingReview || o.error);
@@ -95,7 +99,7 @@ const run = await state(() => {
   const o = window.__dcad.orchestrator.getState();
   return { complete: o.complete, error: o.error, failed: o.steps.flatMap((s) => s.qa.filter((c) => !c.passed).map((c) => `${s.key} ${c.message}`)) };
 });
-expect(run.complete && !run.error, 'the click in the ring gives a complete draft', JSON.stringify(run));
+expect(run.complete && !run.error, 'Auto-design crown on the reviewed frame gives a complete draft', JSON.stringify(run));
 const banner = page.getByRole('region', { name: 'Auto-design' }).locator('.auto-banner');
 const verdict = await banner.locator('strong').textContent();
 const folded = await banner.locator('details.auto-details').evaluate((d) => !d.open);

@@ -8,7 +8,7 @@
 // Run with type stripping (the STL check imports the geometry sources):
 //   pnpm --filter @dcad/web fixtures && pnpm --filter @dcad/e2e bridge
 // APP_URL (default http://localhost:5173/app/) is the editor; E2E_OUT the screenshot folder (default out/e2e/bridge/);
-// E2E_ONLY=posterior or anterior runs one part.
+// E2E_ONLY=posterior, anterior or auto runs one part.
 import { chromium } from 'playwright';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -34,8 +34,11 @@ for (const f of ['lower-bridge.stl', 'upper.stl', 'upper-anterior-bridge.stl', '
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const errors = [];
 
-/** One app page with its helpers. */
-async function openApp(name) {
+/**
+ * One app page with its helpers. Tooth frame's frames from the preps (autoFrames) are off unless asked for: the
+ * posterior and anterior parts exercise the click flow.
+ */
+async function openApp(name, { autoFrames = false } = {}) {
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 }, acceptDownloads: true });
   // Offline: the session check (/api/me) fails at the dev proxy; anything else is an error.
   page.on('console', (m) => {
@@ -117,6 +120,8 @@ async function openApp(name) {
     synthetic: (fn, arg) => page.evaluate(async ([f, a]) => (await import('/src/geometry/synthetic.ts'))[f](a), [fn, arg]),
   };
   await page.goto(APP_URL);
+  await page.waitForFunction(() => Boolean(window.__dcad?.tools));
+  await page.evaluate((on) => window.__dcad.tools.getState().set({ autoFrames: on }), autoFrames);
   await page.getByRole('button', { name: /continue offline/i }).click();
   return h;
 }
@@ -216,7 +221,7 @@ const bridgeIdle = (h, units) =>
 
 // ---- 1. Posterior 35–[36]–37 --------------------------------------------------------------------
 
-if (ONLY !== 'anterior') {
+if (!ONLY || ONLY === 'posterior') {
   const h = await openApp('posterior');
   const { page } = h;
 
@@ -484,7 +489,7 @@ if (ONLY !== 'anterior') {
 
 // ---- 2. Anterior [12]–11–21–[22] (across the midline, two cantilever pontics) -------------------
 
-if (ONLY !== 'posterior') {
+if (!ONLY || ONLY === 'anterior') {
   const h = await openApp('anterior');
   const { page } = h;
   await h.state(() => {
@@ -538,6 +543,47 @@ if (ONLY !== 'posterior') {
   });
   await h.settle();
   await h.shot('08-anterior-labial');
+  await page.close();
+}
+
+// ---- 3. Frames ready from Case setup's teeth (specs/2026-10-26-auto-frames.md) ------------------------------------
+
+if (!ONLY || ONLY === 'auto') {
+  const h = await openApp('auto', { autoFrames: true });
+  const { page } = h;
+  await page.getByRole('button', { name: 'Tooth 35', exact: true }).click();
+  await page.getByRole('button', { name: 'Tooth 37', exact: true }).click();
+  await page.getByRole('group', { name: 'Restoration for 36' }).getByRole('button', { name: 'Pontic' }).click();
+  await loadScans(h, ['lower-bridge.stl', 'upper.stl']);
+  const before = await h.state(() => window.__dcad.design.getState().past.length);
+  await h.step('Tooth frame');
+  await h.waitFor(() => [35, 36, 37].every((f) => window.__dcad.design.getState().doc.teeth.find((t) => t.fdi === f)?.frame), null, 120000);
+  const auto = await h.state(async (along) => {
+    const { syntheticPrepSeed } = await import('/src/geometry/synthetic.ts');
+    const d = window.__dcad.design.getState();
+    const off = (fdi) => Math.hypot(...d.doc.teeth.find((t) => t.fdi === fdi).frame.origin.map((o, k) => o - syntheticPrepSeed({ fdi, along })[k]));
+    return { d35: +off(35).toFixed(2), d37: +off(37).toFixed(2), past: d.past.length };
+  }, ALONG);
+  expect(auto.d35 < 1 && auto.d37 < 1 && auto.past === before + 1, "auto frames: 35 and 37 framed on their preps and pontic 36 placed, as one undo step", JSON.stringify({ before, ...auto }));
+  await h.shot('09-auto-frames');
+
+  // Disjoint from the setup: 37's frame put on the prep of 35 is named, and the bridge panel reports the order.
+  await h.state(() => window.__dcad.tools.getState().set({ autoArmed: false }));
+  await h.selectTooth(37);
+  await page.keyboard.press('1');
+  await h.settle();
+  await h.clickWorld(await h.synthetic('syntheticPrepSeed', { fdi: 35, along: ALONG }), { objectIds: ['lower'] });
+  await h.waitFor(
+    (along) => import('/src/geometry/synthetic.ts').then(({ syntheticPrepSeed }) => {
+      const f = window.__dcad.design.getState().doc.teeth.find((t) => t.fdi === 37).frame;
+      return Math.hypot(...f.origin.map((o, k) => o - syntheticPrepSeed({ fdi: 35, along })[k])) < 2;
+    }),
+    ALONG,
+    60000,
+  );
+  await h.waitFor(() => [...document.querySelectorAll('.bridge-panel .warning')].some((w) => /wrong order/.test(w.textContent)), null, 60000);
+  const disjoint = await h.state(() => ({ message: window.__dcad.tools.getState().message?.text ?? '', panel: [...document.querySelectorAll('.bridge-panel .warning')].map((w) => w.textContent) }));
+  expect(/prep of 35, not 37/.test(disjoint.message) && disjoint.panel.some((w) => /wrong order/.test(w)), "a frame on another case tooth's prep is named, and the bridge reports frames out of order", JSON.stringify(disjoint));
   await page.close();
 }
 

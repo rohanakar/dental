@@ -19,6 +19,9 @@ export interface ToolState {
   framePick: FramePick;
   /** One-click crown armed: the next click on the prep runs the whole auto-design. */
   autoArmed: boolean;
+  /** Tooth frame sets each crown-prep tooth's frame from the prep paired with it (autoFrames.ts); off in browser
+   *  scripts that exercise the click flow. */
+  autoFrames: boolean;
   frameWarnings: string[];
   /** Live-wire anchors placed so far (open path until the margin is closed). */
   marginAnchors: MarginAnchor[];
@@ -111,6 +114,7 @@ export interface BridgeAxisReport {
 const initial = {
   framePick: 'seed' as FramePick,
   autoArmed: false,
+  autoFrames: true,
   frameWarnings: [] as string[],
   marginAnchors: [] as MarginAnchor[],
   surface: 'idle' as const,
@@ -129,5 +133,6 @@ const initial = {
 export const useToolStore = create<ToolState>()((set) => ({
   ...initial,
   set: (patch) => set(patch),
-  reset: () => set(initial),
+  // A new case keeps the auto-frames setting (a browser script turns it off once, before opening a case).
+  reset: () => set((s) => ({ ...initial, autoFrames: s.autoFrames })),
 }));

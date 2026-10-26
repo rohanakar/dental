@@ -119,7 +119,15 @@ export interface PonticLayout {
   /** In a run of pontics connected on one side only. */
   cantilever: boolean;
   warnings: string[];
+  /**
+   * The abutment frames around the run disagree with the case's teeth: in the wrong order along the arch, or much
+   * further apart than the pontics between them need (a frame on the wrong prep). Holds before the margins exist.
+   */
+  frameCheck?: string;
 }
+
+/** Abutment frames further apart than this times the pontics' nominal width are taken to be on the wrong teeth. */
+const FRAME_SPAN_FACTOR = 1.6;
 
 interface Extent {
   min: number;
@@ -219,9 +227,16 @@ export function layoutPontics(input: { curve: ArchCurve; jaw: RayCaster; units: 
     let startS: number, endS: number;
     let startPoint: V3 | undefined, endPoint: V3 | undefined;
     let free: 'before' | 'after' | null = null;
+    let frameCheck: string | undefined;
     if (L && R) {
       ({ s: startS, p: startPoint } = edge(L, true));
       ({ s: endS, p: endPoint } = edge(R, false));
+      const gap = sign * (endS - startS);
+      if (sign * ((R.min + R.max) / 2 - (L.min + L.max) / 2) <= 0) {
+        frameCheck = `The frames of ${before!.fdi} and ${after!.fdi} are in the wrong order along the arch: check that each is on its own prep.`;
+      } else if (gap > FRAME_SPAN_FACTOR * total) {
+        frameCheck = `${before!.fdi} and ${after!.fdi} are ${gap.toFixed(0)} mm apart along the arch, but the pontics between them need about ${total.toFixed(0)} mm: check that each frame is on its own prep.`;
+      }
     } else if (L) {
       ({ s: startS, p: startPoint } = edge(L, true));
       endS = startS + sign * total;
@@ -294,6 +309,7 @@ export function layoutPontics(input: { curve: ArchCurve; jaw: RayCaster; units: 
         mdMm: Math.abs(b - a),
         cantilever: free !== null,
         warnings,
+        ...(frameCheck ? { frameCheck } : {}),
       });
     });
   }

@@ -158,7 +158,9 @@ export function BridgeFramePanel() {
   const stalePontics = pontics.filter((f) => toothOf(doc, f)?.steps.frame === 'stale');
   // Before the margins exist the abutments' widths are nominal, so the room for the pontics is only an estimate.
   const estimated = abutments.some((f) => !toothOf(doc, f)?.margin);
-  const warnings = result ? [...result.curve.warnings, ...(estimated ? [] : result.pontics.flatMap((p) => p.warnings))] : [];
+  // Frames on the wrong teeth show at once; the room for the pontics only once the margins give the real widths.
+  const frameChecks = [...new Set(result?.pontics.flatMap((p) => (p.frameCheck ? [p.frameCheck] : [])) ?? [])];
+  const warnings = result ? [...frameChecks, ...result.curve.warnings, ...(estimated ? [] : result.pontics.flatMap((p) => p.warnings))] : [];
 
   return (
     <section className="bridge-panel" aria-labelledby="bridge-frame-head">

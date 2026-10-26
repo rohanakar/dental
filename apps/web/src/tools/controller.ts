@@ -23,6 +23,7 @@ import { useToolStore } from './toolStore';
 import { isWing } from './wing';
 import { DEMO_PREP_RADIUS_MM, ringPoints } from './demoPrep';
 import { onPrepsFound, prepRing } from './prepRing';
+import { autoFrames } from './autoFrames';
 
 export const FRAME_COLORS = AXIS_COLORS;
 const AXIS_COLOR = '#b07cff';
@@ -163,6 +164,8 @@ class DesignTools {
 
     if (ctx && step === 'margin') this.prepareSurface(ctx.jaw.sha256);
     this.drawOverlays(step);
+    // Case setup named the teeth: frame each crown-prep tooth from its prep for the user to review.
+    if (step === 'frame') autoFrames();
     if (step === 'axis') axisTool.sync();
     crownTool.sync(step);
     implantTool.sync(step, crownTool.current());

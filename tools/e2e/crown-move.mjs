@@ -57,6 +57,10 @@ const cusps = () =>
 const doc = () => state(() => { const d = window.__dcad.design.getState(); const t = d.doc.teeth[0]; return { pose: t.crown?.pose, adapt: t.crown?.adapt, steps: t.steps, frame: t.frame, past: d.past.length, tx: d.transaction?.label ?? null, message: window.__dcad.tools.getState().message?.text ?? null }; });
 
 await page.goto(APP_URL);
+// The one-click flow from a click on the prep is under test: no frames from the preps on entering Tooth frame
+// (specs/2026-10-26-auto-frames.md), so undo goes back to a tooth without a frame.
+await page.waitForFunction(() => Boolean(window.__dcad?.tools));
+await page.evaluate(() => window.__dcad.tools.getState().set({ autoFrames: false }));
 await page.getByRole('button', { name: /continue offline/i }).click();
 await page.getByRole('button', { name: /load demo scans/i }).first().click();
 await waitFor(() => window.__dcad.design.getState().doc.scans.length === 2 && window.__dcad.scene.getState().objects.every((o) => o.phase === 'ready'));

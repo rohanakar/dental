@@ -157,6 +157,9 @@ async function openApp(name) {
     },
   };
   await page.goto(APP_URL);
+  // The click flow is under test: no frames from the preps on entering Tooth frame (specs/2026-10-26-auto-frames.md).
+  await page.waitForFunction(() => Boolean(window.__dcad?.tools));
+  await page.evaluate(() => window.__dcad.tools.getState().set({ autoFrames: false }));
   // Headless Chrome advances CSS transitions slowly: screenshots would catch the buttons mid-fade.
   await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' });
   await page.getByRole('button', { name: /continue offline/i }).click();

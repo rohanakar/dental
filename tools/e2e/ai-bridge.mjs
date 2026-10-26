@@ -77,6 +77,9 @@ const panelTo = (selector) =>
   });
 
 await page.goto(APP_URL);
+// The click flow is under test: no frames from the preps on entering Tooth frame (specs/2026-10-26-auto-frames.md).
+await page.waitForFunction(() => Boolean(window.__dcad?.tools));
+await page.evaluate(() => window.__dcad.tools.getState().set({ autoFrames: false }));
 await page.getByRole('button', { name: /continue offline/i }).click();
 
 // Setup: 35 and 37 crowns, 36 pontic.
@@ -229,6 +232,9 @@ await shot('04-finalize');
   page = await browser.newPage({ viewport: { width: 1400, height: 900 } }); // a new context: nothing to resume
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.goto(APP_URL);
+  // The click flow is under test: no frames from the preps on entering Tooth frame (specs/2026-10-26-auto-frames.md).
+  await page.waitForFunction(() => Boolean(window.__dcad?.tools));
+  await page.evaluate(() => window.__dcad.tools.getState().set({ autoFrames: false }));
   await page.getByRole('button', { name: /continue offline/i }).click();
   await step('Case setup');
   await page.getByRole('button', { name: 'Tooth 35', exact: true }).click();

@@ -501,7 +501,8 @@ The auto-design draft, before anything is kept (`apps/web/src/ui/ai/AutoDesign.t
 
 ### First Click
 - Entering Tooth frame on a tooth with no frame looks down onto its jaw (from below for the upper jaw), tilted a little toward buccal, with the antagonist hidden.
-- In the demo a 3px Frame Blue ring, 4.5 mm in radius, marks the prep of 36 until it has a frame, and a click more than 5.5 mm from the prep's top is refused with a warning in the status line.
+- Case setup already named the teeth, so Tooth frame is a review: every crown-prep tooth of the jaw gets its frame from the prep paired with it, and a bridge its pontics, as one undo step, said in the status line. The step's main action is then Auto-design.
+- A tooth still without a frame (no prep paired, or the user undid it) gets a 3px Frame Blue ring, 4.5 mm in radius, around its prep. In the demo a click more than 5.5 mm from the prep's top is refused; on other scans a click far from every prep, or on another case tooth's prep, is only warned about, and a bridge's frames in the wrong order or far too far apart are reported in its panel.
 
 ### 3D View
 The scene the landing page's renders come from (`apps/web/src/engine/`).

@@ -262,6 +262,8 @@ export interface PonticLayoutView {
   mdMm: number;
   cantilever: boolean;
   warnings: string[];
+  /** The abutment frames around it disagree with the case's teeth (wrong order, or far too far apart). */
+  frameCheck?: string;
 }
 
 export interface ArchCurveView {

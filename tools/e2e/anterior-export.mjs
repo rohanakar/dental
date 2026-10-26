@@ -125,6 +125,9 @@ async function enterMargin(fdi) {
 // ---- 1. Setup ---------------------------------------------------------------------------------------------------
 
 await page.goto(APP_URL);
+// The click flow is under test: no frames from the preps on entering Tooth frame (specs/2026-10-26-auto-frames.md).
+await page.waitForFunction(() => Boolean(window.__dcad?.tools));
+await page.evaluate(() => window.__dcad.tools.getState().set({ autoFrames: false }));
 await page.getByRole('button', { name: /continue offline/i }).click();
 await step('Case setup');
 for (const fdi of [11, 21, 35, 37]) await page.getByRole('button', { name: `Tooth ${fdi}`, exact: true }).click();

@@ -58,14 +58,17 @@ export function FrameStep() {
   // The demo knows its prep (a blue ring marks it); a real case only knows the tooth number.
   const demo = !frame && demoPrep() !== null;
   const target = demo ? 'the prepared tooth inside the blue ring' : `the top of the prepared tooth ${tooth.fdi}`;
+  // With a frame (set from its prep on entering the step, or by a click) the step is a review.
   const pickHint =
     framePick === 'seed'
-      ? autoArmed
+      ? frame
         ? bridge
-          ? `Click ${target}. After the last abutment, auto-design proposes the bridge for you to review.`
-          : `Click ${target}. Auto-design proposes the crown for you to review.`
-        : frame
           ? `Frame set on ${tooth.fdi}. Check the arrows, or click the prep again to redo it.`
+          : `Frame set on ${tooth.fdi}. Check the arrows, then auto-design the crown, or click the prep again to redo the frame.`
+        : autoArmed
+          ? bridge
+            ? `Click ${target}. After the last abutment, auto-design proposes the bridge for you to review.`
+            : `Click ${target}. Auto-design proposes the crown for you to review.`
           : `Click ${target}.`
       : `Click the ${framePick === 'mesialContact' ? 'mesial' : 'distal'} neighbour where it should touch the crown.`;
 
