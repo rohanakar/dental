@@ -10,6 +10,7 @@ target_fingerprint: "sha256:3560584df6b5e9dd7a41e668304e74c73b3921e7e56482cf462f
 target_path: /Users/rishabhchaudhary/experiments/apps/web/src/ui/App.tsx
 timestamp: 2026-10-26T09-08-48Z
 slug: apps-web-src-ui-app-tsx
+closed: true
 ---
 # New-user journey critique (landing → demo → first crown)
 
