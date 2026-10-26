@@ -22,8 +22,12 @@ const antagonistRole = (role: 'upper' | 'lower'): ScanRole => (role === 'upper' 
 
 /** Active tooth plus its loaded jaw scans, or null when the prep jaw is not loaded. */
 export function toothContext(): ToothContext | null {
-  const { doc, activeFdi } = useDesignStore.getState();
-  const tooth = doc.teeth.find((t) => t.fdi === activeFdi);
+  return toothContextFor(useDesignStore.getState().activeFdi);
+}
+
+/** Any tooth of the current document plus its loaded jaw scans (e.g. to design every restoration for an export). */
+export function toothContextFor(fdi: number): ToothContext | null {
+  const tooth = useDesignStore.getState().doc.teeth.find((t) => t.fdi === fdi);
   if (!tooth) return null;
   const role = jawOf(tooth.fdi);
   const jaw = sceneController.geometryFor(role);

@@ -23,10 +23,16 @@ These scripts drive the real web app in headless Chrome (Playwright, `channel: '
   events per unit and step) → the agent's bridge metrics → Finalize "Ready to mill"; then the one-click bridge (a
   click on each prep starts the run). Screenshots go to `out/e2e/ai-bridge/` (`E2E_OUT`). Exits non-zero on a failed
   check.
+- `anterior-export.mjs` (offline): crowns on 11 and 21 of an upper arch whose incisors lean 25° labially (generated in
+  the page) plus the bridge 35–[36]–37 on `lower-bridge.stl`. The setup hint for the separate crowns; every margin
+  point of 11 reachable from the Margin step's view (against the old view along the frame occlusal); a margin traced
+  from the old view flagged in the Margin step (warning and kink marker) and in Crown proposal, "Fix the margin";
+  crowns and the bridge; Finalize → Export all, with the zip unzipped in Node (each STL a closed solid, the manifest).
+  Screenshots go to `out/e2e/anterior/` (`E2E_OUT`). Exits non-zero on a failed check.
 
 ```bash
 pnpm dev:web                          # terminal 1 (and pnpm dev:api + Postgres for the online script)
-pnpm --filter @dcad/e2e offline       # or: online, move, bridge, ai-bridge
+pnpm --filter @dcad/e2e offline       # or: online, move, bridge, ai-bridge, implant, anterior
 ```
 
 Day 7 turns these into `@playwright/test` specs.

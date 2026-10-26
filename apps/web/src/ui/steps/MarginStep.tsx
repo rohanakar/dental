@@ -3,6 +3,7 @@ import { useDesignStore, selectActiveTooth } from '../../design/store';
 import { marginTool } from '../../tools/marginTool';
 import { useToolStore } from '../../tools/toolStore';
 import { ImplantPositionPanel, useIsImplant } from './ImplantPanel';
+import { MarginWarning } from './MarginIssues';
 
 function polylineLength(points: ReadonlyArray<{ p: readonly number[] }>): number {
   let sum = 0;
@@ -59,6 +60,7 @@ export function MarginStep() {
       )}
       {margin && !drafting && (
         <>
+          <MarginWarning fdi={tooth.fdi} />
           <dl className="params">
             <dt>Length</dt>
             <dd>{polylineLength(margin.points).toFixed(1)} mm</dd>

@@ -257,3 +257,13 @@ See [2026-10-25-implant-bridges.md](2026-10-25-implant-bridges.md).
 - Framework and overpress export.
 
 105 tests. See [2026-10-25-framework-bridges.md](2026-10-25-framework-bridges.md).
+
+**2026-10-26: front-tooth margin view, kinked-margin warning, Export all.**
+- The Margin step looks along the prep's own axis, so on leaning incisors every margin point can be clicked (was 37–47
+  of 64).
+- A kinked margin is flagged in the Margin and Proposal steps.
+- Export all downloads one zip with every restoration (crowns, implant crowns, frameworks, bridges) and its readiness.
+- Setup says that adjacent crowns stay separate unless their connector is switched on.
+- 107 tests.
+
+See [2026-10-26-anterior-margin-and-export-all.md](2026-10-26-anterior-margin-and-export-all.md).

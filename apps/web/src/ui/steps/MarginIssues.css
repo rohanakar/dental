@@ -1,0 +1,16 @@
+/* A margin the crown would fold at: what is wrong, and how to fix it (MarginIssues.tsx). */
+.margin-problems {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.margin-problems ul {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.margin-problems .link-btn {
+  color: inherit;
+  font-weight: 600;
+}

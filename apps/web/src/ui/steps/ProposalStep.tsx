@@ -7,6 +7,7 @@ import { AutoDesign } from '../ai/AutoDesign';
 import { BridgeResultPanel, useActiveBridge } from './BridgePanels';
 import { CrownStatusView } from './CrownStatusView';
 import { FocusControls, MapSelect } from './CrownViewControls';
+import { MarginNotice } from './MarginIssues';
 import { NudgePad } from './NudgePad';
 import { ScrewChannelPanel } from './ImplantPanel';
 
@@ -56,6 +57,7 @@ export function ProposalStep() {
           ? 'A library crown is placed on the gingiva around the implant, sized to the gap between the neighbours and the space to the antagonist. It is bonded to the Ti-base and screwed through its channel.'
           : 'A library crown is placed on the margin in the tooth frame, sized to the gap between the neighbours and the space to the antagonist. The inner surface follows the prep with the cement gap.'}
       </p>
+      <MarginNotice />
       <div className="row">
         <button className={`btn${hasCrown ? '' : ' primary'}`} disabled={computing} onClick={() => void crownTool.propose()}>
           {hasCrown ? 'Re-propose crown' : 'Propose crown'}
@@ -98,6 +100,7 @@ function BridgeProposal() {
         axis. Connectors join the neighbouring units. Click a unit to adjust it.
       </p>
       {missing && !placed && <div className="warning">{missing}</div>}
+      <MarginNotice />
       <div className="row">
         <button className={`btn${placed ? '' : ' primary'}`} disabled={computing || Boolean(busy) || Boolean(missing)} onClick={() => void bridgeTool.propose()}>
           {placed ? 'Re-propose bridge' : 'Propose bridge'}

@@ -19,6 +19,7 @@ import {
 import { useState } from 'react';
 import { useDesignStore } from '../../design/store';
 import { RxIntake } from '../ai/RxIntake';
+import { SeparateHint } from '../SeparateHint';
 import { connectorState, ToothChart } from '../ToothChart';
 import { ReducedSwitch } from './FrameworkPanels';
 import '../bridge.css';
@@ -204,6 +205,7 @@ export function SetupStep() {
         }}
         onUnavailable={(reason, code) => setProblem({ title: 'Connector unavailable', messages: [reason, ...(FIX[code] ? [FIX[code]] : [])] })}
       />
+      <SeparateHint setup={setup} />
       {problem && (
         <div className="setup-problem" role="alert">
           <strong>{problem.title}.</strong>

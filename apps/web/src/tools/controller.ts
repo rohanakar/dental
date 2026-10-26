@@ -1,6 +1,8 @@
-import { bridgeOf, type ScanRole, type StepId, unitKind } from '@dcad/shared';
+import { bridgeOf, type RestorationType, type ScanRole, type StepId, unitKind } from '@dcad/shared';
+import type { MeshBVH } from 'three-mesh-bvh';
 import { useDesignStore } from '../design/store';
 import type { Viewer } from '../engine/Viewer';
+import { bvhRayCaster } from '../geometry/raycast';
 import { sceneController } from '../state/sceneController';
 import { useSceneStore } from '../state/sceneStore';
 import { analysis } from '../workers/geometryClient';
@@ -12,8 +14,10 @@ import { errorText, toothContext } from './context';
 import { focusTool } from './focusTool';
 import { frameworkTool } from './frameworkTool';
 import { frameInteraction } from './frameTool';
+import { marginProblems } from './marginCheck';
 import { MARGIN_COLOR, marginTool } from './marginTool';
 import { implantTool, isImplantTooth } from './implantTool';
+import { MARGIN_VIEW_DISTANCE_MM, marginView } from './marginView';
 import { useToolStore } from './toolStore';
 
 export const FRAME_COLORS = { occlusal: '#4c8dff', mesial: '#2fbf71', buccal: '#f0a030', distal: '#a970ff' } as const;
@@ -22,6 +26,12 @@ const AXIS_COLOR = '#b07cff';
 const HIDE_ANTAGONIST: readonly StepId[] = ['frame', 'margin', 'axis'];
 /** Steps after which the accepted margin stays visible. */
 const SHOW_MARGIN: readonly StepId[] = ['margin', 'axis'];
+/**
+ * Restorations whose Margin step traces the finish line of a prepared stump: the step's view follows the prep's own
+ * axis (marginView.ts). Others keep the frame's occlusal view: an implant crown's step places the scan body, and
+ * types without a stump (wings, cavities) have their own outline.
+ */
+const PREP_MARGIN: readonly RestorationType[] = ['anatomic-crown', 'reduced-crown'];
 /** Steps that show the restorations: a click on a bridge unit makes it the active tooth. */
 const PICK_UNIT: readonly StepId[] = ['params', 'proposal', 'adapt', 'finalize'];
 
@@ -154,12 +164,18 @@ class DesignTools {
   }
 
   /**
-   * Zoom onto the prep: from occlusal to trace the margin, obliquely from buccal to judge the axis. With `units` (a
+   * Zoom onto the prep: along the prep's own axis to trace the margin (marginView.ts: on a proclined front tooth the
+   * frame's occlusal direction hides part of the margin), obliquely from buccal to judge the axis. With `units` (a
    * bridge whose restorations are shown), the view takes in every unit that has a frame.
    */
   private focusPrep(view: 'occlusal' | 'oblique', units: readonly number[] | null = null): void {
     const frame = toothContext()?.tooth.frame;
     if (!frame) return;
+    const margin = view === 'occlusal' ? this.marginView() : null;
+    if (margin) {
+      this.viewer?.focus(margin.target, margin.direction, MARGIN_VIEW_DISTANCE_MM);
+      return;
+    }
     const dir: [number, number, number] =
       view === 'occlusal' ? [...frame.occlusal] : [0, 1, 2].map((k) => frame.occlusal[k]! + 1.2 * frame.buccal[k]!) as [number, number, number];
     const { doc } = useDesignStore.getState();
@@ -175,6 +191,31 @@ class DesignTools {
       return;
     }
     this.viewer?.focus(frame.origin, dir, view === 'occlusal' ? 32 : 40);
+  }
+
+  /**
+   * The Margin step's view of the active tooth, along its prep's own axis; null for a restoration without a prepared
+   * stump (PREP_MARGIN) or while the jaw or its BVH is not loaded.
+   */
+  private marginView(): { target: [number, number, number]; direction: [number, number, number] } | null {
+    const ctx = toothContext();
+    const frame = ctx?.tooth.frame;
+    const g = ctx?.jaw.geometry;
+    const restoration = useDesignStore.getState().doc.setup.teeth.find((t) => t.fdi === ctx?.fdi)?.restoration;
+    if (!ctx || !frame || !g?.boundsTree || !g.index || !restoration || !PREP_MARGIN.includes(restoration)) return null;
+    try {
+      return marginView({
+        positions: g.getAttribute('position').array,
+        indices: g.index.array,
+        // The scan's BVH is a MeshBVH (workers/scanPayload.ts).
+        ray: bvhRayCaster(g.boundsTree as MeshBVH),
+        frame,
+        margin: ctx.tooth.margin?.points.map((m) => m.p),
+        axis: ctx.tooth.axis?.direction,
+      });
+    } catch {
+      return null;
+    }
   }
 
   private syncAntagonist(step: StepId): void {
@@ -252,6 +293,10 @@ class DesignTools {
       o.remove('margin:line');
       o.remove('margin:anchors');
     }
+    // Where the margin doubles back (the crown would fold there): marked while it can be fixed (MarginIssues.tsx).
+    const kinks = margin && step === 'margin' && tooth ? marginProblems(margin.points.map((m) => m.p), { fdi: tooth.fdi, frame: tooth.frame }).kinks : [];
+    if (kinks.length > 0) o.setMarkers('margin:kinks', kinks.map((k) => k.point), { color: '#ffffff', outline: '#d64545', sizePx: 20 });
+    else o.remove('margin:kinks');
 
     const axis = tooth?.axis;
     if (axis && margin && step === 'axis') {

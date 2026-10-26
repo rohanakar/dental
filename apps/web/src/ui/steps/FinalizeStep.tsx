@@ -9,6 +9,7 @@ import { AlertIcon, CheckIcon, FailIcon, UnknownIcon } from '../icons';
 import { BridgeFinalize, useActiveBridge } from './BridgePanels';
 import { CrownStatusView } from './CrownStatusView';
 import { MapSelect, ReadaptNotice } from './CrownViewControls';
+import { ExportAll } from './ExportAll';
 import { FrameworkFinalize } from './FrameworkPanels';
 import { isReady, millReadiness, type ReadinessItem, type ReadinessStatus, readinessNeeds } from './readiness';
 import { IMPLANT_NEEDS, implantReadiness } from './implantReadiness';
@@ -151,6 +152,7 @@ function CrownFinalize() {
         Binary STL in millimetres. Construction info is a JSON file with the margin, axis, parameters, template pose and checks.
       </p>
       <FrameworkFinalize teeth={[tooth.fdi]} />
+      <ExportAll />
       <MapSelect />
       <CrownStatusView detailed />
     </div>

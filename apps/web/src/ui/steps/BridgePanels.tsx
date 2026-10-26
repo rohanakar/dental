@@ -24,6 +24,7 @@ import { analysis } from '../../workers/geometryClient';
 import { isStale } from '../../workers/latestWins';
 import { AlertIcon, CheckIcon, FailIcon, UnknownIcon } from '../icons';
 import { CrownStatusView } from './CrownStatusView';
+import { ExportAll } from './ExportAll';
 import { MapSelect } from './CrownViewControls';
 import { FrameworkFinalize } from './FrameworkPanels';
 import { isReady, millReadiness, type ReadinessItem, type ReadinessStatus, readinessNeeds } from './readiness';
@@ -712,6 +713,7 @@ export function BridgeFinalize() {
         frame, margin and pose, the common axis, the connectors as designed and as measured, and the checks.
       </p>
       <FrameworkFinalize teeth={bridge.teeth} />
+      <ExportAll />
       <MapSelect />
       <CrownStatusView detailed />
     </div>

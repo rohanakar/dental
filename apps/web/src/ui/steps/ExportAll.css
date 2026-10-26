@@ -1,0 +1,13 @@
+/* Finalize: every restoration of the case in one zip (ExportAll.tsx), set apart from the active restoration's export. */
+.export-all {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.export-all h3,
+.export-all p {
+  margin: 0;
+}

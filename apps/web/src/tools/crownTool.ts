@@ -19,7 +19,7 @@ import { useToolStore, type LegendSpec } from './toolStore';
 export const CROWN_OBJECT_ID = 'crown';
 /** Steps in which the crown is shown. */
 const SHOW_CROWN: readonly StepId[] = ['params', 'proposal', 'adapt', 'finalize'];
-const APP_VERSION = '0.3.0';
+export const APP_VERSION = '0.3.0';
 
 type V3 = [number, number, number];
 const v3 = (p: readonly number[]): V3 => [p[0]!, p[1]!, p[2]!];
@@ -38,7 +38,8 @@ function legendFor(map: CrownMapName): LegendSpec {
   return crownMapLegend(map, tooth.params, { occlusion: adapt?.occlusion?.clearanceMm, contact: adapt?.mesial?.targetMm ?? adapt?.distal?.targetMm });
 }
 
-function request(ctx: ToothContext, withPose: boolean, map: CrownMapName | 'none'): CrownRequest | null {
+/** The worker request for a tooth's crown (null until it has a frame, a margin and an axis; an implant crown's own). */
+export function crownRequest(ctx: ToothContext, withPose: boolean, map: CrownMapName | 'none'): CrownRequest | null {
   if (ctx.tooth.implant) return implantCrownRequest(ctx, withPose, map);
   const { frame, margin, axis, params, crown } = ctx.tooth;
   if (!frame || !margin || !axis) return null;
@@ -257,7 +258,7 @@ class CrownTool {
       const result = await bridgeTool.evaluate({ maps }).catch(() => null);
       return result?.units.find((u) => u.fdi === ctx.fdi) ?? null;
     }
-    const req = request(ctx, true, 'none');
+    const req = crownRequest(ctx, true, 'none');
     if (!req) return null;
     return analysis.designCrownUnlatched({ ...req, maps, ...extra });
   }
@@ -270,7 +271,7 @@ class CrownTool {
 
   private async compute(ctx: ToothContext, withPose: boolean): Promise<CrownResult | null> {
     const map = useToolStore.getState().crownMap;
-    const req = request(ctx, withPose, map);
+    const req = crownRequest(ctx, withPose, map);
     if (!req) return null;
     const tools = useToolStore.getState();
     tools.set({ crown: { ...(tools.crown ?? { warnings: [] }), computing: true, error: undefined } });
