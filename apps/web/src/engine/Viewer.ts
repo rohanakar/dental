@@ -15,6 +15,7 @@ import {
   Scene,
   Sphere,
   Spherical,
+  SRGBColorSpace,
   Vector2,
   Vector3,
   Vector4,
@@ -106,6 +107,11 @@ function subsetGeometry(source: BufferGeometry, faces: Uint32Array): BufferGeome
 
 /** Polygon offset of a scan's dimmed surroundings in the focus view (the surface default is 1). */
 const SURROUNDINGS_POLYGON_OFFSET = 2;
+/**
+ * The dimmed surroundings blend as if over a ground at least this light (sRGB luma), so on the dark theme's ground
+ * they read as pale tooth and gum, not dark grey and maroon. The light ground is above it: no change there.
+ */
+const SURROUNDINGS_GROUND_FLOOR = 0.34;
 
 /** Opacity < 1 renders transparent (no depth writes, back faces untinted so the far side reads as surface). */
 function setMaterialOpacity(m: SurfaceMaterial, opacity: number): void {
@@ -177,6 +183,8 @@ export class Viewer {
   private projection: Projection = 'perspective';
   /** Visible height (mm) of the orthographic frustum at zoom 1. */
   private orthoHeight = 100;
+  /** How far the ground is below SURROUNDINGS_GROUND_FLOOR (0 on a light ground). */
+  private groundLift = 0;
   private needsRender = true;
   private rafId = 0;
   private lastTime = performance.now();
@@ -518,7 +526,14 @@ export class Viewer {
   }
 
   setBackground(color: string): void {
-    this.scene.background = new Color(color);
+    const ground = new Color(color);
+    this.scene.background = ground;
+    const { r, g, b } = ground.getRGB(new Color(), SRGBColorSpace);
+    const lift = Math.max(0, SURROUNDINGS_GROUND_FLOOR - (0.299 * r + 0.587 * g + 0.114 * b));
+    if (lift !== this.groundLift) {
+      this.groundLift = lift;
+      for (const obj of this.objects.values()) this.applyLook(obj);
+    }
     this.requestRender();
   }
 
@@ -551,8 +566,17 @@ export class Viewer {
   private applyLook(obj: ViewerObject): void {
     const m = obj.mesh.material;
     const focus = obj.focus;
-    setMaterialOpacity(m, obj.opacity * (focus?.contextOpacity ?? 1));
+    const opacity = obj.opacity * (focus?.contextOpacity ?? 1);
+    setMaterialOpacity(m, opacity);
     m.userData.uniforms.uDesaturate.value = focus?.desaturate ?? 0;
+    // The surroundings' veil: (1 − opacity) × the lift, added after premultiplying. Their shading, the gum's tint and
+    // how much shows through them stay as on a light ground; only the ground they blend over is lighter.
+    const veil = focus && m.transparent ? (1 - opacity) * this.groundLift : 0;
+    if (m.premultipliedAlpha !== veil > 0) {
+      m.premultipliedAlpha = veil > 0;
+      m.needsUpdate = true;
+    }
+    m.userData.uniforms.uVeil.value = veil;
     // Surroundings sit behind the focus copy and anything coincident with it (the surface default is 1).
     m.polygonOffsetFactor = m.polygonOffsetUnits = focus ? SURROUNDINGS_POLYGON_OFFSET : 1;
     this.syncPrepass(obj);

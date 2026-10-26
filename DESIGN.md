@@ -507,7 +507,7 @@ The auto-design draft, before anything is kept (`apps/web/src/ui/ai/AutoDesign.t
 The scene the landing page's renders come from (`apps/web/src/engine/`).
 - **Ground:** Viewport Grey #e9ecf0, the landing renders' ground; #20242a in the dark theme.
 - **Surfaces:** the procedural matcaps, Stone for scans and Design Blue for restorations, so the editor and the landing captures show the same materials.
-- **See-through:** a scan below full opacity (the focus view's surroundings and antagonist at 40%, or the object panel) shows only its front surface. A depth-only copy is drawn just before it, and see-through objects are drawn back to front, each with its own pre-pass. Opaque things (the crown, the prep in focus) show through; inner walls and far sides never do. The focus view greys the surroundings by 35%, so gums and neighbours still read as gum and tooth.
+- **See-through:** a scan below full opacity (the focus view's surroundings and antagonist at 40%, or the object panel) shows only its front surface. A depth-only copy is drawn just before it, and see-through objects are drawn back to front, each with its own pre-pass. Opaque things (the crown, the prep in focus) show through; inner walls and far sides never do. The focus view greys the surroundings by 35%, so gums and neighbours still read as gum and tooth. On the dark theme's ground they blend as if over a ground no darker than luma 0.34 (a veil added after premultiplying), so they keep the light theme's shading and gum tint and the same see-through, instead of turning dark grey and maroon; the light ground is above that floor and is unchanged.
 - **Move handles:** the frame's axis colours (see The Data Is Not Decoration Rule), never three.js's pure red, green and blue.
 
 ### Tooth Chart

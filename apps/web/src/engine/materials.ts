@@ -9,6 +9,8 @@ export interface SurfaceUniforms {
   uRange: { value: Vector2 };
   /** 0 = full colour, 1 = grey (the dimmed surroundings of the focus view). */
   uDesaturate: { value: number };
+  /** Added after premultiplying by alpha (only with `premultipliedAlpha`): lightens what is behind a see-through surface. */
+  uVeil: { value: number };
 }
 
 export interface SurfaceMaterial extends MeshMatcapMaterial {
@@ -33,6 +35,7 @@ export function createSurfaceMaterial(matcap: Texture, backColor = new Color('#b
     uLut: { value: null },
     uRange: { value: new Vector2(0, 1) },
     uDesaturate: { value: 0 },
+    uVeil: { value: 0 },
   };
   const material = new MeshMatcapMaterial({
     matcap,
@@ -58,6 +61,9 @@ export function createSurfaceMaterial(matcap: Texture, backColor = new Color('#b
           'uniform vec3 uBackColor;',
           'uniform float uBackMix;',
           'uniform float uDesaturate;',
+          '#ifdef PREMULTIPLIED_ALPHA',
+          'uniform float uVeil;',
+          '#endif',
           '#ifdef USE_SCALAR_MAP',
           'uniform sampler2D uLut;',
           'uniform vec2 uRange;',
@@ -83,6 +89,10 @@ export function createSurfaceMaterial(matcap: Texture, backColor = new Color('#b
           '}',
           'gl_FragColor.rgb = mix( gl_FragColor.rgb, vec3( dot( gl_FragColor.rgb, vec3( 0.299, 0.587, 0.114 ) ) ), uDesaturate );',
         ].join('\n'),
+      )
+      .replace(
+        '#include <premultiplied_alpha_fragment>',
+        ['#include <premultiplied_alpha_fragment>', '#ifdef PREMULTIPLIED_ALPHA', 'gl_FragColor.rgb += uVeil;', '#endif'].join('\n'),
       );
   };
   material.customProgramCacheKey = () => `dcad-surface-v3${material.defines?.USE_SCALAR_MAP ? '-scalar' : ''}`;
