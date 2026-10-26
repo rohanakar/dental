@@ -18,6 +18,7 @@ import type { V3 } from '../geometry/pca';
 import { writePly } from '../geometry/ply';
 import { prepRegion, prepSeedVertex, type PrepRegion } from '../geometry/prepRegion';
 import { wingRegion } from '../geometry/wingUnit';
+import { proposeWingOutline } from '../geometry/wingOutline';
 import { processScan } from '../geometry/processScan';
 import { bvhRayCaster, type RayCaster } from '../geometry/raycast';
 import { analyzeSurface, smoothVertexNormals, type SurfaceAnalysis } from '../geometry/surface';
@@ -46,6 +47,8 @@ import type {
   FrameRequest,
   MarginTrace,
   SurfaceInfo,
+  WingOutlineRequest,
+  WingOutlineView,
 } from './analysisTypes';
 import { frameworkView, overpressViews, singleFramework } from './frameworkView';
 import { buildScanPayload, type ScanPayload } from './scanPayload';
@@ -237,6 +240,39 @@ const api = {
       ms: performance.now() - t0,
     };
     return Comlink.transfer(result, [trace.points.buffer as ArrayBuffer]);
+  },
+
+  /** Automatic Maryland wing outline (classical.wing-outline): the lingual band around the click, closed by the live-wire. */
+  wingOutline(request: WingOutlineRequest): WingOutlineView {
+    const t0 = performance.now();
+    const scan = registry.get(request.jawSha);
+    const surface = surfaceOf(scan);
+    const out = proposeWingOutline({
+      positions: scan.positions,
+      indices: scan.indices,
+      graph: surface.graph,
+      curvature: surface.curvature,
+      normals: smoothNormalsOf(scan),
+      ray: rayOf(scan),
+      weight: weightOf(scan),
+      frame: request.frame,
+      toward: request.toward,
+    });
+    const result: WingOutlineView = {
+      points: out.trace.points,
+      anchorVertices: out.trace.anchorVertices,
+      lengthMm: out.trace.lengthMm,
+      anchors: out.anchors,
+      seed: out.seed,
+      seedMoved: out.seedMoved,
+      regionClosed: out.region.closed,
+      areaMm2: out.areaMm2,
+      gingivaMm: out.gingivaMm,
+      incisalMm: out.incisalMm,
+      warnings: out.warnings,
+      ms: performance.now() - t0,
+    };
+    return Comlink.transfer(result, [out.trace.points.buffer as ArrayBuffer]);
   },
 
   smoothMargin(sha256: string, points: Float32Array, iterations: number): Float32Array {

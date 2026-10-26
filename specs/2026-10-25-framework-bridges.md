@@ -1,6 +1,6 @@
 # Framework bridges (reduced crowns and pontics, overpress, pressed pontics)
 
-Status: **in progress** (2026-10-26). Phases A and B have landed: reduced crowns, pontics and framework bridges in the editor, the runner and export. The AI items (cutback proposer and gate, agent metrics) are next.
+Status: **done** (2026-10-26). Phases A and B (reduced crowns, pontics and framework bridges in the editor, the runner and export) and the AI items (cutback proposer and gate, agent metrics, Rx wording) have landed.
 Depends on: [2026-10-25-bridge-mode.md](2026-10-25-bridge-mode.md) (units, connectors, union, unit kinds).
 
 ## Goal
@@ -267,3 +267,31 @@ Also:
   - The framework browser script (agent scratchpad) is not yet in `tools/e2e`.
   - AI items: the `classical.cutback@1` proposer and gate, agent metrics for veneer and shortfall, a `qa.test.ts`
     extension, and Rx wording for CoCr and metal-ceramic.
+
+### AI items (2026-10-26): cutback proposer, gate, assistant, Rx
+- **`classical.cutback@1`** (`apps/web/src/ai/proposers.ts`) runs after the adaptation on reduced units, in single and
+  bridge auto-design. It sets the cutback from the material:
+  - zirconia, lithium disilicate and PMMA: full 1.0 mm (layering or pressing)
+  - CoCr and titanium: facial 1.2 mm (metal-ceramic: buccal and the occlusal third, lingual at full contour)
+  - collar and overpress stay as set
+  In a bridge it sets every reduced unit at once, and the connector gate then merges the frameworks.
+- **Gate** (`cutbackGate`, `ai/qa.ts`): the framework is a printable solid, and the largest veneer deficit is
+  ≤ 0.1 mm.
+- **Assistant:**
+  - The prompt explains frameworks, veneering space and `set_cutback`.
+  - Metrics report the mode, the requested and measured veneer, and the shortfall area and largest deficit.
+- **Rx:**
+  - CoCr ("CoCr", "cobalt-chrome", "non-precious") and titanium are materials.
+  - "metal-ceramic" or "PFM" without a named alloy reads as CoCr.
+  - A line about a cut-back framework (PFM, cut back, layered, framework, coping, veneered, overpress) makes its
+    units reduced crowns and pontics.
+- **Tests:** `qa.test.ts` (the cutback gate passes a framework with no deficit and fails a 0.63 mm deficit) and
+  `rx.test.ts` (a PFM bridge reads as reduced CoCr units) are extended.
+- **E2E:** `tools/e2e/ai-framework.mjs`, 6/6.
+  - Facial 1.2 mm on every unit of the CoCr bridge; full 1.0 mm on the single zirconia crown.
+  - The gate stops both drafts on the synthetic preps' veneer shortfall: 0.82 mm on the CoCr retainers, 0.60 mm on
+    the single crown. The preps' walls are thinner than the framework minimum, as the runner reports.
+  - So one-click framework design never completes on the synthetic cases; it does on preps with room to veneer.
+- **Verified** with the implant AI items (see `2026-10-25-implant-bridges.md`).
+- **Open:** cutback depths and framework minimums are placeholders for lab QA.
+

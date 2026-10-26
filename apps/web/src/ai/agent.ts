@@ -1,6 +1,7 @@
 import {
   agentToolDefs,
   commandFromToolCall,
+  cutbackOf,
   isQueryTool,
   QUERY_TOOLS,
   type ClinicalCommand,
@@ -16,8 +17,8 @@ import * as api from '../api/client';
 import { CommandError } from '../design/reducer';
 import { useDesignStore } from '../design/store';
 import { crownTool } from '../tools/crownTool';
-import { designMetrics, type AgentMetrics } from './metrics';
-import { agentSystemPrompt, bridgePromptContext, MAX_AGENT_ACTIONS } from './prompts';
+import { designMetrics, type AgentMetrics, type ImplantMetrics, type VeneerMetrics, type WingMetrics } from './metrics';
+import { agentSystemPrompt, bridgePromptContext, MAX_AGENT_ACTIONS, restorationPromptContext } from './prompts';
 
 export type LlmFn = (request: LlmRequest) => Promise<LlmResponse>;
 
@@ -58,7 +59,20 @@ function caseSummary() {
   const { doc, activeFdi } = useDesignStore.getState();
   return {
     activeTooth: activeFdi,
-    teeth: doc.setup.teeth.map((t) => ({ fdi: t.fdi, material: t.material, shade: t.shade ?? null })),
+    // restoration: anatomic-crown, pontic, implant-crown (screw-retained on a Ti-base), maryland-wing, reduced-crown or
+    // reduced-pontic (frameworks cut back for veneering); with the screw channel and the cutback where they apply.
+    teeth: doc.setup.teeth.map((t) => {
+      const design = doc.teeth.find((x) => x.fdi === t.fdi);
+      const cutback = design ? cutbackOf(doc.setup, design) : undefined;
+      return {
+        fdi: t.fdi,
+        restoration: t.restoration,
+        material: t.material,
+        shade: t.shade ?? null,
+        ...(design?.screwChannel ? { screwChannel: design.screwChannel } : {}),
+        ...(cutback ? { cutback } : {}),
+      };
+    }),
     notes: doc.setup.notes,
     steps: Object.fromEntries(doc.teeth.map((t) => [t.fdi, t.steps])),
     adaptation: Object.fromEntries(doc.teeth.map((t) => [t.fdi, t.crown?.kind === 'template' ? (t.crown.adapt ?? {}) : null])),
@@ -70,7 +84,7 @@ function caseSummary() {
 
 const mm = (x: number) => x.toFixed(2);
 
-/** One line per connector, and what keeps the merged bridge from passing its checks. */
+/** One line per connector, the wings, and what keeps the merged bridge from passing its checks. */
 function bridgeSummary(m: AgentMetrics): string[] {
   const parts: string[] = [];
   if (m.bridgeError) parts.push(`bridge not designed: ${m.bridgeError}`);
@@ -82,11 +96,33 @@ function bridgeSummary(m: AgentMetrics): string[] {
     const failures = c.failures.length ? ` (${c.failures.join('; ')})` : '';
     parts.push(`connector ${c.between[0]}-${c.between[1]} ${mm(area)} mm² (min ${c.minAreaMm2}), ${mm(height)} mm high (min ${c.minHeightMm})${failures}`);
   }
+  for (const u of b.units) {
+    if (u.wing) parts.push(`wing ${u.fdi}: ${wingSummary(u.wing)}`);
+    if (u.fdi !== m.fdi && u.implant) parts.push(`${u.fdi}: ${implantSummary(u.implant)}`);
+    if (u.fdi !== m.fdi && u.veneer) parts.push(`${u.fdi}: ${veneerSummary(u.veneer)}`);
+  }
   if (b.unionError) parts.push(`not merged into one solid: ${b.unionError}`);
-  else if (b.union && !(b.union.printable && b.union.components === 1 && b.union.genus === 0)) parts.push('the merged bridge is not one printable solid');
-  else if (b.union && !b.union.seatingUnchanged) parts.push('the merged bridge changed the seating of a retainer');
+  else if (b.failedChecks.length) parts.push(`failing bridge checks: ${b.failedChecks.join('; ')}`);
   return parts;
 }
+
+function implantSummary(i: ImplantMetrics): string {
+  const channel = i.channelAngleDeg ? `screw channel ${mm(i.channelAngleDeg)}° toward ${i.channelAzimuthDeg}°` : 'straight screw channel';
+  const wall = i.minChannelWallMm === null ? '' : `, wall ${mm(i.minChannelWallMm)} mm (min ${i.requiredChannelWallMm})`;
+  const gap = i.tiBaseGapMaxErrorMm === null ? '' : `, Ti-base gap ${i.tiBaseGapMm} mm ± ${mm(i.tiBaseGapMaxErrorMm)}`;
+  const seat = !i.seatsAlongPath ? ', does not seat on its Ti-base along the path' : i.seatingUnchangedInBridge === false ? ', Ti-base seating changed in the merged bridge' : '';
+  return `${channel} exiting ${i.channelExitFaces}${i.channelExitOk ? '' : ' (must exit occlusally or lingually)'}${wall}${gap}${seat}`;
+}
+
+const veneerSummary = (v: VeneerMetrics): string =>
+  `${v.mode} cutback ${v.thicknessMm} mm${v.minVeneerMm !== null ? `, veneer ${mm(v.minVeneerMm)}–${mm(v.meanVeneerMm ?? v.minVeneerMm)} mm` : ''}${
+    v.shortfallAreaMm2 > 0 ? `, insufficient veneering space on ${mm(v.shortfallAreaMm2)} mm² (up to ${mm(v.maxDeficitMm)} mm short)` : ''
+  }`;
+
+const wingSummary = (w: WingMetrics): string =>
+  `${w.thicknessMm} mm thick (thinnest ${w.minThicknessMm === null ? 'n/a' : mm(w.minThicknessMm)} mm), bonded ${mm(w.bondedAreaMm2)} mm² (${Math.round(w.blockedOutFraction * 100)}% blocked out)${
+    w.spaceConflict ? `, insufficient space against the antagonist (${w.minClearanceMm === null ? '?' : mm(w.minClearanceMm)} mm)` : ''
+  }`;
 
 function metricsSummary(m: AgentMetrics | null): string {
   if (!m) return 'no metrics';
@@ -95,6 +131,8 @@ function metricsSummary(m: AgentMetrics | null): string {
   if (m.mesialContactMm !== null) parts.push(`mesial ${m.mesialContactMm.toFixed(2)} mm`);
   if (m.distalContactMm !== null) parts.push(`distal ${m.distalContactMm.toFixed(2)} mm`);
   if (m.minThicknessMm !== null) parts.push(`min thickness ${m.minThicknessMm.toFixed(2)} mm`);
+  if (m.implant) parts.push(implantSummary(m.implant));
+  if (m.veneer) parts.push(veneerSummary(m.veneer));
   if (m.conflicts.length) parts.push(`conflicts: ${m.conflicts.join('; ')}`);
   if (m.adaptation === 'stale') parts.push('adaptation off since the last change (re-apply adapt_occlusion / set_contact)');
   parts.push(...bridgeSummary(m));
@@ -171,7 +209,12 @@ export async function runAgent(opts: {
   const maxTurns = opts.maxTurns ?? 12;
   const { doc, activeFdi } = useDesignStore.getState();
   const tooth = doc.teeth.find((t) => t.fdi === activeFdi);
-  const system = agentSystemPrompt({ fdi: activeFdi, crownProposed: Boolean(tooth?.crown), bridge: bridgePromptContext(doc, activeFdi) });
+  const system = agentSystemPrompt({
+    fdi: activeFdi,
+    crownProposed: Boolean(tooth?.crown),
+    bridge: bridgePromptContext(doc, activeFdi),
+    restorations: restorationPromptContext(doc, activeFdi),
+  });
   const tools = agentToolDefs();
   const messages: LlmMessage[] = [...(opts.history ?? []), { role: 'user', content: [text(opts.instruction)] }];
   const usage = { inputTokens: 0, outputTokens: 0 };

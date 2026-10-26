@@ -286,3 +286,14 @@ See [2026-10-26-anterior-margin-and-export-all.md](2026-10-26-anterior-margin-an
 - 109 tests.
 
 See [2026-10-26-anterior-tooth-frame.md](2026-10-26-anterior-tooth-frame.md).
+
+**2026-10-26: AI items for implant, Maryland and framework restorations.** One-click auto-design now covers them.
+- Implants: a scan-body match replaces the margin, then the implant path, and a screw channel after the proposal.
+- Maryland wings: an outline proposer, and the wing checks in the bridge gate.
+- Frameworks: a cutback proposer per material, gated on the veneer shortfall.
+- The assistant knows the three restoration types, and Rx reads implant and metal-ceramic wording.
+- 110 tests. Three new browser scripts: `ai-implant`, `ai-maryland`, `ai-framework`.
+
+See the AI items in [2026-10-25-implant-bridges.md](2026-10-25-implant-bridges.md),
+[2026-10-25-maryland-bridges.md](2026-10-25-maryland-bridges.md) and
+[2026-10-25-framework-bridges.md](2026-10-25-framework-bridges.md).

@@ -41,6 +41,19 @@ These scripts drive the real web app in headless Chrome (Playwright, `channel: '
   `pnpm --filter @dcad/pipeline-runner run --synthetic`): setup (Wing on 11), the frame click on the palatal surface,
   the "Wing outline" live-wire, the common axis, Propose bridge, the Adapt wing panel and Check bridge, Finalize and
   the export (one closed solid of genus 0; the sidecar carries the wing). Screenshots go to `out/e2e/maryland/`.
+- `ai-implant.mjs` (offline): implant auto-design on `lower-implants-35-37.stl` (`fixtures:implant`). The bridge
+  35i–[36]–37i one-click (a click on each scan body): the scan-body match replaces the margin, and at the default
+  0.8 mm channel wall the draft stops at "Screw channel 35"; Reject, 35's wall at 0.55 mm (the synthetic teeth are
+  about 0.7× natural size), then every gate passes → Accept → the agent's channel metrics → Finalize "Ready to mill".
+  Then a single implant crown on 37: frame → implant position → crown → screw channel → adapt. Screenshots go to
+  `out/e2e/ai-implant/` (`E2E_OUT`; `E2E_ONLY=bridge|single`).
+- `ai-maryland.mjs` (offline): Maryland auto-design on `synthetic-maryland-11-12`: one click on 11's palatal surface →
+  the wing outline proposed (classical.wing-outline) → axis, bridge, adapt (the wing skipped), the connector and union
+  gate with the wing checks → Accept → Finalize. Screenshots go to `out/e2e/ai-maryland/`.
+- `ai-framework.mjs` (offline): framework auto-design: the CoCr bridge 35–[36]–37 (facial 1.2 mm cutback) and a
+  single reduced zirconia crown 36 (full 1.0 mm). The cutback gate stops both drafts on the synthetic preps' veneer
+  shortfall (their walls are thinner than the framework minimum, as the runner reports); the agent's veneer metrics.
+  Screenshots go to `out/e2e/ai-framework/`.
 
 Clicks on the scan (`clickWorld` in `ai-bridge.mjs`, `bridge.mjs`, `implant.mjs` and `framework.mjs`) wait until the
 surface under the projected point is the target, within 0.3 mm. In headless Chrome with SwiftShader a frame of a
@@ -52,7 +65,8 @@ without a 'rest' event and leaves it true.
 
 ```bash
 pnpm dev:web                          # terminal 1 (and pnpm dev:api + Postgres for the online script)
-pnpm --filter @dcad/e2e offline       # or: online, move, bridge, ai-bridge, implant, anterior, framework, maryland
+pnpm --filter @dcad/e2e offline       # or: online, move, bridge, ai-bridge, implant, anterior, framework, maryland,
+                                      #     ai-implant, ai-maryland, ai-framework
 ```
 
 Day 7 turns these into `@playwright/test` specs.

@@ -2,7 +2,21 @@ import type { QaCheck } from '@dcad/shared';
 import { describe, expect, it } from 'vitest';
 import type { BridgeChecks, ConnectorCheck } from '../geometry/bridgeUnion';
 import type { ConnectorFailure } from '../geometry/connectors';
-import { adaptGate, axisGate, bridgeGate, crownGate, marginGate, passed, sharpestTurnDeg } from './qa';
+import { wingChecks } from '../geometry/wingUnit';
+import {
+  adaptGate,
+  axisGate,
+  bridgeGate,
+  crownGate,
+  cutbackGate,
+  implantPathGate,
+  marginGate,
+  passed,
+  scanBodyGate,
+  screwChannelGate,
+  sharpestTurnDeg,
+  wingOutlineGate,
+} from './qa';
 
 type V3 = [number, number, number];
 const circle = (r: number, n: number, jitter = 0): V3[] =>
@@ -37,7 +51,7 @@ describe('QA gates', () => {
     expect(sharpestTurnDeg(spiked)).toBeGreaterThan(120);
   });
 
-  it('axis, crown, adapt and bridge: fail on undercut or tilt, an unprintable or thin crown, a conflict or an open contact, a weak connector, a split union or moved seating', () => {
+  it('axis, crown, adapt, implant, cutback and bridge: pass the good case, fail each defect (undercut, thin, conflict, poor fit, divergence, channel, veneer, connector, union, seating, wing)', () => {
     expect(passed(axisGate({ marginUndercutCount: 0, angleFromOcclusalDeg: 3, prepClosed: true }))).toBe(true);
     expect(passed(axisGate({ marginUndercutCount: 4, angleFromOcclusalDeg: 3, prepClosed: true }))).toBe(false);
     expect(passed(axisGate({ marginUndercutCount: 0, angleFromOcclusalDeg: 30, prepClosed: true }))).toBe(false);
@@ -53,6 +67,21 @@ describe('QA gates', () => {
     expect(passed(adaptGate({ adapt: { occlusion: conflict } }))).toBe(false);
     const open = { ...reached, minClearanceMm: 0.91, open: { clearanceMm: 0.91 } };
     expect(passed(adaptGate({ adapt: { mesial: reached, distal: open } }))).toBe(false);
+
+    // Implant position, path and screw channel; the cutback of a reduced unit.
+    const fit = { rmsMm: 0.012, inlierFraction: 0.98, coverage: 0.8 };
+    expect(passed(scanBodyGate(fit))).toBe(true);
+    expect(passed(scanBodyGate({ ...fit, rmsMm: 0.09 }))).toBe(false);
+    expect(passed(implantPathGate({ divergenceDeg: 8.7, maxDivergenceDeg: 20 }))).toBe(true);
+    expect(passed(implantPathGate({ divergenceDeg: 23.5, maxDivergenceDeg: 20 }))).toBe(false);
+    const channel = { exitOk: true, wallOk: true, minWallMm: 1.39, requiredWallMm: 0.8 };
+    expect(passed(screwChannelGate(channel, { ok: true }))).toBe(true);
+    expect(passed(screwChannelGate({ ...channel, exitOk: false }))).toBe(false);
+    expect(passed(screwChannelGate(null))).toBe(false);
+    const framework = { validation: { ...validation, selfIntersections: 0, printable: true } };
+    expect(passed(cutbackGate(framework))).toBe(true);
+    const shortfall = { vertices: 226, areaMm2: 7.69, minVeneerMm: 0.26, maxDeficitMm: 0.63, at: [0, 0, 0] as V3 };
+    expect(passed(cutbackGate({ ...framework, shortfall }))).toBe(false);
 
     // Bridge 35–[36]–37: connectors measured on the union, one solid, seating unchanged, pontic base on the ridge.
     const failedIds = (qa: QaCheck[]) => qa.filter((c) => !c.passed).map((c) => c.id);
@@ -78,5 +107,26 @@ describe('QA gates', () => {
     const moved = { ...checks.seating[1]!, deltaMaxMm: 0.03 };
     expect(failedIds(bridgeGate({ ...bridge, union: { checks: { ...checks, seating: [checks.seating[0]!, moved] } } }))).toEqual(['bridge.seating.37']);
     expect(failedIds(bridgeGate({ connectors: bridge.connectors, unionError: 'not manifold' }))).toEqual(['bridge.union']);
+
+    // Implant bridge 35i–[36]–37i: one through-hole per screw channel; each channel exits occlusally with its wall.
+    const implantUnit = (fdi: number, minWallMm = 1.39) => ({ fdi, implant: { channel: { ...channel, minWallMm, wallOk: minWallMm >= 0.8 }, cut: {}, cutOk: true } });
+    const implantBridge = { ...bridge, union: { checks: { ...checks, union: { ...checks.union, genus: 2 } } }, units: [implantUnit(35), { fdi: 36 }, implantUnit(37)] };
+    expect(passed(bridgeGate(implantBridge))).toBe(true);
+    expect(failedIds(bridgeGate({ ...implantBridge, union: bridge.union }))).toEqual(['bridge.union.genus']);
+    expect(failedIds(bridgeGate({ ...implantBridge, units: [implantUnit(35, 0.61), { fdi: 36 }, implantUnit(37)] }))).toEqual(['bridge.channel.35.wall']);
+
+    // Maryland bridge 11w–[12]: the wing checks measured with the union (wingChecks) are part of the gate.
+    const wing = {
+      params: { wingThicknessMm: 0.7, wingEdgeThicknessMm: 0.2, wingMinThicknessMm: 0.5, cementGapMm: 0.03, occlusalClearanceMm: 0.1 },
+      blockout: { liftedVertices: 0, maxLiftMm: 0, areaMm2: 0, fraction: 0, undercutFaces: 0, undercutAreaMm2: 0, outlineUndercutPoints: 0 },
+      thickness: { samples: 300, minMm: 0.7, maxMm: 0.7, meanMm: 0.7, rampMinMm: 0.2 },
+    };
+    const withWing = (w: typeof wing) => ({ ...bridge, union: { checks: { ...checks, wings: [{ fdi: 11, checks: wingChecks(11, w), ok: true }] } } });
+    expect(passed(bridgeGate(withWing(wing)))).toBe(true);
+    expect(failedIds(bridgeGate(withWing({ ...wing, thickness: { ...wing.thickness, minMm: 0.42 } })))).toEqual(['wing.11.thickness']);
+    // Its proposed outline: closed, the region inside it does not leak, a bonded area.
+    const outline = { anchors: 12, points: new Float32Array(circle(2.5, 80).flat()), regionClosed: true, areaMm2: 18.4 };
+    expect(passed(wingOutlineGate(outline))).toBe(true);
+    expect(failedIds(wingOutlineGate({ ...outline, regionClosed: false }))).toEqual(['wing.outline.region']);
   });
 });

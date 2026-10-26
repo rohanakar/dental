@@ -9,6 +9,7 @@ import {
   type LlmResponse,
   type Material,
   normalizeConnections,
+  type RestorationType,
   type ToothOrder,
   validateBridges,
 } from '@dcad/shared';
@@ -33,10 +34,19 @@ const MATERIAL_PATTERNS: Array<[Material, RegExp]> = [
   ['lithium-disilicate', /e\.?\s?max|lithium[\s-]?disilicate|\blisi2?\b/i],
   ['pmma', /\bpmma\b|temporar|provisional/i],
   ['zirconia', /zirconia|\bzr\b|\bzirc\b/i],
+  ['cocr', /\bco[\s-]?cr\b|cobalt[\s-]?chrom|non[\s-]?precious/i],
+  ['titanium', /titanium/i],
 ];
+/** Metal-ceramic (porcelain fused to metal): a metal framework cut back for porcelain. */
+const METAL_CERAMIC = /metal[\s-]?ceramic|porcelain[\s-]fused[\s-]to[\s-]metal|\bpfm\b/i;
+const METALS: readonly Material[] = ['cocr', 'titanium'];
+/** A line about implants: its retainers are implant crowns (screw-retained on Ti-bases). */
+const IMPLANT = /\bimplants?\b|screw[\s-]retained|\bti[\s-]?bases?\b/i;
+/** A line about a framework cut back for veneering (metal-ceramic, layered, pressed): its units are reduced crowns and pontics. */
+const REDUCED = new RegExp(`cut[\\s-]?back|\\breduced\\b|framework|coping|(?<!multi[\\s-]?)layer(?:ed|ing)\\b|veneer(?:ed|ing)?\\b|over[\\s-]?press|${METAL_CERAMIC.source}`, 'i');
 const QUADRANT: Record<string, number> = { UR: 1, UL: 2, LL: 3, LR: 4 };
 const WORD_QUADRANT: Record<string, number> = { 'upper right': 1, 'upper left': 2, 'lower left': 3, 'lower right': 4 };
-const TOOTH_CONTEXT = /\b(?:tooth|teeth|fdi|crowns?|units?|bridges?|pontics?|cantilevers?|abutments?|retainers?)\b|#/i;
+const TOOTH_CONTEXT = /\b(?:tooth|teeth|fdi|crowns?|units?|bridges?|pontics?|cantilevers?|abutments?|retainers?|implants?|frameworks?|copings?)\b|#/i;
 const REF = /\b(?:ref(?:erence)?|case)\s*(?:no\.?|number)?\s*[:#]\s*([A-Za-z0-9][A-Za-z0-9._-]{0,63})/i;
 const SHADE_LABELLED = /\bshade\s*[:=]?\s*([A-D][1-4](?:\.5)?)(?!\w|\.\d)/i;
 const SHADE_BARE = /(?<![\w.])([A-D][1-4](?:\.5)?)(?!\w|\.\d)/;
@@ -152,9 +162,14 @@ function readLine(line: string): LineReading {
 
 /**
  * Rule-based prescription reader: FDI numbers (also #36, UR7, "lower left 6"),
- * material keywords, VITA shade, and a case reference from "Ref:"/"Case:"
- * only (never names). Used offline, as the LLM fallback, and to cross-check
- * the LLM's extraction.
+ * material keywords (metal-ceramic reads as CoCr), VITA shade, and a case
+ * reference from "Ref:"/"Case:" only (never names). Used offline, as the LLM
+ * fallback, and to cross-check the LLM's extraction.
+ *
+ * Restorations: the retainers on a line about implants ("implant crown 46",
+ * "screw-retained", "Ti-base") are implant crowns; the units on a line about a
+ * cut-back framework (metal-ceramic, PFM, "cut back", layered, framework) are
+ * reduced crowns and pontics.
  *
  * Bridges: "bridge 35-37", "35–37 bridge" and "13x23" are spans whose ends are
  * abutments and whose teeth between are pontics unless the text names them as
@@ -169,9 +184,20 @@ export function parseRxClassical(text: string): RxParse {
   const named = new Map<number, 'pontic' | 'abutment'>();
   const spans: number[][] = [];
   const restLines: string[] = [];
+  // Implant and cut-back wording applies to the teeth on its own line (one restoration per line is the usual form).
+  const implantTeeth = new Set<number>();
+  const reducedTeeth = new Set<number>();
   for (const line of lines) {
     const reading = readLine(line);
     for (const fdi of reading.teeth) if (!teeth.includes(fdi)) teeth.push(fdi);
+    const implant = IMPLANT.test(line);
+    const reduced = REDUCED.test(line);
+    for (const fdi of reading.teeth) {
+      // Implant restorations here are full contour: a cut-back word on an implant line reduces nothing.
+      if (implant) implantTeeth.add(fdi);
+      else if (reduced) reducedTeeth.add(fdi);
+    }
+    if (implant && reduced && reading.teeth.length) notes.push(`Implant restorations are full contour: ${reading.teeth.join(', ')} not read as cut back.`);
     for (const [fdi, role] of reading.named) if (!named.has(fdi)) named.set(fdi, role);
     spans.push(...reading.spans);
     const recognized =
@@ -183,6 +209,13 @@ export function parseRxClassical(text: string): RxParse {
   const materials = MATERIAL_PATTERNS.map(([m, re]) => [m, text.search(re)] as const)
     .filter(([, i]) => i >= 0)
     .sort((a, b) => a[1] - b[1]);
+  // Metal-ceramic names no alloy: CoCr, the common non-precious one, unless a metal is named.
+  const metalCeramic = text.search(METAL_CERAMIC);
+  if (metalCeramic >= 0 && !materials.some(([m]) => METALS.includes(m))) {
+    materials.push(['cocr', metalCeramic]);
+    materials.sort((a, b) => a[1] - b[1]);
+    notes.push('Metal-ceramic without a named alloy: read as CoCr.');
+  }
   let material: Material = 'zirconia';
   if (materials.length === 0) notes.push('No material given; defaulted to zirconia.');
   else {
@@ -215,9 +248,14 @@ export function parseRxClassical(text: string): RxParse {
   }
 
   const patientRef = REF.exec(text)?.[1] ?? '';
+  const restorationOf = (fdi: number): RestorationType => {
+    if (isPontic(fdi)) return reducedTeeth.has(fdi) ? 'reduced-pontic' : 'pontic';
+    if (implantTeeth.has(fdi)) return 'implant-crown';
+    return reducedTeeth.has(fdi) ? 'reduced-crown' : 'anatomic-crown';
+  };
   const orders: ToothOrder[] = teeth.map((fdi) => ({
     fdi,
-    restoration: isPontic(fdi) ? 'pontic' : 'anatomic-crown',
+    restoration: restorationOf(fdi),
     material,
     ...(shade ? { shade } : {}),
   }));

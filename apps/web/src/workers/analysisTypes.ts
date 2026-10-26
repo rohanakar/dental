@@ -163,6 +163,31 @@ export interface AutoMarginResult extends MarginTrace {
   ms: number;
 }
 
+/** Automatic Maryland wing outline (classical.wing-outline, geometry/wingOutline.ts). */
+export interface WingOutlineRequest {
+  jawSha: string;
+  /** The wing's frame; `origin` is the click on the lingual surface. */
+  frame: { origin: V3; occlusal: V3; mesial: V3; buccal: V3 };
+  /** The proximal sides facing the bridge's other units: the outline wraps onto them. */
+  toward: ProximalSide[];
+}
+
+export interface WingOutlineView extends MarginTrace {
+  anchors: V3[];
+  /** A point inside the outline: the click, or (seedMoved) the region's most interior point, the new frame origin. */
+  seed: V3;
+  seedMoved: boolean;
+  /** The region inside the outline, flood-filled from `seed`, did not leak. */
+  regionClosed: boolean;
+  /** Its area (the bonded surface before blockout), mm². */
+  areaMm2: number;
+  /** Heights along the occlusal axis from the click of the gingiva and the incisal edge (or cusp tip) found. */
+  gingivaMm: number;
+  incisalMm: number;
+  warnings: string[];
+  ms: number;
+}
+
 // ---- Bridges (geometry/bridge.ts) ------------------------------------------------------
 
 /** A tooth frame as stored (ToothFrame without source). */

@@ -1,4 +1,4 @@
-import { ProposalEvent, type Crown, type InsertionAxis, type MarginLine, type QaCheck, type StepId, type ToothFrame } from '@dcad/shared';
+import { ProposalEvent, type Crown, type DesignDocument, type ImplantDesign, type InsertionAxis, type MarginLine, type QaCheck, type StepId, type ToothFrame } from '@dcad/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { newDocument } from '../design/document';
 import { applyCommands } from '../design/reducer';
@@ -40,6 +40,17 @@ const bridgeSetup = {
   teeth: [35, 36, 37].map((fdi) => ({ fdi, restoration: fdi === 36 ? ('pontic' as const) : ('anatomic-crown' as const), material: 'zirconia' as const })),
   connections: [[35, 36], [36, 37]] as Array<[number, number]>,
 };
+/** The same bridge on implants 35i–[36]–37i: the abutments' margin step is the scan-body match. */
+const implantSetup = { ...bridgeSetup, teeth: bridgeSetup.teeth.map((t) => (t.fdi === 36 ? t : { ...t, restoration: 'implant-crown' as const })) };
+const implantTooth = (doc: DesignDocument, fdi: number) => doc.setup.teeth.some((t) => t.fdi === fdi && t.restoration === 'implant-crown');
+const implant: ImplantDesign = {
+  libraryId: 'synthetic-generic@1/rp-non-engaging',
+  scanBodyPose: { position: [0, 0, 0], quaternion: [0, 0, 0, 1], scale: [1, 1, 1] },
+  engaging: false,
+  ascMaxDeg: 25,
+  fit: { rmsMm: 0.01, maxMm: 0.04, inlierFraction: 0.99, coverage: 0.8 },
+  source: 'auto',
+};
 const bridgeStub = (step: StepId, id: string, out: (fdi: number) => Proposal['output'], qa: () => QaCheck[] = () => [{ id: `${step}.check`, passed: true, message: 'stub' }], perAbutment = false): Proposer => ({
   id,
   step,
@@ -57,7 +68,14 @@ vi.mock('./proposers', () => ({
   ],
   BRIDGE_PROPOSERS: [
     bridgeStub('frame', 'classical.pontic-frame@1', () => ({ commands: [{ type: 'setFrame', fdi: 36, frame }], artifact: units([36], frame) })),
-    bridgeStub('margin', 'classical.margin-ridge@1', (fdi) => ({ commands: [{ type: 'setMargin', fdi, margin }], artifact: { points: margin.points.map((m) => m.p) } }), undefined, true),
+    {
+      ...bridgeStub('margin', 'classical.margin-ridge@1', (fdi) => ({ commands: [{ type: 'setMargin', fdi, margin }], artifact: { points: margin.points.map((m) => m.p) } }), undefined, true),
+      appliesTo: (doc: DesignDocument, fdi: number) => !implantTooth(doc, fdi),
+    },
+    {
+      ...bridgeStub('margin', 'classical.scan-body-match@1', (fdi) => ({ commands: [{ type: 'setImplant', fdi, implant }], artifact: { libraryId: implant.libraryId } }), undefined, true),
+      appliesTo: implantTooth,
+    },
     bridgeStub('axis', 'classical.bridge-axis@1', () => ({ commands: [{ type: 'setAxis', fdi: 35, axis }], artifact: units([35, 37], { direction: axis.direction }) })),
     bridgeStub(
       'proposal',
@@ -155,6 +173,27 @@ describe('auto-design orchestrator', () => {
       [36, 'proposal', 'rejected'],
       [37, 'proposal', 'rejected'],
     ]);
+
+    // Implant bridge 35i–[36]–37i: the implant position (scan-body match) replaces the margin on each abutment.
+    const implants = applyCommands(newDocument(), [{ type: 'setCaseSetup', setup: implantSetup }, { type: 'setFrame', fdi: 35, frame }, { type: 'setFrame', fdi: 37, frame }]);
+    useDesignStore.getState().load(implants, 0);
+    useDesignStore.getState().setActiveFdi(36);
+    await runAutoDesign();
+    expect(useOrchestrator.getState().steps.map((s) => [s.proposerId, s.fdi ?? null, s.status])).toEqual([
+      ['classical.pontic-frame@1', null, 'passed'],
+      ['classical.scan-body-match@1', 35, 'passed'],
+      ['classical.scan-body-match@1', 37, 'passed'],
+      ['classical.bridge-axis@1', null, 'passed'],
+      ['classical.bridge-proposal@1', null, 'passed'],
+      ['classical.connectors@1', null, 'failed'],
+    ]);
+    expect(useDesignStore.getState().doc.teeth.map((t) => [t.fdi, t.implant?.libraryId ?? null, Boolean(t.margin), t.steps.margin])).toEqual([
+      [35, implant.libraryId, false, 'done'],
+      [36, null, false, 'pending'],
+      [37, implant.libraryId, false, 'done'],
+    ]);
+    reject();
+    expect(useDesignStore.getState().doc).toBe(implants);
   });
 
   it('starts at the margin when a frame exists, and logs edits on save (crown and bridge)', async () => {

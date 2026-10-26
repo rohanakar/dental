@@ -98,6 +98,30 @@ export function implantMissing(doc: DesignDocument, abutments: readonly ToothDes
   return unmatched.length ? `Match the scan body on ${unmatched.join(', ')} (Implant position).` : null;
 }
 
+/**
+ * The commands that store a scan-body match (implantTool.accept and classical.scan-body-match): the tooth frame on
+ * the gingival opening (when the match moved it), the implant (setImplant) and, for a single unit, the implant axis
+ * as the insertion axis. Dispatch them as one batch.
+ */
+export function implantMatchCommands(doc: DesignDocument, fdi: number, libraryId: string, entry: ImplantEntryView | undefined, r: ScanBodyResult): Command[] {
+  const cmds: Command[] = [];
+  if (r.frame) cmds.push({ type: 'setFrame', fdi, frame: { ...r.frame, source: 'auto' } });
+  cmds.push({
+    type: 'setImplant',
+    fdi,
+    implant: {
+      libraryId,
+      scanBodyPose: r.pose,
+      engaging: entry?.engaging ?? false,
+      ascMaxDeg: entry?.ascMaxDeg ?? 0,
+      fit: { rmsMm: r.rmsMm, maxMm: r.maxMm, inlierFraction: r.inlierFraction, coverage: r.coverage },
+      source: 'auto',
+    },
+  });
+  if (!bridgeOf(doc, fdi)) cmds.push({ type: 'setAxis', fdi, axis: { direction: r.axis, source: 'auto' } });
+  return cmds;
+}
+
 /** The library entry a unit uses: its stored one, else engaging for a single unit, non-engaging in a bridge. */
 export function entryFor(doc: DesignDocument, fdi: number, library: readonly ImplantEntryView[]): ImplantEntryView | undefined {
   const stored = doc.teeth.find((t) => t.fdi === fdi)?.implant?.libraryId;
@@ -218,22 +242,7 @@ class ImplantTool {
     if (!match || !ctx || match.fdi !== ctx.fdi) return false;
     const { doc } = useDesignStore.getState();
     const entry = useImplantStore.getState().library?.find((e) => e.key === match.libraryId);
-    const r = match.result;
-    const cmds: Command[] = [];
-    if (r.frame) cmds.push({ type: 'setFrame', fdi: ctx.fdi, frame: { ...r.frame, source: 'auto' } });
-    cmds.push({
-      type: 'setImplant',
-      fdi: ctx.fdi,
-      implant: {
-        libraryId: match.libraryId,
-        scanBodyPose: r.pose,
-        engaging: entry?.engaging ?? false,
-        ascMaxDeg: entry?.ascMaxDeg ?? 0,
-        fit: { rmsMm: r.rmsMm, maxMm: r.maxMm, inlierFraction: r.inlierFraction, coverage: r.coverage },
-        source: 'auto',
-      },
-    });
-    if (!bridgeOf(doc, ctx.fdi)) cmds.push({ type: 'setAxis', fdi: ctx.fdi, axis: { direction: r.axis, source: 'auto' } });
+    const cmds = implantMatchCommands(doc, ctx.fdi, match.libraryId, entry, match.result);
     try {
       useDesignStore.getState().dispatch(cmds);
     } catch (e) {

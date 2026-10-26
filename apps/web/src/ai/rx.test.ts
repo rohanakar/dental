@@ -5,8 +5,8 @@ vi.mock('../api/client', () => ({ llm: vi.fn() }));
 
 const { extractRxWithLlm, parseRxClassical } = await import('./rx');
 
-const crown = (fdi: number, material: string, shade?: string) => ({ fdi, restoration: 'anatomic-crown', material, ...(shade ? { shade } : {}) });
-const pontic = (fdi: number, material: string) => ({ fdi, restoration: 'pontic', material });
+const crown = (fdi: number, material: string, shade?: string, restoration = 'anatomic-crown') => ({ fdi, restoration, material, ...(shade ? { shade } : {}) });
+const pontic = (fdi: number, material: string, shade?: string, restoration = 'pontic') => ({ fdi, restoration, material, ...(shade ? { shade } : {}) });
 
 /** Synthetic prescriptions (no patient data) with the exact setups the rule-based reader must produce. */
 const CASES: Array<{ name: string; text: string; setup: object }> = [
@@ -37,6 +37,31 @@ const CASES: Array<{ name: string; text: string; setup: object }> = [
         [11, 12],
         [11, 21],
         [21, 22],
+        [35, 36],
+        [36, 37],
+      ],
+    },
+  },
+  {
+    // A line about implants makes its retainers implant crowns; a metal-ceramic line makes its units reduced
+    // (cut back for porcelain), and metal-ceramic without a named alloy reads as CoCr.
+    name: 'an implant bridge and a metal-ceramic (cut-back) bridge',
+    text: 'Ref: LAB-7\nImplant bridge 35-37, screw-retained on Ti-bases\nPFM bridge 44-46, cut back for layering\nShade A3',
+    setup: {
+      patientRef: 'LAB-7',
+      teeth: [
+        crown(35, 'cocr', 'A3', 'implant-crown'),
+        pontic(36, 'cocr', 'A3'),
+        crown(37, 'cocr', 'A3', 'implant-crown'),
+        crown(44, 'cocr', 'A3', 'reduced-crown'),
+        pontic(45, 'cocr', 'A3', 'reduced-pontic'),
+        crown(46, 'cocr', 'A3', 'reduced-crown'),
+      ],
+      notes: '',
+      // In arch order: the lower arch runs 48→41, then 31→38.
+      connections: [
+        [45, 46],
+        [44, 45],
         [35, 36],
         [36, 37],
       ],

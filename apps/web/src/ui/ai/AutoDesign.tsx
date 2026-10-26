@@ -1,10 +1,13 @@
-import { bridgeOf, type QaCheck, type StepId, unitKind } from '@dcad/shared';
+import { bridgeOf, type DesignDocument, type QaCheck, type StepId, unitKind } from '@dcad/shared';
 import { useEffect } from 'react';
 import { create } from 'zustand';
+import { cutbackFor } from '../../design/framework';
 import { useDesignStore, selectActiveTooth } from '../../design/store';
 import { accept, reject, runAutoDesign, useOrchestrator, type StepRun } from '../../ai/orchestrator';
 import { crownTool } from '../../tools/crownTool';
+import { isImplantTooth } from '../../tools/implantTool';
 import { useToolStore } from '../../tools/toolStore';
+import { isWing } from '../../tools/wing';
 import { CheckIcon, FailIcon } from '../icons';
 import './AutoDesign.css';
 
@@ -18,7 +21,15 @@ const STEP_LABEL: Record<string, string> = {
   adapt: 'Adapt',
 };
 
-/** Rows of a bridge run, by proposer (per-tooth rows add the tooth). */
+/** Rows by proposer (a step can have several: the crown and its screw channel); per-tooth rows add the tooth. */
+const PROPOSER_LABEL: Record<string, string> = {
+  'classical.scan-body-match@1': 'Implant position',
+  'classical.wing-outline@1': 'Wing outline',
+  'classical.screw-channel@1': 'Screw channel',
+  'classical.cutback@1': 'Cutback',
+};
+
+/** Rows of a bridge run that read differently from a single crown's. */
 const BRIDGE_LABEL: Record<string, string> = {
   'classical.frame-seed@1': 'Tooth frame',
   'classical.pontic-frame@1': 'Pontic frames',
@@ -31,9 +42,33 @@ const BRIDGE_LABEL: Record<string, string> = {
 
 const rowLabel = (run: StepRun | undefined, bridge: boolean): string => {
   if (!run) return 'a step';
-  const label = (bridge ? BRIDGE_LABEL[run.proposerId] : undefined) ?? STEP_LABEL[run.step] ?? run.step;
+  const label = PROPOSER_LABEL[run.proposerId] ?? (bridge ? BRIDGE_LABEL[run.proposerId] : undefined) ?? STEP_LABEL[run.step] ?? run.step;
   return run.fdi !== undefined ? `${label} ${run.fdi}` : label;
 };
+
+/** What auto-design does for the active tooth or bridge, in the order it runs (the steps that apply to it). */
+function describeRun(doc: DesignDocument, teeth: readonly number[], bridge: boolean): { what: string; click: string } {
+  const implant = teeth.some((f) => isImplantTooth(doc, f));
+  const wing = teeth.some((f) => isWing(doc.setup, f));
+  const prep = teeth.some((f) => unitKind(doc.setup, f) === 'abutment' && !isImplantTooth(doc, f) && !isWing(doc.setup, f));
+  const reduced = teeth.some((f) => cutbackFor(doc, f) !== undefined);
+  const list = (xs: readonly string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}` : (xs[0] ?? ''));
+  const first = [
+    ...(bridge ? ['places the pontics'] : []),
+    ...(implant ? [bridge ? 'matches each scan body' : 'matches the scan body (its implant axis is the insertion axis)'] : []),
+  ];
+  const proposes = [
+    ...(implant ? [] : wing ? [prep ? "each abutment's margin or wing outline" : bridge ? 'each wing outline' : 'the wing outline'] : [bridge ? "each abutment's margin" : 'the margin']),
+    ...(bridge ? [implant ? 'the common path over the implant axes' : 'the common insertion axis'] : implant ? [] : ['the insertion axis']),
+    bridge ? 'every unit' : 'the crown',
+    ...(implant ? [bridge ? 'the screw channels' : 'the screw channel'] : []),
+    'the adaptation',
+    ...(reduced ? ['the cutback for veneering'] : []),
+  ];
+  const lead = first.length ? `${list(first)}, then proposes ${list(proposes)}` : `proposes ${list(proposes)}`;
+  const what = `${lead[0]!.toUpperCase()}${lead.slice(1)}${bridge ? ', and checks the connectors and the merged bridge' : ''}.`;
+  return { what, click: implant ? 'one click on each scan body' : wing ? 'one click on the lingual surface of each wing abutment' : 'one click on each prep' };
+}
 
 /**
  * When a draft opens for review, show what it made before the user decides:
@@ -151,6 +186,8 @@ export function AutoDesign({ seed, compact = false, primary = true }: { seed?: V
   const transaction = useDesignStore((s) => s.transaction);
   const { running, steps, pendingReview, complete, error, bridge: runBridge } = useOrchestrator();
   const unframed = bridge ? bridge.teeth.filter((f) => unitKind(doc.setup, f) === 'abutment' && !doc.teeth.find((t) => t.fdi === f)?.frame) : [];
+  const run = describeRun(doc, bridge?.teeth ?? (tooth ? [tooth.fdi] : []), Boolean(bridge));
+  const implant = Boolean(tooth && isImplantTooth(doc, tooth.fdi));
   const ready = bridge ? unframed.length === 0 : Boolean(tooth && (tooth.frame || seed));
   const canStart = ready && !running && !transaction;
   const ownDraft = pendingReview && transaction?.author === 'proposer';
@@ -166,18 +203,12 @@ export function AutoDesign({ seed, compact = false, primary = true }: { seed?: V
               {running ? 'Designing…' : bridge ? 'Auto-design bridge' : 'Auto-design crown'}
             </button>
             {bridge
-              ? unframed.length > 0 && <span className="muted small">Set the tooth frame on {unframed.join(' and ')} first (one click on each prep).</span>
-              : !tooth?.frame && !seed && <span className="muted small">Set the tooth frame first (one click on the prep).</span>}
+              ? unframed.length > 0 && <span className="muted small">Set the tooth frame on {unframed.join(' and ')} first ({run.click}).</span>
+              : !tooth?.frame && !seed && <span className="muted small">Set the tooth frame first (one click on the {implant ? 'scan body' : 'prep'}).</span>}
           </div>
           {!running && steps.length === 0 && (
             <p className="muted small">
-              {bridge
-                ? compact
-                  ? 'Places the pontics, then proposes the margins, the common axis, every unit and the adaptation, and checks the connectors; you review before anything is kept.'
-                  : 'Places the pontics, proposes each abutment margin, the common insertion axis, every unit and the adaptation, then checks the connectors and the merged bridge. Each step must pass its checks; you review the result before anything is kept.'
-                : compact
-                  ? 'Proposes margin, axis, crown and adaptation in one go; each must pass its checks, and you review before anything is kept.'
-                  : 'Proposes the margin, insertion axis, crown and adaptation in one go. Each step must pass its checks; you review the result before anything is kept.'}
+              {run.what} {compact ? 'Each must pass its checks; you review before anything is kept.' : 'Each step must pass its checks; you review the result before anything is kept.'}
             </p>
           )}
         </>

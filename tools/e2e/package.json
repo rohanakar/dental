@@ -12,7 +12,10 @@
     "implant": "node --experimental-strip-types implant.mjs",
     "ai-bridge": "node ai-bridge.mjs",
     "anterior": "node --experimental-strip-types anterior-export.mjs",
-    "framework": "node --experimental-strip-types framework.mjs"
+    "framework": "node --experimental-strip-types framework.mjs",
+    "ai-implant": "node ai-implant.mjs",
+    "ai-maryland": "node ai-maryland.mjs",
+    "ai-framework": "node ai-framework.mjs"
   },
   "devDependencies": {
     "playwright": "1.64.0"

@@ -1,6 +1,6 @@
 # Implant crowns and bridges (screw-retained on Ti-bases)
 
-Status: **in progress** (2026-10-26). Phases A and B have landed: implant crowns and bridges in the editor and the runner. The AI items (scan-body and screw-channel proposers, implant gates, auto-design for implant bridges) are next.
+Status: **done** (2026-10-26). Phases A and B (implant crowns and bridges in the editor and the runner) and the AI items (scan-body and screw-channel proposers, implant gates, one-click implant auto-design) have landed.
 Depends on:
 - [2026-10-25-bridge-mode.md](2026-10-25-bridge-mode.md) (pontics, connectors, union, anterior teeth)
 - [2026-10-25-framework-bridges.md](2026-10-25-framework-bridges.md) (the titanium and CoCr materials)
@@ -350,3 +350,54 @@ Also:
   - Agent prompt and metrics for channels.
   - Bridge auto-design for implant bridges: today it stops safely at the margin step.
   - Rx for implant crowns.
+
+### AI items (2026-10-26): implant auto-design, gates, assistant, Rx
+- **Proposers** (`apps/web/src/ai/proposers.ts`):
+  - `classical.scan-body-match@1` is the margin step of an implant crown. It starts from the click that started the
+    run, else from the top of the scan body matched before, else from the frame origin. It stores the frame on the
+    gingival opening, the implant and, for a single unit, the implant axis as the insertion axis
+    (`implantMatchCommands` in `tools/implantTool.ts`, shared with the manual Accept).
+  - `classical.screw-channel@1` runs after the proposal: straight when it exits occlusally (lingually on front
+    teeth) with enough wall, else the smallest passing angle in the library cone. A single unit is designed again
+    with the channel cut and gated on that; in a bridge the union gate checks every channel again.
+  - The bridge axis proposer uses the implant path search over the implant axes in an implant bridge.
+  - Proposers declare `appliesTo`: the margin and least-undercut axis apply to prepared teeth, the scan-body match
+    and the screw channel to implant crowns. The orchestrator keeps only the proposers that apply to each tooth, in
+    single and bridge auto-design.
+- **Gates** (`ai/qa.ts`):
+  - Scan-body match: RMS ≤ 0.05 mm (reported in µm), inliers ≥ 0.9, coverage ≥ 0.6.
+  - Seat on the Ti-base: no shoulder point in an undercut.
+  - Path divergence ≤ the library maximum.
+  - Channel exit, wall and cut.
+  - In `bridgeGate`: the union's genus equals the number of screw channels, and each channel is checked on the
+    merged bridge.
+- **Orchestrator:**
+  - The seed click goes to the rows of the tooth it was made on.
+  - Accepted records are keyed by proposer, because a step can have two outputs (the crown and its screw channel).
+  - A re-run replaces only its own records.
+- **Assistant:**
+  - The prompt explains implant crowns, `set_screw_channel` and the library's angle limit.
+  - Metrics report the channel angle, exit face, wall, Ti-base gap and seating.
+  - Bridge metrics list the failed bridge checks (`bridgeGate`).
+- **Rx:**
+  - A line about implants ("implant crown 46", "screw-retained", "Ti-base") makes its retainers implant crowns.
+  - Implant restorations are full contour.
+- **UI:** the auto-design panel describes the run for the restoration types in it ("matches each scan body, then
+  proposes the common path…"), and labels the new rows (Implant position, Screw channel).
+- **Tests:** `qa.test.ts` (scan-body, path, channel and implant-bridge genus gates, each passing and failing),
+  `orchestrator.test.ts` (an implant bridge runs the scan-body match on each abutment instead of the margin) and
+  `rx.test.ts` (implant and metal-ceramic wording) are extended. One parameterized Rx case is added: 109 → 110.
+- **E2E:** `tools/e2e/ai-implant.mjs`, 13/13.
+  - On the bridge, both scan bodies match at 1 µm RMS.
+  - At the default 0.8 mm wall the draft stops at "Screw channel 35", because no angle passes on the 0.7×-size
+    synthetic premolar.
+  - At 0.55 mm every gate passes (35 angled 7.5°, 37 straight), Accept is one undo entry, and Finalize is ready to
+    mill.
+  - The single implant crown 37 runs frame → implant position → crown → screw channel → adapt.
+- **Verified** on the branch after merging main 2a6000c:
+  - typecheck, 110 tests, build;
+  - the browser tests `bridge.mjs` 34/34, `ai-bridge.mjs` 16/16, `implant.mjs` 32/32, `maryland.mjs` 16/16,
+    `anterior-export.mjs` 13/13 and `framework.mjs` 22/22, plus the three new AI scripts.
+- **Open:** implant libraries from manufacturers (the synthetic generic library only, until a vendor agrees), and
+  bridges on implants and natural teeth together (refused); both are user decisions.
+

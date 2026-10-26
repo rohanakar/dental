@@ -26,6 +26,8 @@ import type {
   ScrewChannelProposal,
   SurfaceInfo,
   V3,
+  WingOutlineRequest,
+  WingOutlineView,
 } from './analysisTypes';
 import { LatestWins } from './latestWins';
 import { geometryFromPayload, type ScanPayload } from './scanPayload';
@@ -96,6 +98,8 @@ export const analysis = {
     latest.run('crown', () => (request.implant ? geometryWorker().designImplantCrown(request) : geometryWorker().designCrown(request))),
   /** Automatic margin (never superseded: used by the auto-design orchestrator). */
   autoMargin: (request: AutoMarginRequest): Promise<AutoMarginResult> => geometryWorker().autoMargin(request),
+  /** Automatic Maryland wing outline (classical.wing-outline; never superseded). */
+  wingOutline: (request: WingOutlineRequest): Promise<WingOutlineView> => geometryWorker().wingOutline(request),
   /** Frame/axis without "latest wins", so interactive tools cannot cancel an orchestrator run. */
   estimateFrameUnlatched: (request: FrameRequest): Promise<FrameEstimate> => geometryWorker().estimateFrame(request),
   axisUnlatched: (request: AxisRequest): Promise<AxisAnalysis> => geometryWorker().axisAnalysis(request),
@@ -120,6 +124,8 @@ export const analysis = {
   implantLibrary: (): Promise<ImplantEntryView[]> => geometryWorker().implantLibrary(),
   /** Implant position step: match the library scan body from a click on the scanned one's top. */
   registerScanBody: (request: ScanBodyRequest): Promise<ScanBodyResult> => latest.run('scanBody', () => geometryWorker().registerScanBody(request)),
+  /** Like registerScanBody but never superseded (classical.scan-body-match in auto-design). */
+  registerScanBodyUnlatched: (request: ScanBodyRequest): Promise<ScanBodyResult> => geometryWorker().registerScanBody(request),
   /** Implant bridges: the common path over the implant axes, with the divergence check. */
   implantPath: (request: ImplantPathRequest): Promise<ImplantPathView> => geometryWorker().implantPath(request),
   /** classical.screw-channel: straight, or the smallest ASC angle with an occlusal (lingual) exit and enough wall. */

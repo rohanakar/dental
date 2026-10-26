@@ -1,4 +1,4 @@
-import { bridgeOf, type ProposalEvent, type ProposerId, type QaCheck, type StepId, unitKind } from '@dcad/shared';
+import { bridgeOf, cutbackOf, type DesignDocument, type ProposalEvent, type ProposerId, type QaCheck, type StepId, unitKind } from '@dcad/shared';
 import { create } from 'zustand';
 import { useDesignStore } from '../design/store';
 import { crownTool } from '../tools/crownTool';
@@ -49,7 +49,11 @@ interface PlanItem {
   unit?: number;
   /** Its artifact is a BridgeStepArtifact (one event per unit). */
   bridgeWide: boolean;
+  /** The click that started the run, for the rows of the tooth it was made on (frame, implant position). */
+  seed?: V3;
 }
+
+const applies = (p: Proposer, doc: DesignDocument, fdi: number): boolean => p.appliesTo?.(doc, fdi) ?? true;
 
 /** Outputs of the current run, for events (accept/reject). */
 interface RunRecord {
@@ -91,8 +95,9 @@ const settleCrown = () =>
  * live and gating on deterministic QA checks. Stops at the first failed gate; the draft stays on screen until
  * accept() or reject().
  *
- * Single crown (frame → margin → axis → crown → adapt). Start: `from` if given; otherwise at the frame when a seed
- * click is given or no frame exists yet, else at the margin.
+ * Single unit (frame → margin or implant position → axis → crown → screw channel → adapt → cutback; the proposers that
+ * apply to the tooth's restoration). Start: `from` if given; otherwise at the frame when a seed click is given or no
+ * frame exists yet, else at the margin step.
  *
  * Bridge (the active tooth is a unit of one): see runBridgeAutoDesign.
  */
@@ -111,9 +116,11 @@ export async function runAutoDesign(opts: { seed?: V3; from?: StepId } = {}): Pr
     useOrchestrator.setState({ error: 'Click the prep first: auto-design starts from the tooth frame.' });
     return;
   }
-  const plan = PROPOSERS.map((p): PlanItem => ({ key: p.id, proposer: p, fdi: tooth.fdi, bridgeWide: false }));
+  const plan = PROPOSERS.filter((p) => applies(p, design.doc, tooth.fdi)).map(
+    (p): PlanItem => ({ key: p.id, proposer: p, fdi: tooth.fdi, bridgeWide: false, ...(opts.seed ? { seed: opts.seed } : {}) }),
+  );
   const startIndex = Math.max(0, plan.findIndex((p) => p.proposer.step === start));
-  await execute({ plan, startIndex, seed: opts.seed, label: 'Auto-design', bridge: null });
+  await execute({ plan, startIndex, label: 'Auto-design', bridge: null });
 }
 
 /**
@@ -123,7 +130,8 @@ export async function runAutoDesign(opts: { seed?: V3; from?: StepId } = {}): Pr
  * armed; the click on the last one starts the run.
  *
  * One transaction: [the clicked abutment's frame] → pontic frames (abutments aligned to the arch) → each abutment's
- * margin → the common axis → every unit → adaptation → the connector and union gate.
+ * margin, implant position or wing outline → the common axis (the implant path) → every unit → screw channels →
+ * adaptation → cutback → the connector and union gate. Per-abutment rows run on the abutments they apply to.
  */
 async function runBridgeAutoDesign(opts: { seed?: V3; from?: StepId }): Promise<void> {
   const { doc, activeFdi } = useDesignStore.getState();
@@ -139,14 +147,18 @@ async function runBridgeAutoDesign(opts: { seed?: V3; from?: StepId }): Promise<
     });
     return;
   }
+  const seedOf = (fdi: number) => (opts.seed && fdi === seedFdi ? { seed: opts.seed } : {});
   const plan: PlanItem[] = [];
-  if (seedFdi !== undefined && frameSeed) plan.push({ key: `${frameSeed.id}:${seedFdi}`, proposer: frameSeed, fdi: seedFdi, unit: seedFdi, bridgeWide: false });
+  if (seedFdi !== undefined && frameSeed) plan.push({ key: `${frameSeed.id}:${seedFdi}`, proposer: frameSeed, fdi: seedFdi, unit: seedFdi, bridgeWide: false, ...seedOf(seedFdi) });
   for (const p of BRIDGE_PROPOSERS) {
-    if (p.perAbutment) for (const a of abutments) plan.push({ key: `${p.id}:${a}`, proposer: p, fdi: a, unit: a, bridgeWide: false });
-    else plan.push({ key: p.id, proposer: p, fdi: activeFdi, bridgeWide: true });
+    if (p.perAbutment) {
+      for (const a of abutments.filter((t) => applies(p, doc, t))) plan.push({ key: `${p.id}:${a}`, proposer: p, fdi: a, unit: a, bridgeWide: false, ...seedOf(a) });
+    } else if (applies(p, doc, activeFdi)) {
+      plan.push({ key: p.id, proposer: p, fdi: activeFdi, bridgeWide: true });
+    }
   }
   const startIndex = opts.from ? Math.max(0, plan.findIndex((p) => p.proposer.step === opts.from)) : 0;
-  await execute({ plan, startIndex, seed: opts.seed, label: `Auto-design bridge ${bridge.teeth[0]}–${bridge.teeth.at(-1)}`, bridge: [...bridge.teeth] });
+  await execute({ plan, startIndex, label: `Auto-design bridge ${bridge.teeth[0]}–${bridge.teeth.at(-1)}`, bridge: [...bridge.teeth] });
 }
 
 /**
@@ -179,8 +191,8 @@ async function frameThenArmNext(proposer: Proposer, fdi: number, seed: V3, next:
   }
 }
 
-async function execute(input: { plan: PlanItem[]; startIndex: number; seed?: V3; label: string; bridge: number[] | null }): Promise<void> {
-  const { plan, startIndex, seed } = input;
+async function execute(input: { plan: PlanItem[]; startIndex: number; label: string; bridge: number[] | null }): Promise<void> {
+  const { plan, startIndex } = input;
   useOrchestrator.setState({
     running: true,
     pendingReview: false,
@@ -205,7 +217,7 @@ async function execute(input: { plan: PlanItem[]; startIndex: number; seed?: V3;
     patchRow(item.key, { status: 'running' });
     const t0 = performance.now();
     try {
-      const proposal = await proposer.run({ seed, fdi: item.fdi });
+      const proposal = await proposer.run({ seed: item.seed, fdi: item.fdi });
       if (proposal.output.commands.length) useDesignStore.getState().dispatch(proposal.output.commands);
       if (useDesignStore.getState().doc.teeth.find((t) => t.fdi === runFdi)?.crown) await settleCrown();
       const ok = passed(proposal.qa);
@@ -259,13 +271,17 @@ function acceptRuns(runs: readonly RunRecord[]): void {
         step: event.step,
         proposerId: event.proposerId,
         artifact,
-        baseline: JSON.stringify(currentOutput(event.fdi, event.step, withConnectors(artifact))),
+        baseline: JSON.stringify(currentOutput(event.fdi, event.step, event.proposerId, withConnectors(artifact))),
         durationMs: run.durationMs,
       });
     }
   }
-  accepted = [...accepted.filter((a) => !records.some((r) => r.fdi === a.fdi && r.step === a.step)), ...records];
+  accepted = [...accepted.filter((a) => !records.some((r) => sameOutput(r, a))), ...records];
 }
+
+/** The same output of a proposal: tooth, step and proposer (a step can have several: the crown and its screw channel). */
+const sameOutput = (a: Pick<AcceptedRecord, 'fdi' | 'step' | 'proposerId'>, b: Pick<AcceptedRecord, 'fdi' | 'step' | 'proposerId'>) =>
+  a.fdi === b.fdi && a.step === b.step && a.proposerId === b.proposerId;
 
 /** Keep the draft: one undo entry (author "proposer") and `accepted` events for the passed steps. */
 export function accept(): void {
@@ -274,8 +290,8 @@ export function accept(): void {
   design.commitTransaction();
   // Every step this run proposed replaces what an earlier run proposed for it, a failed step included: its output is
   // in the document now, and is not the designer's correction of the earlier proposal.
-  const touched = new Set(currentRun.flatMap((r) => teethOf(r).map((fdi) => `${fdi}:${r.step}`)));
-  accepted = accepted.filter((a) => !touched.has(`${a.fdi}:${a.step}`));
+  const touched = new Set(currentRun.flatMap((r) => teethOf(r).map((fdi) => `${fdi}:${r.step}:${r.proposerId}`)));
+  accepted = accepted.filter((a) => !touched.has(`${a.fdi}:${a.step}:${a.proposerId}`));
   acceptRuns(currentRun.filter((r) => r.passed));
   currentRun = [];
   useOrchestrator.setState({ ...IDLE });
@@ -296,11 +312,17 @@ export function reject(): void {
 /** A bridge's adapt artifact on its first unit also carries the connector settings (see buildBridgeProposalEvents). */
 const withConnectors = (artifact: unknown): boolean => Boolean(artifact && typeof artifact === 'object' && 'connectors' in artifact);
 
-/** The current value of a step's output in the document (what an accepted proposal may have been edited into). */
-function currentOutput(fdi: number, step: StepId, connectors = false): unknown {
+/**
+ * The current value of a proposal's output in the document (what an accepted proposal may have been edited into): the
+ * step's output, or for the proposers that share a step with another one their own part of it (the screw channel in
+ * the proposal step, the cutback in the adapt step).
+ */
+function currentOutput(fdi: number, step: StepId, proposerId: ProposerId, connectors = false): unknown {
   const { doc } = useDesignStore.getState();
   const tooth = doc.teeth.find((t) => t.fdi === fdi);
   if (!tooth) return undefined;
+  if (proposerId === 'classical.screw-channel@1') return tooth.screwChannel ?? null;
+  if (proposerId === 'classical.cutback@1') return cutbackOf(doc.setup, tooth);
   switch (step) {
     case 'frame': {
       if (!tooth.frame) return undefined;
@@ -308,6 +330,8 @@ function currentOutput(fdi: number, step: StepId, connectors = false): unknown {
       return frame;
     }
     case 'margin':
+      // An implant crown's margin step is its implant position (the scan-body match).
+      if (tooth.implant) return { libraryId: tooth.implant.libraryId, scanBodyPose: tooth.implant.scanBodyPose };
       return tooth.margin && { anchors: tooth.margin.anchors.map((a) => a.p), points: tooth.margin.points.map((m) => m.p) };
     case 'axis':
       return tooth.axis && { direction: tooth.axis.direction };
@@ -330,7 +354,7 @@ function currentOutput(fdi: number, step: StepId, connectors = false): unknown {
  */
 export function recordEditsOnSave(): void {
   for (const run of accepted) {
-    const final = currentOutput(run.fdi, run.step, withConnectors(run.artifact));
+    const final = currentOutput(run.fdi, run.step, run.proposerId, withConnectors(run.artifact));
     if (final === undefined || JSON.stringify(final) === run.baseline) continue;
     logProposalEvent(
       buildProposalEvent({

@@ -1,6 +1,6 @@
 # Resin-bonded (Maryland) bridges
 
-Status: **in progress** (2026-10-26). Phases A and B have landed: Maryland bridges in the editor, the runner and Export all. The AI items (outline proposer, wing gate in bridgeGate, agent terms) are next.
+Status: **done** (2026-10-26). Phases A and B (Maryland bridges in the editor, the runner and Export all) and the AI items (outline proposer, wing checks in the bridge gate, assistant terms) have landed.
 Depends on: [2026-10-25-bridge-mode.md](2026-10-25-bridge-mode.md) (pontics, connectors, union, anterior teeth).
 Used by: [2026-10-25-inlay-bridges.md](2026-10-25-inlay-bridges.md) (the patch intaglio introduced here).
 
@@ -294,3 +294,38 @@ Also:
   - `bridge.mjs` and `implant.mjs` use the same click pattern and should get the `clickWorld` guard.
   - AI items: the outline proposer, `wingChecks` in `bridgeGate` plus `qa.test`, `connectionMinAreaMm2` in the
     prompts, wing terms, and the wing seed in AI flows.
+
+### AI items (2026-10-26): wing outline proposer, wing gate, assistant
+- **`classical.wing-outline@1`** is the margin step of a wing: `geometry/wingOutline.ts`, in the worker as
+  `wingOutline`.
+  - The region grows from the frame click over faces that point lingually (n·lingual > 0.3), or toward the pontic on
+    the lingual half of the proximal surface.
+  - It lies between 0.5 mm above the gingiva and 1.0 mm below the incisal edge or cusp tip, both found on a lingual
+    height profile through the click.
+  - It stays at least 0.5 mm from concave creases (the gingival margin, the embrasures). Inlets under 1.2 mm are
+    closed.
+  - Its smoothed boundary gives 12 anchors by arc length, plus one wherever the live-wire strays more than 0.5 mm
+    from it (at most 36).
+  - When the click lies outside the band, the frame origin (the flood-fill seed) moves into the outline.
+  - Gate (`wingOutlineGate`): the outline is closed, the region does not leak, and the bonded area is > 0.
+- **Bridge gate:** `bridgeGate` includes the wing checks measured with the union (outline and surface undercut,
+  thickness, space). A wing has no crown-thickness check of its own.
+- **Auto-design:**
+  - Wings get the outline proposer instead of the margin.
+  - The common axis floods each wing region from its click (`wingSeed`).
+  - The adaptation skips wings: they follow their outline.
+- **Assistant:**
+  - The prompt explains wings (never moved; thickness through `set_param`; insufficient space is explained, not
+    thinned away) and the 3 × 2 mm connector.
+  - Connector minimums use `connectionMinAreaMm2`.
+  - Metrics report the wing's thickness, bonded and blocked-out area, and space.
+- **Tests:** `qa.test.ts` (the wing checks inside `bridgeGate` pass at 0.7 mm and fail at 0.42 mm; the outline
+  gate fails a leaking region) is extended.
+- **E2E:** `tools/e2e/ai-maryland.mjs`, 7/7: one click on 11's palatal surface → the outline (26.9 mm² bonded, 36
+  anchors, the seed moved into it) → axis, bridge, adapt without the wing → connectors and union → Accept →
+  Finalize ready to mill.
+- **Verified** with the implant AI items (see `2026-10-25-implant-bridges.md`).
+- **Deviation:** the outline adds anchors where the live-wire strays (up to 36), instead of a fixed 12.
+- **Open:** the connector can still extend about 1 mm beyond the wing's cervical border, and there is no side-wall
+  blockout.
+

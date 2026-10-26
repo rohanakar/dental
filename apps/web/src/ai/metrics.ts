@@ -1,12 +1,60 @@
-import { bridgeOf, type DesignDocument, type ProximalSide, type ToothDesign, type UnitKind } from '@dcad/shared';
+import { bridgeOf, type CutbackMode, type DesignDocument, type ProximalSide, type ToothDesign, type UnitKind } from '@dcad/shared';
 import { activeAdapt, adaptationStale } from '../design/adaptation';
 import { crownCentre, templateHeight } from '../design/clinical';
 import { useDesignStore } from '../design/store';
+import type { WingUnitReport } from '../geometry/wingUnit';
 import { bridgeTool } from '../tools/bridgeTool';
 import { crownTool } from '../tools/crownTool';
-import type { BridgeResultView, CrownResult } from '../workers/analysisTypes';
+import type { BridgeResultView, CrownResult, ImplantResultView } from '../workers/analysisTypes';
+import type { FrameworkView } from '../workers/frameworkTypes';
+import { bridgeGate } from './qa';
 
 type V3 = readonly [number, number, number];
+
+/** An implant crown: its screw channel, and the fit and seating on its Ti-base. */
+export interface ImplantMetrics {
+  /** Channel angle from the implant axis (0 = straight) and the direction it tilts toward (0 buccal, 90 mesial, 180 lingual, 270 distal). */
+  channelAngleDeg: number;
+  channelAzimuthDeg: number;
+  /** Which way the restoration's surface faces where the channel leaves it ('none': the channel misses the restoration). */
+  channelExitFaces: 'occlusal' | 'lingual' | 'buccal' | 'proximal' | 'none';
+  /** The exit is where it must be: occlusal on posterior teeth, lingual on anterior teeth. */
+  channelExitOk: boolean;
+  /** Thinnest material around the channel, and the minimum (channelWallMm). */
+  minChannelWallMm: number | null;
+  requiredChannelWallMm: number;
+  /** The bonding gap on the Ti-base: its target and the largest deviation from it. */
+  tiBaseGapMm: number;
+  tiBaseGapMaxErrorMm: number | null;
+  /** It seats on its Ti-base along the insertion axis (no shoulder point in an undercut). */
+  seatsAlongPath: boolean;
+  /** In a merged bridge: the seating on the Ti-base is unchanged by the union (null until merged). */
+  seatingUnchangedInBridge: boolean | null;
+}
+
+/** A reduced (framework) unit: the veneering space its cutback leaves. */
+export interface VeneerMetrics {
+  /** The cutback as set: mode and requested veneering space. */
+  mode: CutbackMode;
+  thicknessMm: number;
+  /** The veneering space measured on the cut-back surface, outside the shortfall. */
+  minVeneerMm: number | null;
+  meanVeneerMm: number | null;
+  /** "Insufficient veneering space": where the framework minimum left less than requested (0 when none). */
+  shortfallAreaMm2: number;
+  maxDeficitMm: number;
+}
+
+/** A Maryland wing: its thickness, bonded area and space against the antagonist. */
+export interface WingMetrics {
+  thicknessMm: number;
+  minThicknessMm: number | null;
+  bondedAreaMm2: number;
+  blockedOutFraction: number;
+  /** "Insufficient space for the wing" against the antagonist. */
+  spaceConflict: boolean;
+  minClearanceMm: number | null;
+}
 
 /** What the agent (and the UI) can ask about a design, all in mm. null = not applicable / not measured. */
 export interface DesignMetrics {
@@ -27,6 +75,10 @@ export interface DesignMetrics {
    * off until it is re-applied), or none.
    */
   adaptation: 'applied' | 'stale' | 'none';
+  /** Implant crowns only. */
+  implant?: ImplantMetrics;
+  /** Reduced (framework) units only. */
+  veneer?: VeneerMetrics;
 }
 
 const round = (x: number | null): number | null => (x === null || !Number.isFinite(x) ? null : Math.round(x * 100) / 100);
@@ -86,6 +138,58 @@ function adaptProblems(adapt: CrownResult['adapt']): string[] {
   });
 }
 
+/** Which way a screw channel's exit faces, from its outer normal there. */
+function exitFaces(exit: ImplantResultView['channel']['exit']): ImplantMetrics['channelExitFaces'] {
+  if (!exit) return 'none';
+  const faces = [
+    ['occlusal', exit.occlusalDot],
+    ['lingual', exit.lingualDot],
+    ['buccal', -exit.lingualDot],
+  ] as const;
+  const best = faces.reduce((a, b) => (b[1] > a[1] ? b : a));
+  return best[1] > 0.3 ? best[0] : 'proximal';
+}
+
+/** Screw channel and Ti-base metrics of an implant unit (pure). */
+export function implantMetricsFrom(implant: ImplantResultView, seatingUnchangedInBridge: boolean | null = null): ImplantMetrics {
+  const c = implant.channel;
+  return {
+    channelAngleDeg: c.angleDeg,
+    channelAzimuthDeg: c.azimuthDeg,
+    channelExitFaces: exitFaces(c.exit),
+    channelExitOk: c.exitOk,
+    minChannelWallMm: round(c.minWallMm),
+    requiredChannelWallMm: c.requiredWallMm,
+    tiBaseGapMm: implant.tiBaseGap.gapMm,
+    tiBaseGapMaxErrorMm: round(implant.tiBaseGap.maxErrorMm),
+    seatsAlongPath: implant.rimUndercutCount === 0,
+    seatingUnchangedInBridge,
+  };
+}
+
+/** The veneering space of a reduced unit (pure). */
+export function veneerMetricsFrom(framework: FrameworkView): VeneerMetrics {
+  return {
+    mode: framework.cutback.mode,
+    thicknessMm: framework.cutback.thicknessMm,
+    minVeneerMm: framework.stats.vertices ? round(framework.stats.minMm) : null,
+    meanVeneerMm: framework.stats.vertices ? round(framework.stats.meanMm) : null,
+    shortfallAreaMm2: round(framework.shortfall?.areaMm2 ?? 0) ?? 0,
+    maxDeficitMm: round(framework.shortfall?.maxDeficitMm ?? 0) ?? 0,
+  };
+}
+
+function wingMetricsFrom(wing: WingUnitReport): WingMetrics {
+  return {
+    thicknessMm: wing.params.wingThicknessMm,
+    minThicknessMm: wing.thickness.samples ? round(wing.thickness.minMm) : null,
+    bondedAreaMm2: round(wing.area.bondedMm2) ?? 0,
+    blockedOutFraction: round(wing.area.blockedOutFraction) ?? 0,
+    spaceConflict: Boolean(wing.space?.conflict),
+    minClearanceMm: wing.space ? round(wing.space.minClearanceMm) : null,
+  };
+}
+
 /** Assemble metrics from the document and an evaluated crown (pure). */
 export function metricsFrom(tooth: ToothDesign, result: CrownResult | null): DesignMetrics {
   const marginLengthMm = tooth.margin ? round(closedLength(tooth.margin.points)) : null;
@@ -118,6 +222,8 @@ export function metricsFrom(tooth: ToothDesign, result: CrownResult | null): Des
     minThicknessMm: round(result.thickness?.minMm ?? result.minAxialThicknessMm),
     printable: result.validation.printable ?? result.validation.ok,
     conflicts: adaptProblems(result.adapt),
+    ...(result.implant ? { implant: implantMetricsFrom(result.implant) } : {}),
+    ...(result.framework ? { veneer: veneerMetricsFrom(result.framework) } : {}),
   };
 }
 
@@ -142,6 +248,9 @@ export interface BridgeUnitMetrics {
   printable: boolean | null;
   conflicts: string[];
   adaptation: DesignMetrics['adaptation'];
+  implant?: ImplantMetrics;
+  veneer?: VeneerMetrics;
+  wing?: WingMetrics;
 }
 
 /** Agent-facing metrics of one connector: what set_connector changes, and what the union measured. */
@@ -170,10 +279,12 @@ export interface BridgeMetrics {
   teeth: number[];
   units: BridgeUnitMetrics[];
   connectors: ConnectorMetrics[];
-  /** The merged solid (null until merged). */
-  union: { printable: boolean; components: number; genus: number; seatingUnchanged: boolean } | null;
+  /** The merged solid (null until merged): one solid with one through-hole per screw channel (expectedGenus). */
+  union: { printable: boolean; components: number; genus: number; expectedGenus: number; seatingUnchanged: boolean } | null;
   /** Why the units could not be merged into one solid. */
   unionError: string | null;
+  /** The bridge checks that fail (the auto-design and Finalize gate): connectors, the merged solid, seating, screw channels, wings. */
+  failedChecks: string[];
 }
 
 /**
@@ -186,6 +297,7 @@ export function bridgeMetricsFrom(
   teeth: readonly ToothDesign[],
 ): BridgeMetrics {
   const checks = result.union?.checks;
+  const seatingOnUnion = (fdi: number): boolean | null => checks?.seating.find((s) => s.fdi === fdi)?.ok ?? null;
   const units = result.units.map((u): BridgeUnitMetrics => {
     const tooth = teeth.find((t) => t.fdi === u.fdi);
     const reduced = reduceCrownMaps({
@@ -211,6 +323,9 @@ export function bridgeMetricsFrom(
       printable: u.validation.printable ?? u.validation.ok,
       conflicts: adaptProblems(u.adapt),
       adaptation: adaptationOf(tooth),
+      ...(u.implant ? { implant: implantMetricsFrom(u.implant, seatingOnUnion(u.fdi)) } : {}),
+      ...(u.framework ? { veneer: veneerMetricsFrom(u.framework) } : {}),
+      ...(u.wing ? { wing: wingMetricsFrom(u.wing) } : {}),
     };
   });
   const connectors = result.connectors.map((c): ConnectorMetrics => {
@@ -238,9 +353,16 @@ export function bridgeMetricsFrom(
     units,
     connectors,
     union: checks
-      ? { printable: checks.union.printable, components: checks.union.components, genus: checks.union.genus, seatingUnchanged: checks.seating.every((s) => s.ok) }
+      ? {
+          printable: checks.union.printable,
+          components: checks.union.components,
+          genus: checks.union.genus,
+          expectedGenus: result.units.filter((u) => u.implant).length,
+          seatingUnchanged: checks.seating.every((s) => s.ok),
+        }
       : null,
     unionError: result.unionError ?? null,
+    failedChecks: checks || result.unionError ? bridgeGate(result).filter((c) => !c.passed).map((c) => c.message) : [],
   };
 }
 
@@ -286,6 +408,8 @@ export async function designMetrics(doc: DesignDocument = useDesignStore.getStat
     minThicknessMm: unit.minThicknessMm,
     printable: unit.printable,
     conflicts: unit.conflicts,
+    ...(unit.implant ? { implant: unit.implant } : {}),
+    ...(unit.veneer ? { veneer: unit.veneer } : {}),
     bridge: metrics,
   };
 }
