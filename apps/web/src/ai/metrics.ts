@@ -1,7 +1,8 @@
-import type { DesignDocument, ProximalSide, ToothDesign, UnitKind } from '@dcad/shared';
+import { bridgeOf, type DesignDocument, type ProximalSide, type ToothDesign, type UnitKind } from '@dcad/shared';
 import { activeAdapt, adaptationStale } from '../design/adaptation';
 import { crownCentre, templateHeight } from '../design/clinical';
 import { useDesignStore } from '../design/store';
+import { bridgeTool } from '../tools/bridgeTool';
 import { crownTool } from '../tools/crownTool';
 import type { BridgeResultView, CrownResult } from '../workers/analysisTypes';
 
@@ -243,11 +244,48 @@ export function bridgeMetricsFrom(
   };
 }
 
-/** Metrics for the active tooth of a document (evaluates the crown in the worker). */
-export async function designMetrics(doc: DesignDocument = useDesignStore.getState().doc): Promise<DesignMetrics | null> {
-  const fdi = useDesignStore.getState().activeFdi;
-  const tooth = doc.teeth.find((t) => t.fdi === fdi);
+/** A tooth's metrics; for a bridge unit also the whole bridge (every unit, the connectors and the merged solid). */
+export type AgentMetrics = DesignMetrics & {
+  bridge?: BridgeMetrics;
+  /** Why the bridge could not be designed (a missing input), when it could not. */
+  bridgeError?: string;
+};
+
+/**
+ * Metrics for the active tooth of a document (evaluates the crown in the worker). In a bridge, `fdi` may name any
+ * unit of the active tooth's bridge: the whole bridge is designed and merged (bridgeTool.evaluate with `union`), so
+ * the connectors are measured too, and the tooth's own values follow from its unit (contacts on free sides only).
+ */
+export async function designMetrics(doc: DesignDocument = useDesignStore.getState().doc, fdi?: number): Promise<AgentMetrics | null> {
+  const activeFdi = useDesignStore.getState().activeFdi;
+  const bridge = bridgeOf(doc, activeFdi);
+  const target = bridge && fdi !== undefined && bridge.teeth.includes(fdi) ? fdi : activeFdi;
+  const tooth = doc.teeth.find((t) => t.fdi === target);
   if (!tooth) return null;
-  const result = tooth.crown ? await crownTool.evaluate(['occlusion', 'proximal', 'thickness']) : null;
-  return metricsFrom(tooth, result);
+  if (!bridge) {
+    const result = tooth.crown ? await crownTool.evaluate(['occlusion', 'proximal', 'thickness']) : null;
+    return metricsFrom(tooth, result);
+  }
+  const base = metricsFrom(tooth, null);
+  if (!bridge.teeth.some((t) => doc.teeth.find((x) => x.fdi === t)?.crown)) return base;
+  let result: BridgeResultView | null;
+  try {
+    result = await bridgeTool.evaluate({ union: true, maps: ['occlusion', 'proximal', 'thickness'] });
+  } catch (e) {
+    return { ...base, bridgeError: e instanceof Error ? e.message : String(e) };
+  }
+  if (!result) return base;
+  const metrics = bridgeMetricsFrom(result, doc.teeth);
+  const unit = metrics.units.find((u) => u.fdi === target);
+  if (!unit) return { ...base, bridge: metrics };
+  return {
+    ...base,
+    minOcclusalClearanceMm: unit.minOcclusalClearanceMm,
+    mesialContactMm: unit.mesialContactMm,
+    distalContactMm: unit.distalContactMm,
+    minThicknessMm: unit.minThicknessMm,
+    printable: unit.printable,
+    conflicts: unit.conflicts,
+    bridge: metrics,
+  };
 }

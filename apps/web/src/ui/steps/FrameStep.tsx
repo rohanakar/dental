@@ -57,7 +57,9 @@ export function FrameStep() {
   const pickHint =
     framePick === 'seed'
       ? autoArmed
-        ? `One-click crown: click the top of the prepared tooth ${tooth.fdi}. Frame, margin, axis, crown and adaptation are proposed for review.`
+        ? bridge
+          ? `One-click bridge: click the top of the prepared tooth ${tooth.fdi}. After the last abutment, the whole bridge is proposed for review.`
+          : `One-click crown: click the top of the prepared tooth ${tooth.fdi}. Frame, margin, axis, crown and adaptation are proposed for review.`
         : frame
           ? `Frame set on tooth ${tooth.fdi}. Check the arrows and contacts below, or click the prep again to redo it.`
           : `Click the top of the prepared tooth ${tooth.fdi}.`
@@ -68,7 +70,7 @@ export function FrameStep() {
       <p className="hint-box">{pickHint}</p>
       <label className="row">
         <input type="checkbox" checked={autoArmed} onChange={(e) => set({ autoArmed: e.target.checked, framePick: 'seed' })} />
-        One-click crown (auto-design after the click)
+        {bridge ? 'One-click bridge (auto-design after the last abutment click)' : 'One-click crown (auto-design after the click)'}
       </label>
       {/* In a bridge the step's main action is in the bridge panel (place the pontics). */}
       {frame && <AutoDesign compact primary={!bridge} />}

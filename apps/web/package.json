@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "fixtures": "node --experimental-strip-types ../../tools/fixtures/generate.mts"
+    "fixtures": "pnpm --filter @dcad/pipeline-runner exec tsx ../fixtures/generate.mts"
   },
   "dependencies": {
     "@dcad/shared": "workspace:*",

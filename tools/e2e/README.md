@@ -18,10 +18,15 @@ These scripts drive the real web app in headless Chrome (Playwright, `channel: '
   adaptation, a connector edit, Check bridge, Finalize, export; the STL is parsed in Node as one closed solid of
   genus 0), then the anterior bridge [12]–11–21–[22] up to Propose bridge. Screenshots go to `out/e2e/bridge/`
   (`E2E_OUT`); `E2E_ONLY=posterior|anterior` runs one part. Exits non-zero on a failed check.
+- `ai-bridge.mjs` (offline): bridge auto-design on 35–[36]–37 after one click on each prep. An oversize connector stops
+  the draft at the connector gate (Reject from the Adapt step); then every gate passes → Accept (one undo entry,
+  events per unit and step) → the agent's bridge metrics → Finalize "Ready to mill"; then the one-click bridge (a
+  click on each prep starts the run). Screenshots go to `out/e2e/ai-bridge/` (`E2E_OUT`). Exits non-zero on a failed
+  check.
 
 ```bash
 pnpm dev:web                          # terminal 1 (and pnpm dev:api + Postgres for the online script)
-pnpm --filter @dcad/e2e offline       # or: online, move, bridge
+pnpm --filter @dcad/e2e offline       # or: online, move, bridge, ai-bridge
 ```
 
 Day 7 turns these into `@playwright/test` specs.

@@ -50,7 +50,8 @@ function bridgeLines(bridge: BridgePromptContext, fdi: number): string[] {
     `The bridge (${bridge.material}) has ${bridge.units.length} units in arch order: ${units}. The active unit is ${fdi}.`,
     'A crown is a retainer on a prepared abutment tooth. A pontic replaces a missing tooth and rests on the gum ridge;',
     'it has no margin and no insertion axis. All retainers share one insertion axis, and the bridge is made as one',
-    'solid. Tools that act on one unit take its fdi.',
+    'solid. Tools that act on one unit take its fdi. get_design_metrics for a unit also reports every connector (its',
+    'designed and measured cross-section and height) and whether the merged bridge passes its checks.',
     '',
     'Connectors join neighbouring units (current cross-section, material minimum, offsets from the automatic position):',
     ...bridge.connectors.map(

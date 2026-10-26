@@ -8,6 +8,7 @@ import {
   type LlmMessage,
   type LlmRequest,
   type LlmResponse,
+  unitKind,
 } from '@dcad/shared';
 import { ZodError } from 'zod';
 import { create } from 'zustand';
@@ -15,7 +16,7 @@ import * as api from '../api/client';
 import { CommandError } from '../design/reducer';
 import { useDesignStore } from '../design/store';
 import { crownTool } from '../tools/crownTool';
-import { designMetrics } from './metrics';
+import { designMetrics, type AgentMetrics } from './metrics';
 import { agentSystemPrompt, bridgePromptContext, MAX_AGENT_ACTIONS } from './prompts';
 
 export type LlmFn = (request: LlmRequest) => Promise<LlmResponse>;
@@ -62,10 +63,32 @@ function caseSummary() {
     steps: Object.fromEntries(doc.teeth.map((t) => [t.fdi, t.steps])),
     adaptation: Object.fromEntries(doc.teeth.map((t) => [t.fdi, t.crown?.kind === 'template' ? (t.crown.adapt ?? {}) : null])),
     params: doc.teeth.find((t) => t.fdi === activeFdi)?.params ?? null,
+    // Bridges: units in arch order with their kind, and the connector settings (set_connector changes them).
+    bridges: doc.bridges.map((b) => ({ units: b.teeth.map((fdi) => ({ fdi, kind: unitKind(doc.setup, fdi) })), connectors: b.connectors })),
   };
 }
 
-function metricsSummary(m: Awaited<ReturnType<typeof designMetrics>>): string {
+const mm = (x: number) => x.toFixed(2);
+
+/** One line per connector, and what keeps the merged bridge from passing its checks. */
+function bridgeSummary(m: AgentMetrics): string[] {
+  const parts: string[] = [];
+  if (m.bridgeError) parts.push(`bridge not designed: ${m.bridgeError}`);
+  const b = m.bridge;
+  if (!b) return parts;
+  for (const c of b.connectors) {
+    const area = c.measuredAreaMm2 ?? c.designedAreaMm2;
+    const height = c.measuredHeightMm ?? c.heightMm;
+    const failures = c.failures.length ? ` (${c.failures.join('; ')})` : '';
+    parts.push(`connector ${c.between[0]}-${c.between[1]} ${mm(area)} mm² (min ${c.minAreaMm2}), ${mm(height)} mm high (min ${c.minHeightMm})${failures}`);
+  }
+  if (b.unionError) parts.push(`not merged into one solid: ${b.unionError}`);
+  else if (b.union && !(b.union.printable && b.union.components === 1 && b.union.genus === 0)) parts.push('the merged bridge is not one printable solid');
+  else if (b.union && !b.union.seatingUnchanged) parts.push('the merged bridge changed the seating of a retainer');
+  return parts;
+}
+
+function metricsSummary(m: AgentMetrics | null): string {
   if (!m) return 'no metrics';
   const parts: string[] = [];
   if (m.minOcclusalClearanceMm !== null) parts.push(`occlusal clearance ${m.minOcclusalClearanceMm.toFixed(2)} mm`);
@@ -74,6 +97,7 @@ function metricsSummary(m: Awaited<ReturnType<typeof designMetrics>>): string {
   if (m.minThicknessMm !== null) parts.push(`min thickness ${m.minThicknessMm.toFixed(2)} mm`);
   if (m.conflicts.length) parts.push(`conflicts: ${m.conflicts.join('; ')}`);
   if (m.adaptation === 'stale') parts.push('adaptation off since the last change (re-apply adapt_occlusion / set_contact)');
+  parts.push(...bridgeSummary(m));
   return parts.join(', ') || 'no crown metrics';
 }
 
@@ -100,7 +124,7 @@ async function executeTool(
     if (!parsed.success) return done(errorText(parsed.error), false, errorText(parsed.error));
     if (call.name === 'get_case_summary') return done(caseSummary(), true, 'case summary');
     if (call.name === 'get_design_metrics') {
-      const m = await designMetrics();
+      const m = await designMetrics(undefined, parsed.data.fdi);
       return done(m ?? { error: 'no active tooth' }, Boolean(m), metricsSummary(m));
     }
     return done('capture_view is not supported yet', false, 'capture_view is not supported yet');
@@ -124,8 +148,9 @@ async function executeTool(
     return done(`Not applied: ${msg}`, false, `not applied: ${msg}`);
   }
   state.actions++;
+  // In a bridge, crownTool waits for the whole bridge; the metrics are those of the unit the action changed.
   await crownTool.settled();
-  const metrics = await designMetrics();
+  const metrics = await designMetrics(undefined, 'fdi' in command ? command.fdi : undefined);
   return done({ applied: describe(call.name, call.input), metrics }, true, metricsSummary(metrics));
 }
 

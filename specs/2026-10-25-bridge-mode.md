@@ -1,6 +1,6 @@
 # Bridge mode
 
-Status: **in progress** (2026-10-26). Waves 1–3 have landed: a bridge can be designed end to end in the editor and exported as one solid. Next is AI phase 2 (bridge proposers, one-click bridge auto-design, the assistant measuring bridges).
+Status: **done for the core** (2026-10-26). A bridge can be designed end to end in the editor, manually or with one-click bridge auto-design, and exported as one solid. The follow-on bridge types (framework, Maryland, implant, inlay) continue in their own specs.
 
 ## Goal
 
@@ -675,4 +675,42 @@ Built by parallel agents in git worktrees, integrated in waves. Each green wave 
 - The click frame next to a gap can be far off (37: 102°); "Align to arch" fixes it.
 - The Proposal step still offers the single-crown "Auto-design crown" in a bridge; AI phase 2 replaces it.
 
-AI phase 2 and the follow-on specs' phase B (framework, Maryland, implant, inlay) follow.
+### AI phase 2 (2026-10-26): bridge proposers, one-click bridge auto-design, agent metrics
+- **Proposers** (`apps/web/src/ai/proposers.ts`, built on `bridgeTool`'s request builder):
+  - `classical.pontic-frame@1`: pontic frames laid out on the arch, and abutment frames aligned to the arch
+  - `classical.margin-ridge@1`, run per abutment
+  - `classical.bridge-axis@1`: common axis, gated by `axisGate`
+  - `classical.bridge-proposal@1`: every unit in one batch, with `crownGate` per unit
+  - `classical.adapt@1`, bridge-aware: free sides only; its artifact carries the connector settings
+  - `classical.connectors@1`: a gate only (union + `bridgeGate`)
+- **Orchestrator:**
+  - For a bridge, one transaction runs pontic frames → margin per abutment → common axis → bridge → adapt →
+    connectors.
+  - A frame is needed on every abutment; otherwise the error names the missing ones.
+  - One-click: each prep click sets that abutment's frame, and the last click starts the run.
+  - Events: one per unit and step.
+  - Edit detection compares against the document at accept time.
+- **Agent:** `designMetrics(doc, fdi)` uses `bridgeTool.evaluate({ union: true })` → `bridgeMetricsFrom`.
+  `get_design_metrics` honours `fdi`, and the case summary lists the bridges.
+- **UI:**
+  - "Auto-design bridge" in the Frame and Proposal steps.
+  - A stopped draft opens its failing step, and a `DraftReview` bar in the step footer shows Accept/Reject on any
+    step (single crowns had the same gap at Margin and Axis).
+- **Fixtures:** `pnpm --filter @dcad/web fixtures` now runs the generator with tsx. Plain Node type stripping can't
+  resolve the geometry modules' extensionless runtime imports, which broke with the inlay cavities.
+- **Verification:**
+  - `pnpm typecheck`, `pnpm test` (103; the orchestrator tests were extended with bridge reject and accept/edit
+    paths) and the build pass. The editor bundle is 1,325.7 kB.
+  - Browser, on the integrated tree with fresh fixtures:
+    - `tools/e2e/ai-bridge.mjs` 16/16: auto-design passes every gate in about 2.5 s; a 40 mm² connector stops the
+      draft at the connector gate; Finalize says Ready to mill.
+    - `tools/e2e/bridge.mjs` posterior 28/28.
+- **Deviations:** the frames are laid out before the margins (a `setFrame` marks the margin stale). The agent ran one
+  read-only review sub-agent before the user's no-sub-agents rule reached it, and fixed its findings itself.
+- **Open:**
+  - Pontic widths come out narrow (36 is 7.1 mm against a nominal 11; the anterior cantilevers are 4.6 mm). This
+    comes from the layout and is the same in the manual "Propose bridge".
+  - The upper incisor margin view is a separate fix in progress
+    ([2026-10-26-anterior-margin-and-export-all.md](2026-10-26-anterior-margin-and-export-all.md)).
+
+The follow-on specs' phase B (framework, Maryland, implant, inlay) continues in those specs.

@@ -236,3 +236,7 @@ passed; real scans would have had mesial and distal swapped). Both are fixed. Se
   tests.
 - **Next:** AI phase 2 and the follow-on bridge types (framework, Maryland, implant and inlay).
 - See [2026-10-25-bridge-mode.md](2026-10-25-bridge-mode.md) and its follow-on specs.
+
+**2026-10-26: one-click bridge auto-design.** Bridge proposers and a one-click bridge run (frames, margins, common
+axis, units, adaptation, connector and union gates) as one Accept/Reject draft. The assistant measures bridges. The
+fixture generator runs with tsx. See [2026-10-25-bridge-mode.md](2026-10-25-bridge-mode.md).

@@ -7,7 +7,8 @@
     "offline": "node offline-design.mjs",
     "online": "node online-case.mjs",
     "move": "node crown-move.mjs",
-    "bridge": "node --experimental-strip-types bridge.mjs"
+    "bridge": "node --experimental-strip-types bridge.mjs",
+    "ai-bridge": "node ai-bridge.mjs"
   },
   "devDependencies": {
     "playwright": "1.64.0"

@@ -2,10 +2,11 @@
  * Writes synthetic (non-patient) test scans into data/synthetic/ so the
  * viewer can be tried without real scans:
  *
- *   node --experimental-strip-types tools/fixtures/generate.mts [--triangles 1000000]
+ *   pnpm --filter @dcad/web fixtures [-- --triangles 1000000]
  *
- * Reuses the web app's generator and writers directly (type-only imports, so
- * Node's type stripping is enough; no build step).
+ * Reuses the web app's generator and writers directly. It runs with tsx (from
+ * the pipeline runner): the geometry modules use extensionless runtime
+ * imports, which plain Node type stripping cannot resolve.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';

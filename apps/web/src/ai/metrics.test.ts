@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../tools/crownTool', () => ({ crownTool: { evaluate: vi.fn(async () => null) } }));
+vi.mock('../tools/bridgeTool', () => ({ bridgeTool: { evaluate: vi.fn(async () => null) } }));
 
 const { reduceCrownMaps } = await import('./metrics');
 

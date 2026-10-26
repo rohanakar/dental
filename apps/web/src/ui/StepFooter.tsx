@@ -1,5 +1,6 @@
 import { stepsFor, unitKind, type StepId } from '@dcad/shared';
 import { useDesignStore } from '../design/store';
+import { DraftReview } from './ai/AutoDesign';
 import { STEPS } from './StepNav';
 import { missingBefore, neighbours } from './stepGuide';
 import './StepFooter.css';
@@ -20,6 +21,7 @@ export function StepFooter() {
 
   return (
     <footer className="step-footer" aria-label="Step navigation">
+      <DraftReview />
       {missing && (
         <div className="step-missing">
           <span>This step needs {labelOf(missing)} first.</span>
