@@ -114,6 +114,13 @@ textarea {
   height: 100%;
 }
 
+/* Case setup's tooth chart has sixteen teeth to a row: the panel widens while it is open. */
+@media (min-width: 721px) {
+  .app.wide-panel {
+    grid-template-columns: 420px 1fr;
+  }
+}
+
 /* ---- toolbar ------------------------------------------------------------ */
 
 .toolbar {
@@ -513,11 +520,15 @@ input[type='checkbox'] {
   pointer-events: none;
 }
 
+/* The mouse hint, on a panel-tinted ground so it stays legible over the scan. */
 .hint {
   position: absolute;
   left: 12px;
-  right: 12px;
   bottom: 10px;
+  max-width: calc(100% - 24px);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
   font-size: var(--fs-small);
   color: var(--text-muted);
   white-space: nowrap;
@@ -785,6 +796,37 @@ input[type='checkbox'] {
 
 /* ---- ready to mill -------------------------------------------------------- */
 
+/* Scans: what the case needs, ticked off as each jaw loads. */
+.scan-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scan-checklist li {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.scan-checklist svg {
+  width: 14px;
+  height: 14px;
+  color: var(--ok);
+}
+
+.scan-ring {
+  width: 9px;
+  height: 9px;
+  margin-left: 2px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-muted);
+}
+
 .readiness {
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -863,6 +905,21 @@ input[type='checkbox'] {
   margin: 0;
   padding-left: 18px;
   font-size: var(--fs-small);
+}
+
+/* The end of the journey: after an export, where to go next. */
+.journey-end {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: var(--radius-sm);
+  background: var(--accent-tint);
+}
+
+.journey-end p {
+  margin: 0;
 }
 
 .export-done {

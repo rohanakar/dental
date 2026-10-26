@@ -60,6 +60,14 @@ These scripts drive the real web app in headless Chrome (Playwright, `channel: '
   single reduced zirconia crown 36 (full 1.0 mm). The cutback gate stops both drafts on the synthetic preps' veneer
   shortfall (their walls are thinner than the framework minimum, as the runner reports); the agent's veneer metrics.
   Screenshots go to `out/e2e/ai-framework/`.
+- `first-run.mjs` (offline): a first-time visitor's journey. Sign-in screen → Try the demo case → Tooth frame looking
+  down onto the lower jaw, the prep of 36 ringed and inside the viewport → a click on 35 refused (nothing runs) → a
+  click in the ring → the draft reviewed in one verdict line, checks folded, Accept the only primary → Accept said in
+  the status line inside the window → Finalize → export → the ending, with Parameters and Finalize done on the rail →
+  `?` opens the help sheet → Start your own case → Case setup with the dentist's-view chart (24 px pitch, inside the
+  wider panel). Screenshots go to `out/e2e/first-run/`.
+
+Scripts that set an inlay, onlay, wing, implant or reduced unit open "More types" for that tooth first (`moreTypes`).
 
 Clicks on the scan (`clickWorld` in `ai-bridge.mjs`, `bridge.mjs`, `implant.mjs` and `framework.mjs`) wait until the
 surface under the projected point is the target, within 0.3 mm. In headless Chrome with SwiftShader a frame of a
@@ -72,7 +80,7 @@ without a 'rest' event and leaves it true.
 ```bash
 pnpm dev:web                          # terminal 1 (and pnpm dev:api + Postgres for the online script)
 pnpm --filter @dcad/e2e offline       # or: online, move, bridge, ai-bridge, implant, anterior, framework, maryland,
-                                      #     ai-implant, ai-maryland, ai-framework
+                                      #     ai-implant, ai-maryland, ai-framework, first-run
 ```
 
 Day 7 turns these into `@playwright/test` specs.

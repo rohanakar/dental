@@ -265,7 +265,7 @@ components:
     width: "240px"
 ---
 
-# Design System: DentalCAD (working name)
+# Design System: Dental CAD (working name)
 
 ## Overview
 
@@ -300,7 +300,7 @@ A cool, nearly colourless system: white and blue-grey grounds, navy or graphite 
 - **Slate Ink** (#3a4658): body copy, ledes, nav links, table cells and check labels. Also the outline of a hovered input.
 - **Muted Slate** (#5d6878): captions, hints, placeholders, table heads, scale labels, the footer, and the "not yet" dash.
 - **Cool Hairline** (#e4e8ee): every landing divider: the nav's bottom edge, table rows, check rows, scope list rules, the footer's top edge.
-- **Field Grey** (#8792a2): input outlines, the secondary button's outline, and the dashed outline of the placeholder wordmark.
+- **Field Grey** (#8792a2): input outlines and the secondary button's outline.
 - **White Ground** (#ffffff): the page, the nav, the table frame and the checks panel. The landing page is light only.
 - **Cool Mist** (#f5f7fa): the alternating tinted sections (Checks, Scope).
 - **Viewport Grey** (#e9ecf0, shared): the ground behind every framed render. It is the editor's light viewport colour, so a capture meets its frame without a seam.
@@ -380,14 +380,15 @@ Editor (maintained by the editor polish work):
 - **At 1080px:** the hero goes to one column, the render is capped at 760px, and the steps go to two columns.
 - **At 760px:**
   - the nav hides its section links;
-  - the hero reorders to headline, lede, render with the checks panel (now in the flow, overlapping by 48px), then the form;
+  - the hero reorders to headline, lede, render with the checks panel (now in the flow, overlapping by 48px), then the form and the Try the demo button;
   - the render crops to 16:11, and the editor shot swaps to the side panel at 1:1;
   - every grid goes to one column, and table rows stack as name and value above the description.
 - **At 420px:** the nav's call to action uses its short label.
 
-**Editor (maintained by the editor polish work).** A full-viewport grid: the toolbar across the top, a 340px side panel on the left, and the viewport filling the rest.
+**Editor (maintained by the editor polish work).** A full-viewport grid: the toolbar across the top, a 340px side panel on the left, and the viewport filling the rest. On Case setup the panel widens to 420px for the sixteen-tooth chart rows.
 - **Side panel:** 12px padding and 14px between sections. Step bodies stack at 12px. Controls are 28px tall, 8px apart in rows and 4px apart in grids. The Back / Next footer sticks to the bottom of the panel.
-- **Viewport overlays:** the colour legend floats top-right (12px inset, 240px wide), and the hint line runs along the bottom.
+- **Status line:** the busy indicator and the latest tool message sit at the top of the sticky footer, above Back / Next, so feedback is always in view. A message is 12px on a 6px-cornered ground: Control Grey for a notice, Amber Wash for a warning, a 10% Fail Red wash with Fail Red text for an error. It has a 24px dismiss button, and a new message replaces the old one. A notice leaves with its step; warnings and errors stay until dismissed.
+- **Viewport overlays:** the colour legend floats top-right (12px inset, 240px wide). The help sheet (the `?` key or Help in the toolbar) floats top-left, 400px wide, on Panel White with a hairline and 8px corners: shortcuts, then a short glossary. It is not modal. The hint line runs along the bottom left, on a 94% Panel White ground (as the legend) with 6px corners so it stays legible over the scan.
 - **Below 720px:** the viewport (45% of the height) stacks above the panel.
 - **Session screens:** cards are centred on Bench Grey, 380px wide (820px for the case list), with 48px above.
 - The editor is built for desktop, mouse and keyboard.
@@ -412,7 +413,7 @@ Radius grows with the object, and data stays nearly square.
 - **Landing:**
   - 8px for controls: buttons, inputs and the error box;
   - 12px for the checks panel and 14px for framed renders and the gate table;
-  - 6px for the wordmark and skip link, and 4px for focus-ring corners;
+  - 6px for the skip link, and 4px for focus-ring corners;
   - 3px for scale bars;
   - full circles for step numbers and pass ticks.
 - **Editor:**
@@ -424,7 +425,7 @@ Radius grows with the object, and data stays nearly square.
 
 Step status is drawn as a shape, with screen-reader text alongside: a ring is not done, a filled green dot is done, a half-filled amber dot is out of date, and a dashed blue ring is in an open draft.
 
-**The Dashed Means Not-There Rule.** Dashed and dotted strokes mark what is not there yet, or not there at all: the dropzone and the drop-to-import overlay, a draft step's dot, a check not yet measured, the first-run empty case list, the placeholder wordmark, a pontic (a missing tooth being replaced), an unavailable connector, and the dotted target tick on a map scale. Solid strokes mean measured or committed, such as the solid tick at contact or at the minimum.
+**The Dashed Means Not-There Rule.** Dashed and dotted strokes mark what is not there yet, or not there at all: the dropzone and the drop-to-import overlay, a draft step's dot, a check not yet measured, the first-run empty case list, a pontic (a missing tooth being replaced), an unavailable connector, and the dotted target tick on a map scale. Solid strokes mean measured or committed, such as the solid tick at contact or at the minimum.
 
 ## Components
 
@@ -455,7 +456,7 @@ Editor badges.
 - **Corner Style:** landing frames 14px and the overlay 12px. Editor containers 8px.
 - **Background:** the landing page uses Viewport Grey behind captures and White Ground for the table and checks panel. The editor uses Panel White for panels and cards, and Control Grey for object cards.
 - **Shadow Strategy:** the landing page uses Frame, Overlay or Inset card (see Elevation & Depth). Editor containers have no shadow.
-- **Border:** a landing frame's edge is the 1px ring inside its shadow. Editor containers have a 1px Panel Hairline. Warnings and notices are a tinted ground with no border. Callouts that do carry a border carry it all round, in their own hue: the hint box is 30% accent, the draft banner 45% accent, and the export confirm box 45% Fail Red.
+- **Border:** a landing frame's edge is the 1px ring inside its shadow. Editor containers have a 1px Panel Hairline. Warnings and notices are a tinted ground with no border. Callouts that do carry a border carry it all round, in their own hue: the hint box and the after-export ending are 30% accent, the draft banner 45% accent, and the export confirm box 45% Fail Red.
 - **Internal Padding:** the landing checks panel uses 16–18px and the table cells 16 × 20px. Editor containers use 8 × 10px, and session cards 20px.
 
 ### Inputs / Fields
@@ -464,7 +465,7 @@ Editor badges.
 - **Error / Disabled:** the field's border turns Fail Red. The landing page shows one error box across the form (Fail Wash, Fail Red text, 8px corners) with a way forward ("Sign in instead", "open the demo case"). An out-of-range editor parameter is reverted, and a visible message gives the allowed range.
 
 ### Navigation
-- **Landing:** a sticky White Ground bar, 64px tall, with a Cool Hairline below. The placeholder wordmark sits left, with a dashed Field Grey outline, 6px corners and weight 620. The section links are centred, in Slate Ink at 0.9375rem and 480, turning navy on hover with no underline. Sign in (a text link) and the small primary button sit right. Below 760px the section links hide. Links in body text are Deep Instrument Blue with a 1px underline at a 3px offset, and turn Instrument Blue on hover.
+- **Landing:** a sticky White Ground bar, 64px tall, with a Cool Hairline below. The wordmark "Dental CAD" sits left in navy at weight 620, with no outline (the name was chosen "for now" on 2026-10-26; it is no longer a placeholder). The section links are centred, in Slate Ink at 0.9375rem and 480, turning navy on hover with no underline. Try the demo and Sign in (text links) and the small primary button sit right. Below 760px the section links and Try the demo hide; the hero carries the demo button. Links in body text are Deep Instrument Blue with a 1px underline at a 3px offset, and turn Instrument Blue on hover.
 - **Editor toolbar** (maintained by the editor polish work): a Panel White row with a hairline below, holding the working name, then quiet history buttons, the segmented views, a hairline separator, the file actions and Save. It fits on one row at 1100px.
 
 ### Product Shot
@@ -489,11 +490,22 @@ Shared by both surfaces.
 The editor's signature list (maintained by the editor polish work).
 - **Rows:** 28px tall with 6px corners. The step number is a counter in muted 12px text, followed by a 9px status dot (see Shapes).
 - **States:** hover is Control Grey. The active step is a Blue Wash with Deep Instrument Blue text at 600: a tint, never an outline. A disabled step is muted at 55% opacity.
-- **Footer:** Back / Next sits below. "Next: <step>" turns primary once the current step is done. A missing required step shows as an amber strip with a "Go to" button.
+- **Footer:** Back / Next sits below. "Next: <step>" turns primary once the current step is done, and never while an auto-design draft is running or open: Accept (or, for a draft that stopped, Reject) is then the one primary action. A missing required step shows as an amber strip with a "Go to" button.
+- **Status:** Parameters shows done once the crown is proposed with them (they start from the material preset). Finalize shows done once the current design was exported in the session.
+
+### Draft Review
+The auto-design draft, before anything is kept (`apps/web/src/ui/ai/AutoDesign.tsx`).
+- **Order:** one verdict line at 600 ("Draft ready: all N checks passed", or "Draft stopped at <step>"), one plain sentence on what to do, the failing checks in Fail Red with their values, the buttons, then "Show the checks (N)", which folds away the full check log and the proposers' reasoning.
+- **Actions:** a complete draft offers Accept (primary), then Reject. A draft that stopped offers Reject (primary) first, then "Keep the draft"; with nothing passed only Reject. The outcome is said in the status line.
+- **Finalize** waits for the decision: it shows only "Accept or reject the auto-design draft first" while a draft is open.
+
+### First Click
+- Entering Tooth frame on a tooth with no frame looks down onto its jaw (from below for the upper jaw), tilted a little toward buccal, with the antagonist hidden.
+- In the demo a 3px Frame Blue ring, 4.5 mm in radius, marks the prep of 36 until it has a frame, and a click more than 5.5 mm from the prep's top is refused with a warning in the status line.
 
 ### Tooth Chart
 The editor's FDI chart (`apps/web/src/ui/bridge.css`, from bridge mode).
-- **Layout:** quadrant rows run out from the midline, with two half-columns per tooth so a connector spans from one tooth centre to the next. Tooth keys are 32 × 30px and connectors 36 × 24px. A narrow panel scrolls the chart rather than shrinking its targets.
+- **Layout:** the dentist's view, one row per jaw as if facing the patient: 18…11 | 21…28 over 48…41 | 31…38, with a 6px midline gap. "Right" and "Left" (the patient's sides) sit above the row ends, and each jaw's name at the midline. Two 12px half-columns per tooth, so a connector spans from one tooth centre to the next: the upper jaw's connectors above its row, the lower jaw's below; 11–21 and 41–31 span the midline. Tooth keys are 22 × 32px on a 24px pitch. A narrow panel scrolls the chart rather than shrinking its targets.
 - **Keys:** Control Grey with a hairline, 6px corners and 12px numbers. The border turns to the accent on hover.
 - **In the case:** a crown tooth is filled with the solid accent, with On-Accent text at 600. A pontic is Blue Wash with a 1.5px dashed Deep Instrument Blue outline. The active tooth adds a 2px inset ring and an underline.
 - **Connectors:** a 12px ring dot in Field Outline that fills with the accent when connected, plus a 3px accent bracket between the teeth. An unavailable connector is a dashed muted ring with a strike.

@@ -29,11 +29,27 @@
 }
 
 .session-card h2 {
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--text-muted);
   margin: 0;
+}
+
+/* The two ways in without an account, each with what it does. */
+.session-options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.session-options li {
+  display: grid;
+  grid-template-columns: 9.5rem 1fr;
+  align-items: center;
+  gap: 10px;
 }
 
 .session-head {

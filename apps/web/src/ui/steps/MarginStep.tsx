@@ -85,8 +85,6 @@ export function MarginStep() {
           <dl className="params">
             <dt>Length</dt>
             <dd>{polylineLength(margin.points).toFixed(1)} mm</dd>
-            <dt>Control points</dt>
-            <dd>{margin.anchors.length}</dd>
           </dl>
           <div className="row">
             <button className="btn" onClick={() => void marginTool.smooth()}>
@@ -95,7 +93,7 @@ export function MarginStep() {
           </div>
         </>
       )}
-      <p className="muted small">Backspace removes the last point · Esc cancels · Ctrl/⌘+Z undoes accepted edits</p>
+      {drafting && <p className="muted small">Backspace removes the last point · Esc cancels</p>}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { analysis } from '../workers/geometryClient';
 import { isStale } from '../workers/latestWins';
 import { frameView } from './bridgeTool';
 import { errorText, fromMarginPoints, toothContext } from './context';
+import { missesDemoPrep } from './demoPrep';
 import { PREP_MARGIN } from './marginView';
 import { useToolStore, type V3 } from './toolStore';
 
@@ -149,8 +150,12 @@ export function frameInteraction(jawRole: string): InteractionHandler {
         void placePonticAt(point);
         return;
       }
+      if (framePick === 'seed' && missesDemoPrep(point)) {
+        set({ message: { kind: 'warning', text: `That is not tooth ${activeFdi}. Click the prepared tooth inside the blue ring.` } });
+        return;
+      }
       if (framePick === 'seed' && autoArmed) {
-        set({ autoArmed: false });
+        set({ autoArmed: false, message: null });
         void runAutoDesign({ seed: point });
         return;
       }

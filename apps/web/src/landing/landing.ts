@@ -131,7 +131,8 @@ function runChecks(panel: HTMLElement): void {
     const value = row.querySelector<HTMLElement>('[data-value]');
     const land = () => {
       row.classList.add('is-passed');
-      if (passed) passed.textContent = String(i + 1);
+      // Rows land out of order when a value takes longer to settle: count them, not the index.
+      if (passed) passed.textContent = String(panel.querySelectorAll('[data-check].is-passed').length);
       if (i === rows.length - 1) panel.classList.remove('is-running');
     };
     window.setTimeout(() => (value ? settle(value, land) : land()), 450 + i * step);

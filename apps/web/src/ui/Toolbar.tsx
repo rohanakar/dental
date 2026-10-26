@@ -3,6 +3,7 @@ import type { StandardView } from '../engine/viewFrame';
 import { sceneController } from '../state/sceneController';
 import { useSceneStore } from '../state/sceneStore';
 import { CameraIcon, RedoIcon, UndoIcon } from './icons';
+import { toggleHelp, useHelp } from './HelpSheet';
 import { ProjectControls } from './session/ProjectControls';
 import { SessionControls } from './session/SessionControls';
 
@@ -17,6 +18,7 @@ export const VIEWS: Array<{ view: StandardView; label: string; key: string }> = 
 export function Toolbar() {
   const hasReady = useSceneStore((s) => s.objects.some((o) => o.phase === 'ready'));
   const projection = useSceneStore((s) => s.projection);
+  const help = useHelp((s) => s.open);
   // Undo/redo wait while a draft (auto-design or assistant) is open for review.
   const draftOpen = useDesignStore((s) => Boolean(s.transaction));
   const canUndo = useDesignStore((s) => s.past.length > 0) && !draftOpen;
@@ -63,6 +65,9 @@ export function Toolbar() {
       </button>
       <button className="btn quiet icon" disabled={!hasReady} aria-label="Screenshot" title="Screenshot (PNG)" onClick={() => void sceneController.screenshot()}>
         <CameraIcon />
+      </button>
+      <button id="help-button" className="btn quiet" aria-keyshortcuts="?" title="Shortcuts and terms (?)" aria-expanded={help} onClick={() => toggleHelp()}>
+        Help
       </button>
       <span className="sep" />
       <ProjectControls />

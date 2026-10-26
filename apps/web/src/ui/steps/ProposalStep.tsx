@@ -61,8 +61,8 @@ export function ProposalStep() {
         {cavity
           ? inlayProposalText(cavity, source)
           : tooth.implant
-          ? 'A library crown is placed on the gingiva around the implant, sized to the gap between the neighbours and the space to the antagonist. It is bonded to the Ti-base and screwed through its channel.'
-          : 'A library crown is placed on the margin in the tooth frame, sized to the gap between the neighbours and the space to the antagonist. The inner surface follows the prep with the cement gap.'}
+          ? 'A library crown, sized to the gap and the bite, on the Ti-base and screwed through its channel.'
+          : 'A library crown, sized to the gap and the bite, seated on the margin.'}
       </p>
       <MarginNotice />
       <OuterSourceSwitch />
@@ -105,8 +105,7 @@ function BridgeProposal() {
   return (
     <div className="step-body">
       <p className="muted">
-        Retainers are placed on the abutment margins and pontics on the arch between them, all along the common insertion
-        axis. Connectors join the neighbouring units. Click a unit to adjust it.
+        Every unit is placed along the common axis and joined by connectors. Click a unit to adjust it.
       </p>
       {missing && !placed && <div className="warning">{missing}</div>}
       <MarginNotice />

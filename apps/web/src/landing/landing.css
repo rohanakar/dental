@@ -204,9 +204,6 @@ code {
   display: inline-flex;
   align-items: center;
   height: 34px;
-  padding: 0 10px;
-  border: 1px dashed var(--field-border);
-  border-radius: 6px;
   color: var(--ink);
   font-weight: 620;
   letter-spacing: -0.01em;
@@ -216,7 +213,6 @@ code {
 
 .wordmark:hover {
   color: var(--ink);
-  border-color: var(--ink);
 }
 
 .nav-links {
@@ -367,6 +363,17 @@ code {
   display: inline-block;
   margin-top: 2px;
   font-weight: 520;
+}
+
+/* The demo, beside the sign-up: the other way in, one click and no account. */
+.hero-demo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin: 20px 0 0;
+  color: var(--ink-3);
+  font-size: 0.9375rem;
 }
 
 .signed-in {
@@ -911,6 +918,11 @@ code {
     gap: 14px;
   }
 
+  /* The hero carries the demo button on small screens. */
+  .nav-demo {
+    display: none;
+  }
+
   .hero {
     gap: 0;
   }
@@ -943,6 +955,7 @@ code {
   }
 
   .signup,
+  .hero-demo,
   .signed-in {
     order: 4;
   }
@@ -1024,7 +1037,6 @@ code {
   }
 
   .wordmark {
-    padding: 0 8px;
     font-size: 0.9375rem;
   }
 }

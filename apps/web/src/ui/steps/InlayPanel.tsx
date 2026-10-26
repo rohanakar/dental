@@ -97,11 +97,8 @@ export function OuterSourceSwitch() {
 
 /** The Proposal step's explanation for an inlay or onlay. */
 export function inlayProposalText(type: CavityType, source: OuterSource): string {
-  const outer =
-    source === 'preop'
-      ? 'Its outer surface is the pre-op scan over the cavity (the tooth as it was).'
-      : 'Its outer surface is the library tooth, fitted to the natural surface around the cavity; move, rotate and scale adjust it.';
-  return `The ${type} fills the cavity up to the cavity margin. ${outer} The fitting surface follows the cavity with the cement gap.`;
+  const outer = source === 'preop' ? 'its top is the tooth as it was before the prep' : 'its top is the library tooth, fitted to the tooth around it';
+  return `The ${type} fills the cavity up to its margin; ${outer}.`;
 }
 
 /** No nudges on a pre-op inlay: it follows the pre-op scan. */

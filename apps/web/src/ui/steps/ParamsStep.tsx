@@ -11,28 +11,28 @@ const GROUPS: Array<{ title: string; fields: Field[] }> = [
   {
     title: 'Fit',
     fields: [
-      { key: 'cementGapMm', label: 'Cement gap', hint: 'Space for cement over the prep, ramping up from the margin.' },
-      { key: 'extraSpacerMm', label: 'Extra spacer', hint: 'Added to the cement gap away from the margin.' },
-      { key: 'distanceToMarginMm', label: 'Spacer starts at', hint: 'Distance from the margin where the extra spacer begins.' },
+      { key: 'cementGapMm', label: 'Cement gap', hint: 'Space for cement over the prep.' },
+      { key: 'extraSpacerMm', label: 'Extra spacer', hint: 'More space, away from the margin.' },
+      { key: 'distanceToMarginMm', label: 'Spacer starts at', hint: 'How far from the margin it begins.' },
     ],
   },
   {
     title: 'Thickness',
     fields: [
-      { key: 'marginThicknessMm', label: 'Margin thickness', hint: 'Crown edge thickness at the margin.' },
-      { key: 'minThicknessMm', label: 'Minimum thickness', hint: 'Thinnest the material may be away from the margin; the crown is thickened to keep it.' },
+      { key: 'marginThicknessMm', label: 'Margin thickness', hint: 'The crown edge at the margin.' },
+      { key: 'minThicknessMm', label: 'Minimum thickness', hint: 'Thinnest wall allowed elsewhere.' },
     ],
   },
   {
     title: 'Contact targets',
     fields: [
-      { key: 'occlusalClearanceMm', label: 'Occlusal clearance', hint: 'Target gap to the antagonist. Negative makes contact.' },
-      { key: 'proximalContactMm', label: 'Proximal contact', hint: 'Target gap to the neighbours. Negative makes the contact tighter.' },
+      { key: 'occlusalClearanceMm', label: 'Occlusal clearance', hint: 'Gap to the opposing teeth; below 0 is contact.' },
+      { key: 'proximalContactMm', label: 'Proximal contact', hint: 'Gap to the neighbours; below 0 is tighter.' },
     ],
   },
   {
     title: 'Milling',
-    fields: [{ key: 'toolRadiusMm', label: 'Milling tool radius', hint: 'Used only for the unmillable map.' }],
+    fields: [{ key: 'toolRadiusMm', label: 'Milling tool radius', hint: 'Only for the unmillable map.' }],
   },
 ];
 
@@ -40,8 +40,8 @@ const GROUPS: Array<{ title: string; fields: Field[] }> = [
 const IMPLANT_GROUP: { title: string; fields: Field[] } = {
   title: 'Implant',
   fields: [
-    { key: 'tiBaseGapMm', label: 'Ti-base bonding gap', hint: 'Cement space between the Ti-base and the restoration.' },
-    { key: 'channelWallMm', label: 'Channel wall', hint: 'Least material around the screw channel.' },
+    { key: 'tiBaseGapMm', label: 'Ti-base bonding gap', hint: 'Cement space on the Ti-base.' },
+    { key: 'channelWallMm', label: 'Channel wall', hint: 'Least material around the screw hole.' },
   ],
 };
 const IMPLANT_DEFAULTS: Partial<Record<keyof Params, number>> = { tiBaseGapMm: 0.03, channelWallMm: 0.8 };
@@ -89,8 +89,7 @@ export function ParamsStep() {
   return (
     <div className="step-body">
       <p className="muted">
-        Values in millimetres{material ? `, ${fromPreset ? 'from' : 'changed from'} the ${MATERIAL_LABEL[material]} preset` : ''}. Changes
-        recompute the crown.
+        In millimetres{material ? `, ${fromPreset ? 'from' : 'changed from'} the ${MATERIAL_LABEL[material]} preset` : ''}.
       </p>
       <div className="param-grid">
         {[...paramGroupsFor(setup, tooth.fdi, GROUPS), ...(implant ? [IMPLANT_GROUP] : [])].map((group) => (

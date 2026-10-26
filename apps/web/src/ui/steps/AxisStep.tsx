@@ -27,16 +27,16 @@ export function AxisStep() {
     <div className="step-body">
       <p className="muted">
         {common.length > 1
-          ? `The bridge seats as one piece along one insertion axis, common to ${common.join(' and ')}. Colours show where each prep is hidden from that direction; those areas are blocked out in the inner surfaces.`
-          : "The insertion axis is the direction the crown is seated along. Colours show where the prep is hidden from that direction; those areas are blocked out in the crown's inner surface."}
+          ? `The bridge seats along one axis, common to ${common.join(' and ')}. Coloured areas are hidden from it and get blocked out.`
+          : 'The direction the crown seats along. Coloured areas are hidden from it and get blocked out.'}
       </p>
       {missing.length > 0 && <div className="warning">Draw the margin on {missing.join(', ')} too: the common axis is searched over every abutment.</div>}
       <div className="row wrap">
         <button className="btn primary" disabled={Boolean(busy) || missing.length > 0} onClick={() => void axisTool.search()}>
           {common.length > 1 ? 'Least undercut, common' : 'Least undercut'}
         </button>
-        <button className="btn" disabled={Boolean(busy)} onClick={() => axisTool.fromView()} title="Look down onto the prep, then click">
-          From view
+        <button className="btn" disabled={Boolean(busy)} onClick={() => axisTool.fromView()} title="Look down onto the prep the way the crown should go on, then click">
+          Along my view
         </button>
       </div>
       {axis && (
@@ -54,8 +54,6 @@ export function AxisStep() {
       )}
       {axis && report && (
         <dl className="params">
-          <dt>Source</dt>
-          <dd>{axis.source === 'auto' ? 'least undercut' : 'edited'}</dd>
           <dt>Tilt from {report.bridge ? 'mean occlusal' : 'occlusal'}</dt>
           <dd>{report.angleFromOcclusalDeg.toFixed(1)}°</dd>
           <dt>Undercut area{report.bridge ? ', all preps' : ''}</dt>

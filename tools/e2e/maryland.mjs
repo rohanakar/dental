@@ -11,6 +11,12 @@ import { chromium } from 'playwright';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+/** Inlay, onlay, wing, implant and reduced sit behind "More types" in Case setup. */
+const moreTypes = async (page, fdi) => {
+  const more = page.getByRole('button', { name: `More types for ${fdi}` });
+  if ((await more.count()) && (await more.getAttribute('aria-expanded')) !== 'true') await more.click();
+};
+
 const ROOT = new URL('../../', import.meta.url).pathname;
 const OUT = `${resolve(process.env.E2E_OUT ?? `${ROOT}out/e2e/maryland`)}/`;
 mkdirSync(OUT, { recursive: true });
@@ -78,6 +84,7 @@ await step('Case setup');
 await page.getByRole('button', { name: 'Tooth 11', exact: true }).click();
 await page.getByRole('button', { name: 'Tooth 12', exact: true }).click();
 await page.getByRole('group', { name: 'Restoration for 12' }).getByRole('button', { name: 'Pontic' }).click();
+await moreTypes(page, 11);
 await page.getByRole('group', { name: 'Restoration for 11' }).getByRole('button', { name: 'Wing' }).click();
 await page.getByRole('button', { name: 'Tooth 36', exact: true }).click();
 const setup = await state(() => {

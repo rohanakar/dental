@@ -20,6 +20,7 @@ import { implantTool, isImplantTooth } from './implantTool';
 import { MARGIN_VIEW_DISTANCE_MM, marginView, PREP_MARGIN } from './marginView';
 import { useToolStore } from './toolStore';
 import { isWing } from './wing';
+import { DEMO_PREP_RADIUS_MM, demoPrep, ringPoints } from './demoPrep';
 
 export const FRAME_COLORS = { occlusal: '#4c8dff', mesial: '#2fbf71', buccal: '#f0a030', distal: '#a970ff' } as const;
 const AXIS_COLOR = '#b07cff';
@@ -51,6 +52,8 @@ class DesignTools {
   private hiddenAntagonist: ScanRole | null = null;
   /** Inputs of the overlays last drawn; overlays are rebuilt only when these change. */
   private drawn: unknown[] = [];
+  /** Tooth frame entered with no frame yet: look onto the jaw once it is on screen without its antagonist. */
+  private jawView = false;
 
   constructor() {
     useDesignStore.subscribe(() => this.sync());
@@ -122,6 +125,7 @@ class DesignTools {
       if (this.lastStep === 'frame') useToolStore.getState().set({ framePick: 'seed' });
       this.lastStep = step;
       this.lastFdi = activeFdi;
+      this.jawView = step === 'frame' && !ctx?.tooth.frame;
       if (step === 'axis') axisTool.enter();
       if (step === 'margin') this.focusPrep('occlusal');
       if (!sameBridge && (step === 'axis' || step === 'proposal' || step === 'adapt' || step === 'finalize')) {
@@ -132,6 +136,10 @@ class DesignTools {
 
     const v = this.viewer;
     if (!v) return;
+    if (this.jawView && ctx) {
+      this.jawView = false;
+      if (ctx.jaw.role === 'lower' || ctx.jaw.role === 'upper') v.viewJaw(ctx.jaw.role);
+    }
 
     const { doc } = useDesignStore.getState();
     const bridged = Boolean(ctx && bridgeOf(doc, ctx.fdi));
@@ -255,7 +263,9 @@ class DesignTools {
     const otherTeeth = (bridge?.teeth ?? []).filter((f) => f !== tooth?.fdi).map((f) => doc.teeth.find((t) => t.fdi === f));
     const others = step === 'frame' ? otherTeeth.map((t) => t?.frame) : [];
     const otherMargins = SHOW_MARGIN.includes(step) ? otherTeeth.map((t) => t?.margin) : [];
-    const inputs = [step, tooth?.frame, tooth?.margin, tooth?.axis, ...others, ...otherMargins];
+    // The demo knows where its prep is: a ring marks it until the tooth has a frame.
+    const prep = step === 'frame' && tooth && !tooth.frame ? demoPrep() : null;
+    const inputs = [step, tooth?.frame, tooth?.margin, tooth?.axis, prep, ...others, ...otherMargins];
     if (inputs.length === this.drawn.length && inputs.every((x, i) => x === this.drawn[i])) return;
     this.drawn = inputs;
 
@@ -266,6 +276,9 @@ class DesignTools {
     otherMargins.forEach((m, i) => {
       if (m) o.setPolyline(`units:margin:${i}`, m.points.map((p) => p.p), { color: MARGIN_COLOR, widthPx: 2, closed: true, opacity: 0.7 });
     });
+
+    if (prep) o.setPolyline('demo:prep', ringPoints(prep, this.viewer!.getViewFrame().up, DEMO_PREP_RADIUS_MM), { color: FRAME_COLORS.occlusal, widthPx: 3, closed: true });
+    else o.remove('demo:prep');
 
     const frame = tooth?.frame;
     if (frame && step === 'frame') {

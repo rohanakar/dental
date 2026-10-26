@@ -5,6 +5,7 @@ import { useSceneStore } from '../state/sceneStore';
 import { exposeForDebug } from '../debug';
 import { designTools } from '../tools/controller';
 import { ColorLegend } from './ColorLegend';
+import { HelpSheet } from './HelpSheet';
 import { importFiles } from './ScanImport';
 
 function cssVar(name: string, fallback: string): string {
@@ -60,7 +61,8 @@ export function Viewport() {
         </div>
       )}
       <ColorLegend />
-      <div className="hint">Left-drag rotate · right-drag pan · wheel zoom to cursor · 1–5 views · F fit · O ortho</div>
+      <div className="hint">Drag to rotate · right-drag to pan · scroll to zoom · ? for help</div>
+      <HelpSheet />
     </main>
   );
 }

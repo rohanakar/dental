@@ -91,9 +91,12 @@ useOrchestrator.subscribe((s, prev) => {
   if ((target === 'proposal' || target === 'adapt') && selectActiveTooth(useDesignStore.getState())?.crown) crownTool.setMap('occlusion');
 });
 
-function acceptDraft(): void {
+function acceptDraft(complete: boolean, failed: StepRun | undefined, bridge: boolean): void {
   accept();
-  useToolStore.getState().set({ message: { kind: 'info', text: 'Draft accepted. Undo takes it back in one step.' } });
+  const text = complete
+    ? 'Draft accepted. Undo (Ctrl/⌘+Z) takes it back in one step.'
+    : `Draft kept. Finish ${rowLabel(failed, bridge)} yourself; Undo (Ctrl/⌘+Z) takes the draft back.`;
+  useToolStore.getState().set({ message: { kind: 'info', text } });
 }
 
 function rejectDraft(): void {
@@ -108,6 +111,79 @@ const num = (v: number) => Number(v.toFixed(2));
 const checkValue = (c: QaCheck) =>
   c.value === undefined ? '' : c.threshold === undefined ? ` (${num(c.value)})` : ` (${num(c.value)}, limit ${num(c.threshold)})`;
 
+/** What to do about a draft that stopped, in plain words, by the step that failed. */
+function nextAction(failed: StepRun | undefined, bridge: boolean): string {
+  switch (failed?.step) {
+    case 'frame':
+      return 'That click did not give a tooth frame. Reject, then click the top of the prepared tooth.';
+    case 'margin':
+      return 'The margin was not found cleanly. If you clicked the wrong tooth, reject and click the prep. Otherwise keep the draft and trace the margin yourself.';
+    case 'axis':
+      return 'No insertion axis passed. Keep the draft and set the axis yourself, or reject it.';
+    case 'proposal':
+      return `The ${bridge ? 'bridge' : 'crown'} failed a check. Keep the draft and change the parameters or the ${bridge ? 'units' : 'crown'}, or reject it.`;
+    case 'adapt':
+      return 'The adaptation failed a check. Keep the draft and adjust it in Adapt, or reject it.';
+    default:
+      return 'Keep the draft and finish the step yourself, or reject it.';
+  }
+}
+
+/**
+ * The review of an open draft: one line for the verdict and what to do, the failing checks, and the full check list
+ * folded away. A complete draft offers Accept as the main action; a draft that stopped offers Reject, with "Keep the
+ * draft" (the passed steps, and the failed step's output to fix by hand) beside it.
+ */
+function Review({ className = '' }: { className?: string }) {
+  const { complete, steps, bridge } = useOrchestrator();
+  const isBridge = Boolean(bridge);
+  const ran = steps.filter((s) => s.status === 'passed' || s.status === 'failed');
+  const failed = steps.find((s) => s.status === 'failed');
+  const failing = failed?.qa.filter((c) => !c.passed) ?? [];
+  const checks = ran.reduce((n, r) => n + r.qa.length, 0);
+  const passedAny = ran.some((r) => r.status === 'passed');
+  const keep = (
+    <button key="accept" className={`btn${complete ? ' primary' : ''}`} onClick={() => acceptDraft(complete, failed, isBridge)}>
+      {complete ? 'Accept' : 'Keep the draft'}
+    </button>
+  );
+  const discard = (
+    <button key="reject" className={`btn${complete ? '' : ' primary'}`} onClick={rejectDraft}>
+      Reject
+    </button>
+  );
+  return (
+    <div className={`auto-banner ${className}`} role="status">
+      <strong>{complete ? `Draft ready: all ${checks} checks passed` : `Draft stopped at ${rowLabel(failed, isBridge)}`}</strong>
+      <span className="small">{complete ? 'Look it over on screen. Accept keeps it as one undo step.' : nextAction(failed, isBridge)}</span>
+      {failing.length > 0 && (
+        <ul className="auto-checks">
+          {failing.map((c) => (
+            <li key={c.id} className="fail">
+              <FailIcon />
+              <span>
+                {c.message}
+                {checkValue(c)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="row">{complete ? [keep, discard] : passedAny || failed?.step !== 'frame' ? [discard, keep] : [discard]}</div>
+      {ran.length > 0 && (
+        <details className="auto-details">
+          <summary>Show the checks ({checks})</summary>
+          <ol className="auto-steps">
+            {ran.map((r) => (
+              <StepRow key={r.key} run={r} review bridge={isBridge} />
+            ))}
+          </ol>
+        </details>
+      )}
+    </div>
+  );
+}
+
 /**
  * Accept / Reject for an open auto-design draft on a step without the auto-design panel. A draft that stops opens
  * the step whose check failed (Margin, Insertion axis or Adapt, where the failure can be seen and fixed), so the
@@ -115,36 +191,17 @@ const checkValue = (c: QaCheck) =>
  */
 export function DraftReview() {
   const panels = usePanels((s) => s.open);
-  const draft = useDesignStore((s) => s.transaction?.author === 'proposer');
-  const { pendingReview, complete, steps, bridge } = useOrchestrator();
-  if (panels > 0 || !draft || !pendingReview) return null;
-  const failed = steps.find((s) => s.status === 'failed');
-  const failing = failed?.qa.filter((c) => !c.passed) ?? [];
-  return (
-    <div className="auto-banner draft-review" role="status">
-      <strong>{complete ? 'Auto-design draft: every check passed' : `Draft stopped: ${rowLabel(failed, Boolean(bridge))} failed its check`}</strong>
-      {failing.length > 0 && (
-        <span className="muted small">
-          {failing
-            .slice(0, 3)
-            .map((c) => `${c.message}${checkValue(c)}`)
-            .join(' · ')}
-        </span>
-      )}
-      <div className="row">
-        <button className="btn" onClick={acceptDraft}>
-          Accept
-        </button>
-        <button className="btn" onClick={rejectDraft}>
-          Reject
-        </button>
-      </div>
-    </div>
-  );
+  const open = useDraftOpen();
+  const pendingReview = useOrchestrator((s) => s.pendingReview);
+  if (panels > 0 || !open || !pendingReview) return null;
+  return <Review className="draft-review" />;
 }
 
+/** Whether an auto-design draft is running or open for review (nothing else should look like the next action). */
+export const useDraftOpen = (): boolean => useDesignStore((s) => s.transaction?.author === 'proposer');
+
 function StepRow({ run, review, bridge }: { run: StepRun; review: boolean; bridge: boolean }) {
-  const showChecks = run.status === 'failed' || (review && run.status === 'passed');
+  const showChecks = review && run.qa.length > 0;
   return (
     <li className={run.status}>
       <span className="auto-icon">
@@ -154,7 +211,7 @@ function StepRow({ run, review, bridge }: { run: StepRun; review: boolean; bridg
         {rowLabel(run, bridge)}
         <span className="visually-hidden">: {run.status}</span>
       </span>
-      {showChecks && run.qa.length > 0 && (
+      {showChecks && (
         <ul className="auto-checks">
           {run.qa.map((c) => (
             <li key={c.id} className={c.passed ? 'pass' : 'fail'}>
@@ -167,7 +224,7 @@ function StepRow({ run, review, bridge }: { run: StepRun; review: boolean; bridg
           ))}
         </ul>
       )}
-      {review && run.status === 'passed' && run.rationale && <div className="muted small auto-rationale">{run.rationale}</div>}
+      {review && run.rationale && <div className="muted small auto-rationale">{run.rationale}</div>}
     </li>
   );
 }
@@ -189,7 +246,7 @@ export function AutoDesign({ seed, compact = false, primary = true }: { seed?: V
   const doc = useDesignStore((s) => s.doc);
   const bridge = useDesignStore((s) => bridgeOf(s.doc, s.activeFdi));
   const transaction = useDesignStore((s) => s.transaction);
-  const { running, steps, pendingReview, complete, error, bridge: runBridge } = useOrchestrator();
+  const { running, steps, pendingReview, error, bridge: runBridge } = useOrchestrator();
   const unframed = bridge ? bridge.teeth.filter((f) => unitKind(doc.setup, f) === 'abutment' && !doc.teeth.find((t) => t.fdi === f)?.frame) : [];
   const run = describeRun(doc, bridge?.teeth ?? (tooth ? [tooth.fdi] : []), Boolean(bridge));
   const implant = Boolean(tooth && isImplantTooth(doc, tooth.fdi));
@@ -197,7 +254,6 @@ export function AutoDesign({ seed, compact = false, primary = true }: { seed?: V
   const ready = bridge ? unframed.length === 0 : Boolean(tooth && (tooth.frame || seed));
   const canStart = ready && !running && !transaction;
   const ownDraft = pendingReview && transaction?.author === 'proposer';
-  const failed = steps.find((s) => s.status === 'failed');
   const isBridgeRun = Boolean(runBridge);
 
   return (
@@ -220,30 +276,13 @@ export function AutoDesign({ seed, compact = false, primary = true }: { seed?: V
         </>
       )}
       {error && <div className="warning">{error}</div>}
-      {ownDraft && (
-        <div className="auto-banner" role="status">
-          <strong>{complete ? 'Draft ready: every check passed' : `Draft stopped: ${rowLabel(failed, isBridgeRun)} failed its check`}</strong>
-          <span className="muted small">
-            {complete
-              ? `The ${isBridgeRun ? 'bridge' : 'crown'} is on screen with the occlusion map. Accept keeps the whole draft as one undo step.`
-              : 'The steps before it are on screen. Accept keeps them; Reject discards the whole draft.'}
-          </span>
-          <div className="row">
-            <button className="btn primary" onClick={acceptDraft}>
-              Accept
-            </button>
-            <button className="btn" onClick={rejectDraft}>
-              Reject
-            </button>
-          </div>
-        </div>
-      )}
-      {steps.length > 0 && (
+      {ownDraft && <Review />}
+      {!ownDraft && steps.length > 0 && (
         <ol className="auto-steps">
           {steps
             .filter((s) => s.status !== 'skipped')
             .map((s) => (
-              <StepRow key={s.key} run={s} review={Boolean(ownDraft)} bridge={isBridgeRun} />
+              <StepRow key={s.key} run={s} review={false} bridge={isBridgeRun} />
             ))}
         </ol>
       )}

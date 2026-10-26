@@ -394,6 +394,16 @@ export class Viewer {
   }
 
   /**
+   * Look onto a jaw's biting surfaces, framing the visible scene: from above the lower jaw, from below the upper, tilted
+   * a little toward buccal so the teeth read in depth. The view for finding the prep before the tooth has a frame.
+   */
+  viewJaw(jaw: 'lower' | 'upper', animate = true): void {
+    const up = new Vector3(...this.frame.up);
+    const dir = (jaw === 'upper' ? up.negate() : up).addScaledVector(new Vector3(...this.frame.buccal), 0.3).normalize();
+    this.frameVisible(dir, animate);
+  }
+
+  /**
    * Look at `point` from `dirToCamera` at `distanceMm` (e.g. zoom onto the
    * prep from occlusal). Applied to the camera immediately when not animated.
    */

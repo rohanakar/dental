@@ -4,34 +4,52 @@
  */
 
 .fdi-chart {
-  --half: 18px;
-  --tooth-h: 30px;
-  --link-h: 24px;
+  --half: 12px;
+  --tooth-h: 32px;
+  --link-h: 22px;
   --link-w: 3px;
+  --label-h: 16px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   /* A narrower panel scrolls the chart instead of shrinking its targets. */
   overflow-x: auto;
 }
 
-/* Between the jaw's two quadrant rows, right of the midline connector. */
+/* Orientation over the upper jaw (the patient's sides), and each jaw's name at the midline. */
+.fdi-side,
 .fdi-jaw-label {
   align-self: center;
-  padding-left: 4px;
   font-size: var(--fs-micro);
   font-weight: 600;
   color: var(--text-muted);
+  white-space: nowrap;
 }
 
+.fdi-jaw-label {
+  text-align: center;
+}
+
+.fdi-side.end {
+  text-align: right;
+}
+
+/* Sixteen teeth, two half-columns each, with the midline gap after the eighth. */
 .fdi-grid {
   display: grid;
-  grid-template-columns: repeat(16, var(--half));
-  grid-template-rows: var(--link-h) var(--tooth-h) var(--link-h) var(--tooth-h) var(--link-h);
+  grid-template-columns: repeat(16, var(--half)) 6px repeat(16, var(--half));
+}
+
+.fdi-jaw:first-child .fdi-grid {
+  grid-template-rows: var(--label-h) var(--link-h) var(--tooth-h);
+}
+
+.fdi-jaw:nth-child(2) .fdi-grid {
+  grid-template-rows: var(--tooth-h) var(--link-h) var(--label-h);
 }
 
 .fdi-tooth {
-  margin: 0 2px;
+  margin: 0 1px;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -123,14 +141,6 @@
   right: calc(var(--link-w) / -2);
   border-top: 0;
   border-radius: 0 0 4px 4px;
-}
-
-/* Across the midline (11–21, 41–31): straight down from one central incisor to the other. */
-.fdi-link.vertical .fdi-link-bar {
-  top: 0;
-  bottom: 0;
-  left: calc(50% - var(--link-w) / 2);
-  border-width: 0 0 0 var(--link-w);
 }
 
 .fdi-link.connected .fdi-link-bar {
@@ -552,4 +562,24 @@
 .readiness-count.open {
   color: var(--error-text);
   font-weight: 500;
+}
+
+/* A unit's type: crown or pontic, then the rarer types behind "More types" on their own line. */
+.unit-types {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.unit-more {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.unit-types > .btn[aria-expanded='true'] {
+  color: var(--accent-strong);
 }

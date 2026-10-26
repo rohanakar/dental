@@ -229,6 +229,8 @@ export async function openCase(id: string): Promise<void> {
 /** Work without the backend. Nothing is saved. */
 export function goOffline(): void {
   resetWorkspace();
+  // An empty case starts where every case starts: choosing the teeth.
+  useDesignStore.getState().setActiveStep('setup');
   set({ offline: true, status: 'editor' });
 }
 
@@ -247,6 +249,20 @@ export async function startDemo(): Promise<void> {
   if (!jawReady || !get().demo || useDesignStore.getState().activeStep !== 'scans') return;
   useToolStore.getState().set({ autoArmed: true, framePick: 'seed' });
   useDesignStore.getState().setActiveStep('frame');
+}
+
+/** From the offline editor to an empty offline case (after the demo, say). */
+export function startOwnCase(): void {
+  if (!confirmDiscard()) return;
+  goOffline();
+}
+
+/** From the offline editor to the sign-up form. */
+export function signUpFromOffline(): void {
+  if (!confirmDiscard()) return;
+  resetWorkspace();
+  set({ authMode: 'sign-up' });
+  void init();
 }
 
 /** Back to the case list (or the sign-in screen when offline without a session). */

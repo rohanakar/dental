@@ -3,15 +3,18 @@ import { useId, type CSSProperties } from 'react';
 import './bridge.css';
 
 /**
- * Each jaw as two quadrant rows that run from the midline (left) to the back teeth, so every pair of chart
- * neighbours sits side by side, 11–21 and 41–31 included. Sixteen teeth in one row of the 340 px panel would give
- * targets below 24 px; eight per row leave room for 32 px teeth and the connectors between them.
+ * The dentist's view: each jaw in one row as if facing the patient, the patient's right on the left. Upper 18…11 |
+ * 21…28 over lower 48…41 | 31…38, so every pair of chart neighbours sits side by side, 11–21 and 41–31 across the
+ * midline. Sixteen teeth need the wider Case setup panel to keep their targets at 24 px.
  */
 const quadrant = (q: number) => Array.from({ length: 8 }, (_, i) => q * 10 + i + 1);
 const JAWS = [
-  { label: 'Upper jaw', rows: [quadrant(1), quadrant(2)] },
-  { label: 'Lower jaw', rows: [quadrant(4), quadrant(3)] },
+  { label: 'Upper jaw', name: 'Upper', teeth: [...quadrant(1).reverse(), ...quadrant(2)], connectorsAbove: true },
+  { label: 'Lower jaw', name: 'Lower', teeth: [...quadrant(4).reverse(), ...quadrant(3)], connectorsAbove: false },
 ] as const;
+
+/** Grid column of the k-th tooth of a row (two half-columns each; column 17 is the midline gap). */
+const toothColumn = (k: number) => 2 * k + 1 + (k >= 8 ? 1 : 0);
 
 export type ConnectorState =
   | { status: 'connected' | 'open' }
@@ -54,7 +57,7 @@ export function ToothChart({ setup, active, onToggleTooth, onToggleConnector, on
   const bridges = bridgesOf(setup);
   const inCase = new Set(setup.teeth.map((t) => t.fdi));
 
-  const tooth = (fdi: number, row: number, position: number) => {
+  const tooth = (fdi: number, row: number, column: number) => {
     const selected = inCase.has(fdi);
     const kind = selected ? unitKind(setup, fdi) : undefined;
     const bridge = bridges.find((b) => b.includes(fdi));
@@ -64,7 +67,7 @@ export function ToothChart({ setup, active, onToggleTooth, onToggleConnector, on
         key={fdi}
         type="button"
         className={`fdi-tooth${kind ? ` ${kind}` : ''}${fdi === active ? ' active' : ''}`}
-        style={at(row, 2 * position - 1)}
+        style={at(row, column)}
         aria-label={`Tooth ${fdi}`}
         aria-pressed={selected}
         aria-describedby={description ? `${id}-${fdi}` : undefined}
@@ -81,7 +84,7 @@ export function ToothChart({ setup, active, onToggleTooth, onToggleConnector, on
     ];
   };
 
-  const connector = (a: number, b: number, style: CSSProperties, direction: 'down' | 'up' | 'vertical') => {
+  const connector = (a: number, b: number, style: CSSProperties, direction: 'down' | 'up') => {
     const state = connectorState(setup, a, b);
     if (!state) return null;
     const label = `Connector ${a}–${b}`;
@@ -112,25 +115,33 @@ export function ToothChart({ setup, active, onToggleTooth, onToggleConnector, on
 
   return (
     <div className="fdi-chart">
-      {JAWS.map(({ label, rows: [first, second] }) => (
-        <div key={label} className="fdi-jaw" role="group" aria-label={label}>
-          {/* Rows: connectors, first quadrant, midline connector, second quadrant, connectors. DOM order = arch order. */}
-          <div className="fdi-grid">
-            <span className="fdi-jaw-label" style={at(3, 4, 13)} aria-hidden>
-              {label}
-            </span>
-            {first.map((fdi, i) => [
-              tooth(fdi, 2, i + 1),
-              i < 7 && connector(fdi, first[i + 1]!, at(1, 2 * i + 2), 'down'),
-            ])}
-            {connector(first[0]!, second[0]!, at(3, 1), 'vertical')}
-            {second.map((fdi, i) => [
-              tooth(fdi, 4, i + 1),
-              i < 7 && connector(fdi, second[i + 1]!, at(5, 2 * i + 2), 'up'),
-            ])}
+      {JAWS.map(({ label, name, teeth, connectorsAbove }) => {
+        // Rows: the upper jaw's connectors above its teeth, the lower jaw's below. DOM order = arch order.
+        const [labels, links, row] = connectorsAbove ? [1, 2, 3] : [3, 2, 1];
+        return (
+          <div key={label} className="fdi-jaw" role="group" aria-label={label}>
+            <div className="fdi-grid">
+              {connectorsAbove && (
+                <span className="fdi-side" style={at(labels, 1, 8)} aria-hidden>
+                  Right
+                </span>
+              )}
+              <span className="fdi-jaw-label" style={at(labels, 13, 9)} aria-hidden>
+                {name}
+              </span>
+              {connectorsAbove && (
+                <span className="fdi-side end" style={at(labels, 26, 8)} aria-hidden>
+                  Left
+                </span>
+              )}
+              {teeth.map((fdi, k) => [
+                tooth(fdi, row, toothColumn(k)),
+                k < 15 && connector(fdi, teeth[k + 1]!, at(links, toothColumn(k) + 1, k === 7 ? 3 : 2), connectorsAbove ? 'down' : 'up'),
+              ])}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
       <ul className="fdi-legend" aria-hidden>
         <li>
           <span className="swatch crown" />

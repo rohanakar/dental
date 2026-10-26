@@ -95,3 +95,27 @@
   border-radius: var(--radius);
   background: var(--accent-tint);
 }
+
+.auto-banner .auto-checks li {
+  color: var(--error-text);
+}
+
+/* The full check log of a draft, folded away: the verdict line above is what a reviewer reads first. */
+.auto-details > summary {
+  cursor: pointer;
+  font-size: var(--fs-small);
+  color: var(--accent-strong);
+  width: fit-content;
+}
+
+.auto-details[open] > summary {
+  margin-bottom: 6px;
+}
+
+.auto-details .auto-steps > li .auto-checks li {
+  color: var(--text-muted);
+}
+
+.auto-details .auto-steps > li .auto-checks li.fail {
+  color: var(--error-text);
+}

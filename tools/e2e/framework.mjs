@@ -19,6 +19,12 @@ import { resolve } from 'node:path';
 import { parseStl } from '../../apps/web/src/geometry/stl.ts';
 import { meshTopology, validateClosedMesh } from '../../apps/web/src/geometry/meshValidate.ts';
 
+/** Inlay, onlay, wing, implant and reduced sit behind "More types" in Case setup. */
+const moreTypes = async (page, fdi) => {
+  const more = page.getByRole('button', { name: `More types for ${fdi}` });
+  if ((await more.count()) && (await more.getAttribute('aria-expanded')) !== 'true') await more.click();
+};
+
 const ROOT = new URL('../../', import.meta.url).pathname;
 const OUT = `${resolve(process.env.E2E_OUT ?? `${ROOT}out/e2e/framework`)}/`;
 mkdirSync(OUT, { recursive: true });
@@ -202,6 +208,7 @@ if (ONLY !== 'bridge') {
   const h = await openApp('single');
   const { page } = h;
   await h.step('Case setup');
+  await moreTypes(page, 36);
   await page.getByRole('group', { name: 'Anatomic or reduced 36' }).getByRole('button', { name: 'Reduced' }).click();
   await page.getByLabel('Material for 36').selectOption('cocr');
   const order = await h.state(() => window.__dcad.design.getState().doc.setup.teeth.find((t) => t.fdi === 36));
@@ -288,7 +295,10 @@ if (ONLY !== 'single') {
   await page.getByRole('button', { name: 'Tooth 37', exact: true }).click();
   await page.getByRole('group', { name: 'Restoration for 36' }).getByRole('button', { name: 'Pontic' }).click();
   await page.getByLabel('Material for bridge 35–37').selectOption('cocr');
-  for (const fdi of [35, 36, 37]) await page.getByRole('group', { name: `Anatomic or reduced ${fdi}` }).getByRole('button', { name: 'Reduced' }).click();
+  for (const fdi of [35, 36, 37]) {
+    await moreTypes(page, fdi);
+    await page.getByRole('group', { name: `Anatomic or reduced ${fdi}` }).getByRole('button', { name: 'Reduced' }).click();
+  }
   const setup = await h.state(() => window.__dcad.design.getState().doc.setup.teeth.map((t) => [t.fdi, t.restoration, t.material]));
   expect(
     JSON.stringify(setup) === JSON.stringify([[35, 'reduced-crown', 'cocr'], [36, 'reduced-pontic', 'cocr'], [37, 'reduced-crown', 'cocr']]),

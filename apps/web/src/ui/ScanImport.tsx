@@ -24,7 +24,7 @@ export function ScanImport() {
         <select id="role" value={role} onChange={(e) => setRole(e.target.value as ScanRole)}>
           <option value="lower">Lower jaw</option>
           <option value="upper">Upper jaw</option>
-          <option value="preop">Pre-op</option>
+          <option value="preop">Pre-op scan (before the prep)</option>
         </select>
       </div>
       <div
@@ -45,7 +45,7 @@ export function ScanImport() {
         }}
       >
         Drop STL / PLY files or click to browse
-        <div className="muted">File names containing "upper"/"lower" are assigned automatically</div>
+        <div className="muted">Names with "upper" or "lower" are sorted automatically</div>
       </div>
       <input
         ref={input}
@@ -58,12 +58,6 @@ export function ScanImport() {
           e.target.value = '';
         }}
       />
-      <div className="row" style={{ marginTop: 8 }}>
-        <button className="btn" onClick={() => void sceneController.loadDemo()}>
-          Load demo scans
-        </button>
-        <span className="muted">Synthetic, ~1.3M triangles</span>
-      </div>
     </section>
   );
 }

@@ -90,9 +90,8 @@ function AdaptPanel() {
   return (
     <div className="step-body">
       <p className="muted">
-        Moves the occlusal surface and the proximal walls until the clearance to the antagonist and the neighbours reaches
-        the target. Negative targets make intentional contact. The minimum thickness always wins; conflicts are reported.
-        {bridge && ' Sides joined to another unit have a connector instead of a contact.'}
+        Moves the biting surface and the sides to the target clearance (below 0 means contact). The minimum thickness always
+        wins.{bridge && ' Joined sides get a connector instead.'}
       </p>
       {bridge && <BridgeResultPanel />}
       <ReadaptNotice />

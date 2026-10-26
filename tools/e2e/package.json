@@ -16,7 +16,8 @@
     "framework": "node --experimental-strip-types framework.mjs",
     "ai-implant": "node ai-implant.mjs",
     "ai-maryland": "node ai-maryland.mjs",
-    "ai-framework": "node ai-framework.mjs"
+    "ai-framework": "node ai-framework.mjs",
+    "first-run": "node first-run.mjs"
   },
   "devDependencies": {
     "playwright": "1.64.0"

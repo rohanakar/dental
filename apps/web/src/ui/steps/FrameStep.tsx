@@ -3,6 +3,7 @@ import { useDesignStore, selectActiveTooth } from '../../design/store';
 import { useSceneStore } from '../../state/sceneStore';
 import { FRAME_COLORS } from '../../tools/controller';
 import { clearContact, flipMesialDistal } from '../../tools/frameTool';
+import { demoPrep } from '../../tools/demoPrep';
 import { useToolStore } from '../../tools/toolStore';
 import { AutoDesign } from '../ai/AutoDesign';
 import { CloseIcon } from '../icons';
@@ -54,15 +55,18 @@ export function FrameStep() {
     );
   }
 
+  // The demo knows its prep (a blue ring marks it); a real case only knows the tooth number.
+  const demo = !frame && demoPrep() !== null;
+  const target = demo ? 'the prepared tooth inside the blue ring' : `the top of the prepared tooth ${tooth.fdi}`;
   const pickHint =
     framePick === 'seed'
       ? autoArmed
         ? bridge
-          ? `One-click bridge: click the top of the prepared tooth ${tooth.fdi}. After the last abutment, the whole bridge is proposed for review.`
-          : `One-click crown: click the top of the prepared tooth ${tooth.fdi}. Frame, margin, axis, crown and adaptation are proposed for review.`
+          ? `Click ${target}. After the last abutment, auto-design proposes the bridge for you to review.`
+          : `Click ${target}. Auto-design proposes the crown for you to review.`
         : frame
-          ? `Frame set on tooth ${tooth.fdi}. Check the arrows and contacts below, or click the prep again to redo it.`
-          : `Click the top of the prepared tooth ${tooth.fdi}.`
+          ? `Frame set on ${tooth.fdi}. Check the arrows, or click the prep again to redo it.`
+          : `Click ${target}.`
       : `Click the ${framePick === 'mesialContact' ? 'mesial' : 'distal'} neighbour where it should touch the crown.`;
 
   return (
@@ -77,7 +81,6 @@ export function FrameStep() {
       {frame ? (
         <>
           <FrameAxes />
-          <div className="muted">Source: {frame.source === 'auto' ? 'automatic' : 'edited'}</div>
           <div className="row">
             <button className="btn" onClick={flipMesialDistal} title="Also swaps buccal and lingual">
               Swap mesial and distal
@@ -121,9 +124,7 @@ export function FrameStep() {
             );
           })}
         </>
-      ) : (
-        <p className="muted">The frame sets the tooth's occlusal, mesial and buccal directions and finds the neighbour contacts.</p>
-      )}
+      ) : null}
       {warnings.map((w) => (
         <div className="warning" key={w}>
           {w}

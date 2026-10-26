@@ -7,7 +7,6 @@ import {
   type FdiPair,
   isReduced,
   Material,
-  MATERIAL_PRESETS,
   normalizeConnections,
   pairKey,
   RESTORATION_ROLE,
@@ -97,8 +96,8 @@ interface Problem {
 export function SetupStep() {
   const setup = useDesignStore((s) => s.doc.setup);
   const activeFdi = useDesignStore((s) => s.activeFdi);
-  const params = useDesignStore((s) => s.doc.teeth.find((t) => t.fdi === s.activeFdi)?.params);
   const [problem, setProblem] = useState<Problem | null>(null);
+  const [moreOpen, setMoreOpen] = useState<ReadonlySet<number>>(() => new Set());
   const active = setup.teeth.find((t) => t.fdi === activeFdi) ?? setup.teeth[0];
 
   /** Check the bridges first and show why a setup is refused; never drop a dispatch error. */
@@ -146,23 +145,43 @@ export function SetupStep() {
         setRestoration(setup, fdi, withReduced(restoration, reduced)),
         `${fdi} was not made a ${restoration === 'pontic' ? 'pontic' : restoration === 'implant-crown' ? 'implant crown' : 'crown'}`,
       );
+    // The everyday choice is crown or pontic; the other types wait behind "More types" unless the unit uses one.
+    const inUse = implant || wing || cavity || reduced;
+    const more = inUse || moreOpen.has(fdi);
     return (
-      <>
-        <div className="seg" role="group" aria-label={`Restoration for ${fdi}`}>
+      <div className="unit-types" role="group" aria-label={`Restoration for ${fdi}`}>
+        <div className="seg">
           <button type="button" className="btn" aria-pressed={!pontic && !implant && !wing && !cavity} onClick={() => (pontic || implant || wing || cavity) && set('anatomic-crown')}>
             Crown
-          </button>
-          <InlayButtons setup={setup} fdi={fdi} commit={commit} />
-          <WingButton setup={setup} fdi={fdi} commit={commit} />
-          <button type="button" className="btn" aria-pressed={implant} title="Screw-retained on a Ti-base" onClick={() => !implant && set('implant-crown')}>
-            Implant
           </button>
           <button type="button" className="btn" aria-pressed={pontic} onClick={() => !pontic && set('pontic')}>
             Pontic
           </button>
         </div>
-        <ReducedSwitch fdi={fdi} onSet={(r) => commit(setRestoration(setup, fdi, r), `${fdi} was not switched`)} />
-      </>
+        {!inUse && (
+          <button
+            type="button"
+            className="btn ghost"
+            aria-expanded={more}
+            aria-label={`More types for ${fdi}`}
+            onClick={() => setMoreOpen((open) => new Set(open.has(fdi) ? [...open].filter((f) => f !== fdi) : [...open, fdi]))}
+          >
+            More types
+          </button>
+        )}
+        {more && (
+          <div className="unit-more">
+            <div className="seg">
+              <InlayButtons setup={setup} fdi={fdi} commit={commit} />
+              <WingButton setup={setup} fdi={fdi} commit={commit} />
+              <button type="button" className="btn" aria-pressed={implant} title="Screw-retained on a Ti-base" onClick={() => !implant && set('implant-crown')}>
+                Implant
+              </button>
+            </div>
+            <ReducedSwitch fdi={fdi} onSet={(r) => commit(setRestoration(setup, fdi, r), `${fdi} was not switched`)} />
+          </div>
+        )}
+      </div>
     );
   };
 
@@ -199,10 +218,7 @@ export function SetupStep() {
   return (
     <div className="step-body">
       <RxIntake />
-      <p className="muted">
-        Select the teeth to restore. Mark a missing tooth as a pontic: it connects to its neighbours, and the dots
-        between teeth switch each connector on or off.
-      </p>
+      <p className="muted">Click a tooth to add or remove it. Mark a missing tooth as a pontic to make a bridge.</p>
       <ToothChart
         setup={setup}
         active={active?.fdi}
@@ -264,30 +280,8 @@ export function SetupStep() {
         ))}
       </section>
 
-      {active && params && (
-        <section aria-labelledby="params-head">
-          <h3 id="params-head">
-            Parameters for {active.fdi}, {MATERIAL_LABEL[active.material]}
-          </h3>
-          <dl className="params">
-            <dt>Cement gap</dt>
-            <dd>{params.cementGapMm.toFixed(2)} mm</dd>
-            <dt>Extra spacer</dt>
-            <dd>
-              {params.extraSpacerMm.toFixed(2)} mm from {params.distanceToMarginMm.toFixed(1)} mm
-            </dd>
-            <dt>Margin thickness</dt>
-            <dd>{params.marginThicknessMm.toFixed(2)} mm</dd>
-            <dt>Min thickness</dt>
-            <dd>{params.minThicknessMm.toFixed(2)} mm</dd>
-          </dl>
-          {JSON.stringify(params) !== JSON.stringify(MATERIAL_PRESETS[active.material]) && (
-            <div className="muted">Parameters differ from the {MATERIAL_LABEL[active.material]} preset.</div>
-          )}
-        </section>
-      )}
       <div className="field">
-        <label htmlFor="patient-ref">Patient reference (pseudonymous, never a name)</label>
+        <label htmlFor="patient-ref">Case reference (no patient names)</label>
         {/* Committed on blur/Enter so typing does not create one undo entry per keystroke. */}
         <input
           id="patient-ref"

@@ -7,6 +7,7 @@ import { marginTool } from '../tools/marginTool';
 import { handleNudgeKey } from '../tools/nudge';
 import { useToolStore } from '../tools/toolStore';
 import { AssistantPanel } from './ai/AssistantPanel';
+import { toggleHelp, useHelp } from './HelpSheet';
 import { SessionGate } from './session/SessionGate';
 import { StepFooter } from './StepFooter';
 import { StepNav, stepLabel, useImplantLabels } from './StepNav';
@@ -19,7 +20,6 @@ import { ParamsStep } from './steps/ParamsStep';
 import { ProposalStep } from './steps/ProposalStep';
 import { ScansStep } from './steps/ScansStep';
 import { SetupStep } from './steps/SetupStep';
-import { ToolStatus } from './ToolStatus';
 import { Toolbar, VIEWS } from './Toolbar';
 import { Viewport } from './Viewport';
 import { stepLabelFor } from './steps/WingPanel';
@@ -48,6 +48,14 @@ function useKeyboardShortcuts() {
         return;
       }
       if (e.altKey) return;
+      if (e.key === '?') {
+        toggleHelp();
+        return;
+      }
+      if (e.key === 'Escape' && useHelp.getState().open) {
+        toggleHelp(false);
+        return;
+      }
       if (design.activeStep === 'margin') {
         const drafting = useToolStore.getState().marginAnchors.length > 0;
         if (e.key === 'Backspace' && drafting) {
@@ -107,16 +115,16 @@ function StepPanel() {
           <AssistantPanel />
         </details>
       )}
-      <ToolStatus />
     </section>
   );
 }
 
 export function App() {
   useKeyboardShortcuts();
+  const setup = useDesignStore((s) => s.activeStep === 'setup');
   return (
     <SessionGate>
-      <div className="app">
+      <div className={`app${setup ? ' wide-panel' : ''}`}>
         <Toolbar />
         <aside className="panel">
           <StepNav />

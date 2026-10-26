@@ -58,15 +58,21 @@ export function AuthForm() {
           </div>
         </form>
         <hr className="divider" />
-        <div className="actions">
-          <button className="btn" type="button" onClick={() => void startDemo()}>
-            Open the demo case
-          </button>
-          <button className="btn ghost" type="button" onClick={goOffline}>
-            Continue offline
-          </button>
-        </div>
-        <span className="muted">Both work without an account. Nothing is saved.</span>
+        <h2>No account needed</h2>
+        <ul className="session-options">
+          <li>
+            <button className="btn" type="button" onClick={() => void startDemo()}>
+              Try the demo case
+            </button>
+            <span className="muted">Ready-made scans: one click to a crown.</span>
+          </li>
+          <li>
+            <button className="btn" type="button" onClick={goOffline}>
+              Continue offline
+            </button>
+            <span className="muted">An empty case for your own scans. Nothing is saved.</span>
+          </li>
+        </ul>
       </div>
       <a className="session-back" href={BASE_URL}>
         What is this? See the product page

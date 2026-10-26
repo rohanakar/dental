@@ -8,6 +8,12 @@ import { chromium } from 'playwright';
 import { resolve } from 'node:path';
 import { mkdirSync, readFileSync } from 'node:fs';
 
+/** Inlay, onlay, wing, implant and reduced sit behind "More types" in Case setup. */
+const moreTypes = async (page, fdi) => {
+  const more = page.getByRole('button', { name: `More types for ${fdi}` });
+  if ((await more.count()) && (await more.getAttribute('aria-expanded')) !== 'true') await more.click();
+};
+
 const ROOT = new URL('../../', import.meta.url).pathname;
 const OUT = `${resolve(process.env.E2E_OUT ?? `${ROOT}out/e2e/ai-implant`)}/`;
 mkdirSync(OUT, { recursive: true });
@@ -116,7 +122,10 @@ if (ONLY !== 'single') {
   await h.step('Case setup');
   await page.getByRole('button', { name: 'Tooth 35', exact: true }).click();
   await page.getByRole('button', { name: 'Tooth 37', exact: true }).click();
-  for (const fdi of [35, 37]) await page.getByRole('group', { name: `Restoration for ${fdi}` }).getByRole('button', { name: 'Implant' }).click();
+  for (const fdi of [35, 37]) {
+    await moreTypes(page, fdi);
+    await page.getByRole('group', { name: `Restoration for ${fdi}` }).getByRole('button', { name: 'Implant' }).click();
+  }
   await page.getByRole('group', { name: 'Restoration for 36' }).getByRole('button', { name: 'Pontic' }).click();
   await loadScans(h);
 
@@ -209,6 +218,7 @@ if (ONLY !== 'bridge') {
   await h.step('Case setup');
   await page.getByRole('button', { name: 'Tooth 37', exact: true }).click();
   await page.getByRole('button', { name: 'Tooth 36', exact: true }).click();
+  await moreTypes(page, 37);
   await page.getByRole('group', { name: 'Restoration for 37' }).getByRole('button', { name: 'Implant' }).click();
   await loadScans(h);
   await h.step('Tooth frame');

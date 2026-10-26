@@ -1,5 +1,8 @@
 import { unitKind } from '@dcad/shared';
 import { useEffect, useState } from 'react';
+import { useDraftOpen } from '../ai/AutoDesign';
+import { useIsExported } from '../../state/exported';
+import { backToCases, signUpFromOffline, startOwnCase, useSessionStore } from '../../state/session';
 import { adaptationStale } from '../../design/adaptation';
 import { useDesignStore, selectActiveTooth } from '../../design/store';
 import { axisTool } from '../../tools/axisTool';
@@ -52,8 +55,46 @@ function ReadinessList({ items }: { items: ReadinessItem[] }) {
 
 export function FinalizeStep() {
   const bridge = useActiveBridge();
+  const draftOpen = useDraftOpen();
+  // Nothing is ready to mill while an auto-design draft is undecided: its review is in the footer.
+  if (draftOpen) return <div className="step-body warning">Accept or reject the auto-design draft first.</div>;
   // A bridge is finalized and exported as one piece.
-  return bridge ? <BridgeFinalize /> : <CrownFinalize />;
+  return (
+    <>
+      <JourneyEnd />
+      {bridge ? <BridgeFinalize /> : <CrownFinalize />}
+    </>
+  );
+}
+
+/** After an export: where to go next. Offline nothing is kept, so say so and offer an account. */
+function JourneyEnd() {
+  const fdi = useDesignStore((s) => s.activeFdi);
+  const exported = useIsExported(fdi);
+  const user = useSessionStore((s) => s.user);
+  const offline = useSessionStore((s) => s.offline);
+  if (!exported) return null;
+  return (
+    <section className="journey-end" aria-label="What next">
+      <p>{offline && !user ? 'Exported. Nothing is saved offline: create an account to keep your cases.' : 'Exported. Start the next case from your case list.'}</p>
+      <div className="row wrap">
+        {offline && !user ? (
+          <>
+            <button className="btn primary" onClick={signUpFromOffline}>
+              Create an account
+            </button>
+            <button className="btn" onClick={startOwnCase}>
+              Start your own case
+            </button>
+          </>
+        ) : (
+          <button className="btn" onClick={backToCases}>
+            Back to cases
+          </button>
+        )}
+      </div>
+    </section>
+  );
 }
 
 function CrownFinalize() {

@@ -27,7 +27,7 @@ import { designCrown } from '../geometry/crown';
 import type { PreopScan } from '../geometry/inlay';
 import { designInlayUnit } from '../geometry/inlayUnit';
 import { initMeshBoolean } from '../geometry/meshBoolean';
-import { syntheticArch } from '../geometry/synthetic';
+import { DEMO_SCAN, syntheticArch } from '../geometry/synthetic';
 import { estimateToothFrame } from '../geometry/toothFrame';
 import type {
   AutoMarginRequest,
@@ -159,7 +159,7 @@ const api = {
    * be uploaded to a case like any other scan.
    */
   async demoScan(jaw: 'lower' | 'upper'): Promise<{ payload: ScanPayload; source: Uint8Array }> {
-    const mesh = syntheticArch({ jaw, along: jaw === 'lower' ? 1000 : 600, across: jaw === 'lower' ? 500 : 250, colors: true });
+    const mesh = syntheticArch({ jaw, ...DEMO_SCAN[jaw], colors: true });
     const bytes = writePly(mesh);
     // Copy before processing: parsed arrays may be views into `bytes`, and a buffer can only be transferred once.
     const source = bytes.slice();

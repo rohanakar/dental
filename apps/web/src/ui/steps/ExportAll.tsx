@@ -2,6 +2,7 @@ import { type DesignDocument } from '@dcad/shared';
 import { useEffect, useRef, useState } from 'react';
 import { useDesignStore } from '../../design/store';
 import { downloadBytes } from '../../io/exportCrown';
+import { markExported } from '../../state/exported';
 import { useSessionStore } from '../../state/session';
 import { errorText } from '../../tools/context';
 import { CheckIcon } from '../icons';
@@ -39,6 +40,7 @@ export function ExportAll() {
 
   const download = (result: ExportAllResult) => {
     downloadBytes(result.zip.bytes, result.zip.fileName, 'application/zip');
+    markExported(result.restorations.filter((r) => !r.skipped).flatMap((r) => r.teeth), result.zip.fileName);
     setState({ phase: 'done', file: result.zip.fileName, at: time(), open: result.restorations.filter((r) => r.skipped || r.open.length > 0).length });
   };
 

@@ -310,3 +310,19 @@ See the AI items in [2026-10-25-implant-bridges.md](2026-10-25-implant-bridges.m
 
 See [2026-10-25-inlay-bridges.md](2026-10-25-inlay-bridges.md).
 
+**2026-10-26: the new-user journey.** A critique (24/40) listed what confuses a first-time user; each item is fixed.
+- The demo opens looking down onto the jaw with the prep ringed, and a click on the wrong tooth is refused in plain
+  words.
+- The draft review is one verdict line with the checks folded. Accept is the one primary action, and Reject is for a
+  draft that stopped.
+- Messages sit in a status line above Back and Next. A help sheet (`?`) holds the shortcuts and the terms.
+- Case setup:
+  - a dentist's-view chart;
+  - Crown | Pontic | More types;
+  - offline starts there.
+- Fewer words on every step (the draft review: 378 → 124 words).
+- An ending after export; Parameters and Finalize turn done.
+- The landing page says "Dental CAD" and offers "Try the demo".
+- 111 tests (unchanged). New browser test `first-run.mjs`; every browser script passes.
+
+See [2026-10-26-new-user-journey.md](2026-10-26-new-user-journey.md).

@@ -1,9 +1,10 @@
-import type { StepId } from '@dcad/shared';
+import { bridgeOf, type StepId } from '@dcad/shared';
 import { BufferAttribute, BufferGeometry } from 'three';
 import { activeAdapt } from '../design/adaptation';
 import { useDesignStore } from '../design/store';
 import type { Viewer } from '../engine/Viewer';
 import { constructionInfo, crownStl, downloadBytes } from '../io/exportCrown';
+import { markExported } from '../state/exported';
 import { useSessionStore } from '../state/session';
 import type { CrownMapName, CrownRequest, CrownResult } from '../workers/analysisTypes';
 import { analysis } from '../workers/geometryClient';
@@ -209,6 +210,15 @@ class CrownTool {
    * Separate actions: browsers block a second download started by one click.
    */
   export(kind: 'stl' | 'info'): string | null {
+    const file = this.exportFile(kind);
+    if (file && kind === 'stl') {
+      const { doc, activeFdi } = useDesignStore.getState();
+      markExported(bridgeOf(doc, activeFdi)?.teeth ?? [activeFdi], file);
+    }
+    return file;
+  }
+
+  private exportFile(kind: 'stl' | 'info'): string | null {
     // A bridge exports as one solid (the merged units and connectors).
     if (bridgeTool.handles()) return bridgeTool.export(kind);
     const ctx = toothContext();

@@ -2,6 +2,7 @@ import { bridgeOf, STEP_ORDER, stepsFor, unitKind, type StepId, type StepStatus 
 import { useEffect } from 'react';
 import { useOrchestrator } from '../ai/orchestrator';
 import { useDesignStore } from '../design/store';
+import { useIsExported } from '../state/exported';
 import { isImplantTooth } from '../tools/implantTool';
 import './bridge.css';
 import { stepLabelFor, unitName } from './steps/WingPanel';
@@ -42,6 +43,7 @@ export function StepNav() {
   const activeFdi = useDesignStore((s) => s.activeFdi);
   // Steps an auto-design draft changed are not done until the draft is accepted.
   const drafted = useOrchestrator((s) => (s.pendingReview ? s.steps : null));
+  const exported = useIsExported(activeFdi);
   const { setActiveStep, setActiveFdi } = useDesignStore.getState();
 
   // The step list follows the unit: a pontic has no prep, so no margin and no insertion axis.
@@ -57,6 +59,16 @@ export function StepNav() {
     const earlier = STEP_ORDER.slice(0, STEP_ORDER.indexOf(activeStep)).filter((s) => has.includes(s));
     setActiveStep(earlier.at(-1) ?? has[0]!);
   }, [activeStep, kind, setActiveStep]);
+
+  // Parameters start from the material preset: once a crown is proposed with them they are done. Finalize is done once
+  // the current design was exported in this session.
+  const shownStatus = (id: StepId): StepStatus => {
+    const status = steps?.[id] ?? 'pending';
+    if (status !== 'pending') return status;
+    if (id === 'params' && steps?.proposal === 'done') return 'done';
+    if (id === 'finalize' && exported) return 'done';
+    return status;
+  };
 
   const unitLabel = (fdi: number) => {
     const b = bridgeOf({ bridges }, fdi);
@@ -81,7 +93,7 @@ export function StepNav() {
       <ol key={kind}>
         {STEPS.filter(({ id }) => visible.includes(id)).map(({ id, available }) => {
           const inDraft = drafted?.some((r) => r.step === id && (r.status === 'passed' || r.status === 'failed'));
-          const status: NavStatus = inDraft ? 'draft' : (steps?.[id] ?? 'pending');
+          const status: NavStatus = inDraft ? 'draft' : shownStatus(id);
           return (
             <li key={id}>
               <button

@@ -52,6 +52,9 @@ const OCCLUSAL_GAP = 0.3;
 /** The default prep (the lower-left first molar). */
 export const SYNTHETIC_PREP_FDI = 36;
 
+/** Grid resolution of the editor's demo scans (lower jaw ~1M triangles, with the prep of SYNTHETIC_PREP_FDI). */
+export const DEMO_SCAN = { lower: { along: 1000, across: 500 }, upper: { along: 600, across: 250 } } as const;
+
 /** Where an FDI tooth sits in the synthetic layout. */
 export interface SyntheticTooth {
   jaw: 'lower' | 'upper';
