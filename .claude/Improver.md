@@ -1,0 +1,1 @@
+Improve the product feel and usage today it is difficult for new joiners make it less verbose and more intutive - the journey should not have a frifction . List out the things which a new user would really like and which will make a new user confused and then address it 
