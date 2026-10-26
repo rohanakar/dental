@@ -354,3 +354,17 @@ finish line all round, paired with the case's teeth in arch order, 111 ms per sc
 prep gets a warning, never a refusal; the demo is unchanged. No false ring, miss or wrong pairing on any golden or
 synthetic case; real scans are untested. 113 tests. See [2026-10-26-prep-finder.md](2026-10-26-prep-finder.md).
 
+**2026-10-26: undo and check numbers.** The critique's two P1s are fixed.
+- Reject and Undo of an auto-design draft return to where the run started, with their own notice, one next action
+  and no stray legend.
+- The draft's checks carry units and show the material minimum, with the 0.02 mm measuring tolerance named. Each
+  check is counted once (14, was 18). The landing no longer claims five checks.
+- 114 tests. See [2026-10-26-undo-and-check-numbers.md](2026-10-26-undo-and-check-numbers.md).
+
+**2026-10-26: tooth frames ready for review.** Case setup names the teeth, so Tooth frame now sets each crown-prep
+tooth's frame from the prep paired with it, and a bridge's pontics, as one undo step to review. The demo opens framed,
+with Auto-design next.
+- A click on another case tooth's prep names that tooth.
+- A bridge's frames in the wrong order or far too far apart are reported.
+- 115 tests. See [2026-10-26-auto-frames.md](2026-10-26-auto-frames.md).
+
