@@ -340,3 +340,17 @@ See [2026-10-26-new-user-journey.md](2026-10-26-new-user-journey.md).
 - 111 tests (unchanged). `first-run.mjs` checks the theme; every browser script passes.
 
 See [2026-10-26-one-look.md](2026-10-26-one-look.md).
+
+**2026-10-26: plain check wording.** Auto-design's check messages and rationales are in a technician's words. The ids
+and gates are unchanged; two checks now report degrees. The help sheet explains every colour map. 111 tests
+(unchanged). See [2026-10-26-plain-check-wording.md](2026-10-26-plain-check-wording.md).
+
+**2026-10-26: dark-theme surroundings.** On the dark ground the focus view's surroundings read as pale tooth and gum
+(contrast with the ground 43 → 75; the crown stays strongest at 87). The light theme is pixel-identical. See
+[2026-10-26-dark-surroundings.md](2026-10-26-dark-surroundings.md).
+
+**2026-10-26: prep finder.** On any scan the Tooth frame step rings the active tooth's crown prep (found by its
+finish line all round, paired with the case's teeth in arch order, 111 ms per scan, cached). A click far from every
+prep gets a warning, never a refusal; the demo is unchanged. No false ring, miss or wrong pairing on any golden or
+synthetic case; real scans are untested. 113 tests. See [2026-10-26-prep-finder.md](2026-10-26-prep-finder.md).
+
