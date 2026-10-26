@@ -10,3 +10,19 @@ services:
   proxy:
     ports:
       - "127.0.0.1:8080:80"
+  # Dev only: a local Opus 5.5 behind the Anthropic API, answered by `claude -p` (tools/claude-bridge/README.md).
+  # Needs CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) in .env:
+  #   ./infra/compose.sh -f infra/docker-compose.dev.yml --profile claude-bridge up -d --build claude-bridge
+  # The api reaches it at http://claude-bridge:8787, the host at http://127.0.0.1:8787.
+  claude-bridge:
+    profiles: [claude-bridge]
+    build:
+      context: ../tools/claude-bridge
+    environment:
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      CLAUDE_BRIDGE_MODEL: ${CLAUDE_BRIDGE_MODEL:-}
+      CLAUDE_BRIDGE_CONCURRENCY: ${CLAUDE_BRIDGE_CONCURRENCY:-1}
+    ports:
+      - "127.0.0.1:8787:8787"
+    mem_limit: 1g
+    restart: unless-stopped
