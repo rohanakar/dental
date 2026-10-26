@@ -7,6 +7,8 @@
  *   pnpm --filter @dcad/pipeline-runner run margin-eval [--only <case>] [--methods plain,refine]
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { runMarginAgent } from '@dcad/web/margin-agent';
+import { anthropicLlm } from './anthropicLlm';
 import {
   analyzeSurface,
   bvhRayCaster,
@@ -15,6 +17,8 @@ import {
   estimateToothFrame,
   liveWireWeight,
   marginFromAnchors,
+  type MarginScan,
+  type MarginWork,
   MARGIN_MAX_TURN_DEG,
   marginShapePasses,
   proposeMarginAnchors,
@@ -62,6 +66,10 @@ export const MARGIN_CASES: MarginCase[] = [
   { name: '14 noise 0.04', jaw: 'upper', fdi: 14, preps: [14], noiseMm: 0.04 },
   { name: '45 noise 0.05', jaw: 'lower', fdi: 45, preps: [45], noiseMm: 0.05 },
   { name: '14 click 2 mm off', jaw: 'upper', fdi: 14, preps: [14], seedOffset: [2, 0] },
+  { name: '36 noise 0.07', jaw: 'lower', fdi: 36, preps: [36], noiseMm: 0.07 },
+  { name: '11 lean 25° noise 0.05', jaw: 'upper', fdi: 11, preps: [11, 21], leanDeg: 25, noiseMm: 0.05 },
+  { name: '45 noise 0.06, click 2 mm off', jaw: 'lower', fdi: 45, preps: [45], noiseMm: 0.06, seedOffset: [2, 0] },
+  { name: '14 noise 0.06, tilted 10°', jaw: 'upper', fdi: 14, preps: [14], noiseMm: 0.06, tiltDeg: 10 },
   { name: '11 natural (control)', jaw: 'upper', fdi: 11, preps: [] },
   { name: '46 natural (control)', jaw: 'lower', fdi: 46, preps: [36] },
   { name: '46 natural noise 0.04 (control)', jaw: 'lower', fdi: 46, preps: [36], noiseMm: 0.04 },
@@ -143,6 +151,42 @@ export const refineMethod: MarginMethod = async (c) => {
   return { points, lengthMm: r.lengthMm, anchors: r.anchors, confidence: r.passes ? r.confidence : 0, steps: r.candidates.length, note: `${r.name}; wander ${r.wander.toFixed(2)}, kept ${r.kept.toFixed(2)}` };
 };
 
+const scanOf = (c: PreparedCase): MarginScan => ({ positions: c.positions, indices: c.indices, ray: c.ray, graph: c.surface.graph, weight: liveWireWeight(c.surface.curvature), frame: c.frame });
+
+/** The model (through ANTHROPIC_BASE_URL: the API, or the local `claude -p` bridge), or null when none is configured. */
+function modelFromEnv() {
+  const baseUrl = process.env.ANTHROPIC_BASE_URL;
+  if (!baseUrl) return null;
+  return anthropicLlm({ baseUrl, apiKey: process.env.ANTHROPIC_API_KEY ?? 'bridge', model: process.env.MARGIN_AGENT_MODEL ?? 'claude-opus-5-5' });
+}
+
+/**
+ * The model repairing the margin with the margin tools (ai/marginAgent.ts), from the plain margin, or from the
+ * refiner's (calling the model only when the refiner fails).
+ */
+function agentMethod(start: 'plain' | 'refine'): MarginMethod {
+  return async (c) => {
+    const llm = modelFromEnv();
+    if (!llm) return { points: [], lengthMm: 0, anchors: [], note: 'no model: set ANTHROPIC_BASE_URL (tools/claude-bridge)' };
+    const from = await (start === 'plain' ? plainMethod : refineMethod)(c);
+    if (start === 'refine' && from.confidence !== undefined && from.confidence > 0) return { ...from, steps: 0, note: `refiner passed; no model call (${from.note ?? ''})` };
+    const work: MarginWork = { anchors: from.anchors, points: from.points, lengthMm: from.lengthMm, profilesRun: 16, found: from.anchors.length };
+    if (work.anchors.length < 3) return { ...from, note: 'no margin to repair' };
+    const cost0 = llm.costUsd();
+    const r = await runMarginAgent({ llm, scan: scanOf(c), start: work });
+    const verdictOk = r.report.passes && r.verdict !== 'not_a_prep';
+    return {
+      points: r.work.points,
+      lengthMm: r.work.lengthMm,
+      anchors: r.work.anchors,
+      confidence: verdictOk ? r.report.foundShare : 0,
+      steps: r.calls,
+      costUsd: llm.costUsd() - cost0,
+      note: `${r.verdict}: ${r.reason.slice(0, 80)} | ${r.log.map((l) => l.split(' ')[0]).join(',')}`,
+    };
+  };
+}
+
 function distanceToPolyline(p: V3, poly: Float32Array): number {
   let best = Infinity;
   const n = poly.length / 3;
@@ -199,12 +243,12 @@ export async function evaluate(methods: Record<string, MarginMethod>, cases = MA
 const fmt = (v: number | null, d = 2) => (v === null ? '–' : v.toFixed(d));
 
 export function formatRows(rows: Awaited<ReturnType<typeof evaluate>>): string {
-  const lines = ['| Case | Method | Gate | Length mm | Sharpest ° | Mean dev mm | Max dev mm | Correct | Steps | ms | Note |', '|---|---|---|---|---|---|---|---|---|---|---|'];
+  const lines = ['| Case | Method | Gate | Length mm | Sharpest ° | Mean dev mm | Max dev mm | Correct | Steps | ms | $ | Note |', '|---|---|---|---|---|---|---|---|---|---|---|---|'];
   for (const r of rows) {
     const s = r.score;
     const natural = s.meanDevMm === null && r.case.includes('natural');
     const correct = natural ? (s.pass ? 'NO (passed a natural tooth)' : 'yes (rejected)') : s.pass && s.meanDevMm !== null && s.meanDevMm <= CORRECT_MEAN_DEV_MM ? 'yes' : 'no';
-    lines.push(`| ${r.case} | ${r.method} | ${s.pass ? 'pass' : 'FAIL'} | ${fmt(s.lengthMm, 1)} | ${fmt(s.turnDeg, 0)}${s.turnDeg > MARGIN_MAX_TURN_DEG ? ' !' : ''} | ${fmt(s.meanDevMm)} | ${fmt(s.maxDevMm)} | ${correct} | ${r.outcome.steps ?? ''} | ${r.ms.toFixed(0)} | ${r.outcome.note ?? ''} |`);
+    lines.push(`| ${r.case} | ${r.method} | ${s.pass ? 'pass' : 'FAIL'} | ${fmt(s.lengthMm, 1)} | ${fmt(s.turnDeg, 0)}${s.turnDeg > MARGIN_MAX_TURN_DEG ? ' !' : ''} | ${fmt(s.meanDevMm)} | ${fmt(s.maxDevMm)} | ${correct} | ${r.outcome.steps ?? ''} | ${r.ms.toFixed(0)} | ${r.outcome.costUsd !== undefined ? r.outcome.costUsd.toFixed(2) : ''} | ${r.outcome.note ?? ''} |`);
   }
   return lines.join('\n');
 }
@@ -213,7 +257,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : undefined;
   const wanted = (args.includes('--methods') ? args[args.indexOf('--methods') + 1]! : 'plain').split(',');
-  const available: Record<string, MarginMethod> = { plain: plainMethod, refine: refineMethod };
+  const available: Record<string, MarginMethod> = { plain: plainMethod, refine: refineMethod, agent: agentMethod('plain'), 'refine+agent': agentMethod('refine') };
   const methods = Object.fromEntries(wanted.filter((m) => available[m]).map((m) => [m, available[m]!]));
   const cases = only ? MARGIN_CASES.filter((c) => c.name.includes(only)) : MARGIN_CASES;
   const rows = await evaluate(methods, cases);

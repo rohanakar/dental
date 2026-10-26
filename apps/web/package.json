@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./geometry": "./src/geometry/index.ts"
+    "./geometry": "./src/geometry/index.ts",
+    "./margin-agent": "./src/ai/marginAgent.ts"
   },
   "scripts": {
     "dev": "vite",
