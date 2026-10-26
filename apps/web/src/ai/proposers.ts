@@ -151,6 +151,17 @@ function orthoError(f: Pick<FrameView, 'occlusal' | 'mesial' | 'buccal'>): numbe
   return Math.max(Math.abs(dot(f.occlusal, f.mesial)), Math.abs(dot(f.mesial, f.buccal)), Math.abs(dot(f.occlusal, f.buccal)));
 }
 
+const DEG = 180 / Math.PI;
+/** The frame check's gate (|dot| < ORTHO_MAX); shown in degrees from a right angle, which a user can read. */
+const ORTHO_MAX = 1e-3;
+const orthoCheck = (id: string, ortho: number, message: string): QaCheck => ({
+  id,
+  passed: ortho < ORTHO_MAX,
+  value: Number((Math.asin(Math.min(1, ortho)) * DEG).toFixed(3)),
+  threshold: Number((Math.asin(ORTHO_MAX) * DEG).toFixed(3)),
+  message,
+});
+
 /**
  * The tooth frame from the click (classical.frame-seed@1). On a crown prep of a front tooth (FDI positions 1–3) the
  * worker turns the occlusal toward the prep's wall axis; a scan body, a wing's natural tooth or a cavity keeps the
@@ -174,18 +185,23 @@ export const frameProposer: Proposer = {
     const ortho = orthoError(frame);
     const contacts = [frame.mesialContact && 'mesial', frame.distalContact && 'distal'].filter(Boolean);
     const qa: QaCheck[] = [
-      { id: 'frame.orthonormal', passed: ortho < 1e-3, value: Number(ortho.toFixed(6)), threshold: 1e-3, message: 'Frame axes are orthonormal' },
+      orthoCheck('frame.orthonormal', ortho, 'Frame directions at right angles, largest error in degrees'),
       // A missing neighbour is legitimate (e.g. the last molar), so contacts are informational.
-      { id: 'frame.contacts', passed: true, value: contacts.length, message: contacts.length ? `Neighbour contacts found: ${contacts.join(', ')}` : 'No neighbour contacts found' },
+      {
+        id: 'frame.contacts',
+        passed: true,
+        value: contacts.length,
+        message: contacts.length ? `Neighbouring teeth found: ${contacts.join(' and ')}` : 'No neighbouring teeth found, so no contacts to adapt',
+      },
     ];
     return {
       proposerId: this.id,
       output: { commands: [{ type: 'setFrame', fdi: ctx.fdi, frame: { ...frame, source: 'auto' } }], artifact: frame },
       qa,
       rationale: [
-        'Occlusal from the arch and local normals, mesial from the arch tangent and FDI handedness.',
+        'The biting direction comes from the jaw and the teeth around the click; mesial runs along the arch toward the midline.',
         prep && !isPosterior(ctx.fdi)
-          ? "On a front-tooth prep the occlusal turns toward the prep's wall axis: unchanged up to 5° from the jaw's occlusal, a ramp from 5° to 10°, the whole wall axis from 10° to 40°, and unchanged (with a warning) above 40°."
+          ? "On a front-tooth prep the biting direction leans with the prep's walls: not at all when they differ from the jaw by less than 5°, partly from 5° to 10°, fully from 10° to 40°; above 40° it stays with the jaw, with a warning."
           : '',
         ...warnings,
       ]
@@ -202,7 +218,7 @@ export const marginProposer: Proposer = {
   async run({ fdi }) {
     const ctx = requireContext(fdi);
     const frame = ctx.tooth.frame;
-    if (!frame) throw new Error(`The margin proposer needs the tooth frame of ${ctx.fdi}`);
+    if (!frame) throw new Error(`Set the tooth frame of ${ctx.fdi} first`);
     const trace = await analysis.autoMargin({
       jawSha: ctx.jaw.sha256,
       frame: { origin: v3(frame.origin), occlusal: v3(frame.occlusal), mesial: v3(frame.mesial) },
@@ -215,7 +231,7 @@ export const marginProposer: Proposer = {
       proposerId: this.id,
       output: { commands: [{ type: 'setMargin', fdi: ctx.fdi, margin }], artifact: { anchors: trace.anchors, points: points.map((m) => m.p) } },
       qa: marginGate({ points: points.map((m) => m.p), lengthMm: trace.lengthMm, prepClosed: region.prepClosed, confidence: trace.confidence }),
-      rationale: `Most convex edge below the axial wall on ${Math.round(trace.confidence * 16)}/16 radial profiles, joined along the ridge (${trace.lengthMm.toFixed(1)} mm).`,
+      rationale: `The margin follows the prep's finish line, the sharpest edge below its walls, found in ${Math.round(trace.confidence * 16)} of 16 directions around the tooth (${trace.lengthMm.toFixed(1)} mm long).`,
     };
   },
 };
@@ -255,8 +271,8 @@ export const wingOutlineProposer: Proposer = {
       rationale: [
         `Lingual surface from 0.5 mm above the gingiva to 1.0 mm below the incisal edge (a ${(result.incisalMm - result.gingivaMm - 1.5).toFixed(1)} mm band)${
           toward.length ? `, wrapped onto the ${toward.join(' and ')} surface toward the pontic` : ''
-        }: ${result.areaMm2.toFixed(1)} mm² to bond, outlined by ${result.anchors.length} anchors (${result.lengthMm.toFixed(1)} mm).`,
-        result.seedMoved ? 'The click was outside that band: the frame origin moved inside the outline.' : '',
+        }: ${result.areaMm2.toFixed(1)} mm² to bond, outlined with ${result.anchors.length} points (${result.lengthMm.toFixed(1)} mm long).`,
+        result.seedMoved ? 'The click was outside that band, so the frame moved inside the outline.' : '',
         ...result.warnings,
       ]
         .filter(Boolean)
@@ -312,6 +328,7 @@ export const scanBodyProposer: Proposer = {
     });
     const qa = scanBodyGate(result);
     const single = !bridgeOf(doc, ctx.fdi);
+    const scanBody = `Library scan body ${entry.system} ${entry.platform} (${entry.engaging ? 'engaging' : 'non-engaging'})`;
     return {
       proposerId: this.id,
       // A failed match proposes nothing: the draft stops here with the fit on screen in the checks.
@@ -320,10 +337,17 @@ export const scanBodyProposer: Proposer = {
         artifact: { libraryId: entry.key, scanBodyPose: result.pose, fit: { rmsMm: result.rmsMm, inlierFraction: result.inlierFraction, coverage: result.coverage } },
       },
       qa,
-      rationale: [
-        `Library scan body ${entry.system} ${entry.platform} (${entry.engaging ? 'engaging' : 'non-engaging'}) matched by ICP: RMS ${(result.rmsMm * 1000).toFixed(0)} µm, ${(result.inlierFraction * 100).toFixed(0)}% inliers, ${(result.coverage * 100).toFixed(0)}% coverage.`,
-        result.passed ? (single ? 'The implant axis is the insertion axis.' : 'The bridge path is searched over the implant axes next.') : `The match failed: ${result.failures.join('; ')}.`,
-      ].join(' '),
+      // No fit at all (no scan near the click, no flat top): the registration's reason, already in plain words.
+      rationale: Number.isFinite(result.rmsMm)
+        ? [
+            `${scanBody} matched to the scan: ${(result.rmsMm * 1000).toFixed(0)} µm average distance, ${(result.inlierFraction * 100).toFixed(0)}% of the scan points on it, ${(result.coverage * 100).toFixed(0)}% of its surface scanned.`,
+            result.passed
+              ? single
+                ? 'The implant axis is the insertion axis.'
+                : 'The common path over the implant axes comes next.'
+              : 'The match is not close enough to use: see the failed checks.',
+          ].join(' ')
+        : `${scanBody} could not be matched: ${result.failures.join('; ')}.`,
     };
   },
 };
@@ -337,13 +361,13 @@ export const axisProposer: Proposer = {
     const ctx = requireContext(fdi);
     const { frame, margin } = ctx.tooth;
     if (frame && !margin && isCavity(useDesignStore.getState().doc.setup, ctx.fdi)) throw new Error(`Trace the cavity margin of ${ctx.fdi} first: auto-design does not trace cavity margins`);
-    if (!frame || !margin) throw new Error('The axis proposer needs a frame and a margin');
+    if (!frame || !margin) throw new Error('Set the tooth frame and the margin first');
     const result = await analysis.axisUnlatched({ jawSha: ctx.jaw.sha256, margin: fromMarginPoints(margin.points), occlusal: v3(frame.occlusal) });
     return {
       proposerId: this.id,
       output: { commands: [{ type: 'setAxis', fdi: ctx.fdi, axis: { direction: result.direction, source: 'auto' } }], artifact: { direction: result.direction } },
       qa: axisGate(result),
-      rationale: `Least projected undercut within 25° of occlusal: ${result.undercutAreaMm2.toFixed(2)} mm² at ${result.angleFromOcclusalDeg.toFixed(1)}°.`,
+      rationale: `The axis with the least undercut within 25° of the biting direction: ${result.undercutAreaMm2.toFixed(2)} mm² of undercut, tilted ${result.angleFromOcclusalDeg.toFixed(1)}°.`,
     };
   },
 };
@@ -358,12 +382,12 @@ export const crownProposer: Proposer = {
     const crown = { kind: 'template' as const, templateId: result.templateId, pose: result.pose };
     const placed = result.implant
       ? 'placed on the gingival opening around the implant, with the emergence profile down to the Ti-base,'
-      : 'placed in the tooth frame,';
+      : 'placed on the prep,';
     return {
       proposerId: this.id,
       output: { commands: [{ type: 'setCrown', fdi: ctx.fdi, crown }], artifact: crown },
       qa: [...crownGate(result, ctx.tooth.params), ...(result.implant ? implantSeatGate(result.implant) : [])],
-      rationale: `Template ${result.templateId} ${placed} sized to the contacts, margin and antagonist space.${result.warnings.length ? ` ${result.warnings.join(' ')}` : ''}`,
+      rationale: `The library tooth ${placed} sized to the neighbours, the margin and the space to the antagonist.${result.warnings.length ? ` ${result.warnings.join(' ')}` : ''}`,
     };
   },
 };
@@ -389,7 +413,7 @@ export const inlayOuterProposer: Proposer = {
     const outer =
       report.source === 'preop'
         ? 'from the pre-op scan over the cavity'
-        : `from the library tooth ${report.library?.templateId ?? ''}, fitted to the natural surface around the cavity to ${(report.library?.residual.p95Mm ?? Number.NaN).toFixed(2)} mm (95th percentile)`;
+        : `from the library tooth, fitted to the natural surface around the cavity to ${(report.library?.residual.p95Mm ?? Number.NaN).toFixed(2)} mm (ignoring the worst 5%)`;
     return {
       proposerId: this.id,
       output: { commands: [{ type: 'setCrown', fdi: ctx.fdi, crown }], artifact: crown },
@@ -565,8 +589,8 @@ async function adaptBridge(id: ProposerId, doc: DesignDocument, ctx: ToothContex
     return {
       proposerId: id,
       output: { commands, artifact },
-      qa: [{ id: 'adapt.applied', passed: true, message: 'Nothing to adapt to (no antagonist or free-side neighbours)' }],
-      rationale: 'No antagonist, and no natural neighbour on a free side.',
+      qa: [{ id: 'adapt.applied', passed: true, message: 'Nothing to adapt to (no antagonist, and no natural neighbour beside the bridge)' }],
+      rationale: 'No antagonist, and no natural neighbour beside the bridge.',
     };
   }
   const result = await analysis.designBridgeUnlatched(requireBridgeRequest(doc, ctx.fdi, { adapt: targets }));
@@ -577,7 +601,7 @@ async function adaptBridge(id: ProposerId, doc: DesignDocument, ctx: ToothContex
     output: { commands, artifact },
     qa,
     rationale: [
-      `Every unit adapted to the antagonist (${params.occlusalClearanceMm} mm) and, on free sides, to its natural neighbour (${params.proximalContactMm} mm). Sides joined by a connector have no contact.`,
+      `Every unit adapted to the antagonist (${params.occlusalClearanceMm} mm) and, where it has a natural neighbour, to that contact (${params.proximalContactMm} mm). Sides joined by a connector have no contact.`,
       bridge.teeth.some((t) => isWing(doc.setup, t)) ? 'Wings follow their outline: their space to the antagonist is checked with the bridge.' : '',
       bridge.teeth.some((t) => isCavity(doc.setup, t)) ? 'Inlays and onlays keep the outer surface of their source.' : '',
     ]
@@ -609,6 +633,8 @@ function cutbackCommands(doc: DesignDocument, teeth: readonly number[]): Command
 }
 
 const describeCutback = (c: Pick<Cutback, 'mode' | 'thicknessMm'>) => `${c.mode} cutback of ${c.thicknessMm} mm`;
+/** Material names for the cutback rationale. */
+const MATERIAL_NAME: Record<Material, string> = { zirconia: 'zirconia', 'lithium-disilicate': 'lithium disilicate', pmma: 'PMMA', cocr: 'CoCr', titanium: 'titanium' };
 
 /**
  * Cutback (classical.cutback@1), after the adaptation: each reduced unit is cut back by the veneering space its
@@ -627,10 +653,10 @@ export const cutbackProposer: Proposer = {
     const commands = cutbackCommands(doc, bridge?.teeth ?? [ctx.fdi]);
     const next = applyCommands(doc, commands);
     const proposed = (t: number) => cutbackFor(next, t)!;
-    const rationale = `${describeCutback(CUTBACK_FOR[materialOf(doc, ctx.fdi)])} for ${materialOf(doc, ctx.fdi)}, on top of the adapted anatomy, keeping the framework minimum.`;
+    const rationale = `${describeCutback(CUTBACK_FOR[materialOf(doc, ctx.fdi)])} for ${MATERIAL_NAME[materialOf(doc, ctx.fdi)]}, cut from the adapted full anatomy, never thinner than the framework minimum.`;
     if (!bridge) {
       const result: CrownResult = await analysis.designCrownUnlatched({ ...crownRequest(ctx, { withPose: true }), cutback: proposed(ctx.fdi) });
-      return { proposerId: this.id, output: { commands, artifact: proposed(ctx.fdi) }, qa: cutbackGate(result.framework), rationale };
+      return { proposerId: this.id, output: { commands, artifact: proposed(ctx.fdi) }, qa: cutbackGate(result.framework), rationale: `${rationale[0]!.toUpperCase()}${rationale.slice(1)}` };
     }
     const reduced = bridge.teeth.filter((t) => reducedUnit(doc, t));
     const result = await analysis.designBridgeUnlatched(requireBridgeRequest(next, ctx.fdi, {}));
@@ -707,9 +733,10 @@ export const ponticFrameProposer: Proposer = {
     for (const t of order) {
       const fr = frames.get(t)!;
       const ortho = orthoError(fr);
-      qa.push({ id: `frame.orthonormal.${t}`, passed: ortho < 1e-3, value: Number(ortho.toFixed(6)), threshold: 1e-3, message: `${t}: frame axes are orthonormal` });
+      qa.push(orthoCheck(`frame.orthonormal.${t}`, ortho, `${t}: frame directions at right angles, largest error in degrees`));
     }
-    // FDI handedness of each pontic: mesial points toward its mesial neighbour (or away from its distal one).
+    // FDI handedness of each pontic: mesial points toward its mesial neighbour (or away from its distal one). The gate
+    // is a cosine above 0.5; it is shown as the angle (limit 60°).
     for (const p of result.pontics) {
       const fr = frames.get(p.fdi)!;
       const n = neighbours(p.fdi);
@@ -719,7 +746,13 @@ export const ponticFrameProposer: Proposer = {
       const d: V3 = [o[0] - fr.origin[0], o[1] - fr.origin[1], o[2] - fr.origin[2]];
       const len = Math.hypot(...d) || 1;
       const value = (dot(fr.mesial, d) / len) * (toward === n.mesial ? 1 : -1);
-      qa.push({ id: `frame.handedness.${p.fdi}`, passed: value > 0.5, value: Number(value.toFixed(3)), threshold: 0.5, message: `${p.fdi}: mesial points along the arch toward ${n.mesial} (FDI handedness)` });
+      qa.push({
+        id: `frame.handedness.${p.fdi}`,
+        passed: value > 0.5,
+        value: Number((Math.acos(Math.max(-1, Math.min(1, value))) * DEG).toFixed(1)),
+        threshold: 60,
+        message: `${p.fdi}: mesial faces ${n.mesial} along the arch, angle off in degrees`,
+      });
     }
     const pontics = result.pontics.map((p) => `${p.fdi}${p.cantilever ? ' (cantilever)' : ''}`);
     // Without margins the abutments' edges are estimates: the bridge proposal lays the pontics out again between the
@@ -734,10 +767,8 @@ export const ponticFrameProposer: Proposer = {
       output: { commands, artifact: { units: order.map((t) => ({ fdi: t, artifact: proposed.get(t) })) } satisfies BridgeStepArtifact },
       qa,
       rationale: [
-        pontics.length
-          ? `Pontic${pontics.length === 1 ? '' : 's'} ${pontics.join(', ')} laid out on the arch curve (${result.curve.kind}, ${result.curve.lengthMm.toFixed(0)} mm).`
-          : 'No pontics: splinted crowns.',
-        aligned.length ? `Abutment frames aligned to the arch: ${aligned.join(', ')}.` : '',
+        pontics.length ? `Pontic${pontics.length === 1 ? '' : 's'} ${pontics.join(', ')} placed along the arch.` : 'No pontics: splinted crowns.',
+        aligned.length ? `Abutment frames turned to follow the arch: ${aligned.join(', ')}.` : '',
         ...warnings,
       ]
         .filter(Boolean)
@@ -799,7 +830,7 @@ export const bridgeAxisProposer: Proposer = {
     const qa: QaCheck[] = [
       ...axisGate({ marginUndercutCount: result.marginUndercutTotal, angleFromOcclusalDeg: result.angleFromCenterDeg, prepClosed: result.prepClosed }),
       // Divergent abutments force blockout; a warning, not a gate (long spans often diverge).
-      { id: 'axis.divergence', passed: true, value: Number(result.divergenceDeg.toFixed(2)), threshold: 12, message: "Largest angle between the abutments' own best axes (a warning above 12°)" },
+      { id: 'axis.divergence', passed: true, value: Number(result.divergenceDeg.toFixed(2)), threshold: 12, message: "Largest angle between the abutments' own best insertion axes, in degrees (only a warning)" },
     ];
     return {
       proposerId: this.id,
@@ -807,7 +838,7 @@ export const bridgeAxisProposer: Proposer = {
       output: { commands: [{ type: 'setAxis', fdi: abutments[0]!, axis: { direction, source: 'auto' } }], artifact: { units: abutments.map((t) => ({ fdi: t, artifact: { direction } })) } satisfies BridgeStepArtifact },
       qa,
       rationale: [
-        `Least projected undercut over the ${abutments.length} abutment${abutments.length === 1 ? '' : 's'} within 25° of their mean occlusal direction: ${result.undercutAreaMm2.toFixed(2)} mm² at ${result.angleFromCenterDeg.toFixed(1)}°.`,
+        `The common axis with the least undercut over the ${abutments.length} abutment${abutments.length === 1 ? '' : 's'}, within 25° of their average biting direction: ${result.undercutAreaMm2.toFixed(2)} mm² of undercut, tilted ${result.angleFromCenterDeg.toFixed(1)}°.`,
         ...result.warnings,
       ].join(' '),
     };
@@ -859,14 +890,16 @@ export const connectorsProposer: Proposer = {
   async run({ fdi }) {
     const { doc, fdi: f } = requireBridge(fdi);
     const result = await analysis.designBridgeUnlatched(requireBridgeRequest(doc, f, { union: true }));
-    const measured = (result.union?.checks.connectors ?? []).map((c) => `${c.between[0]}–${c.between[1]} ${c.measured.minAreaMm2.toFixed(1)} mm² × ${c.measured.heightMm.toFixed(1)} mm`);
+    const measured = (result.union?.checks.connectors ?? []).map(
+      (c) => `${c.between[0]}–${c.between[1]} ${c.measured.minAreaMm2.toFixed(1)} mm² cross-section, ${c.measured.heightMm.toFixed(1)} mm high`,
+    );
     const channels = result.units.filter((u) => u.implant).length;
     return {
       proposerId: this.id,
       output: { commands: [], artifact: undefined },
       qa: bridgeGate(result),
       rationale: result.union
-        ? `Merged into one solid${channels ? ` with ${channels} screw channel${channels === 1 ? '' : 's'}` : ''}; connectors measured on it: ${measured.join(', ')}.`
+        ? `Merged into one solid${channels ? ` with ${channels} screw channel${channels === 1 ? '' : 's'}` : ''}. Connectors measured on it: ${measured.join('; ')}.`
         : `The units could not be merged: ${result.unionError ?? 'no union'}.`,
     };
   },

@@ -213,16 +213,16 @@ export function wingChecks(fdi: number, wing: Pick<WingUnitReport, 'params' | 'b
   const minLimit = round(wing.params.wingMinThicknessMm - 0.02);
   const t = wing.thickness;
   return [
-    check(`${id}.outlineUndercut`, wing.blockout.outlineUndercutPoints === 0, `Wing ${fdi}: no outline points in an undercut along the axis`, wing.blockout.outlineUndercutPoints, 0),
-    check(`${id}.undercut`, wing.blockout.undercutFaces === 0, `Wing ${fdi}: no undercut surface inside the outline (mm²)`, wing.blockout.undercutAreaMm2, 0),
+    check(`${id}.outlineUndercut`, wing.blockout.outlineUndercutPoints === 0, `Wing ${fdi}: outline points in an undercut along the insertion axis`, wing.blockout.outlineUndercutPoints, 0),
+    check(`${id}.undercut`, wing.blockout.undercutFaces === 0, `Wing ${fdi}: undercut area inside the outline, in mm²`, wing.blockout.undercutAreaMm2, 0),
     check(
       `${id}.thickness`,
       t.samples > 0 && t.minMm >= minLimit,
-      t.samples > 0 ? `Wing ${fdi}: thinnest ${WING_EDGE_RAMP_MM} mm or more from the edge (mm)` : `Wing ${fdi}: narrower than twice the edge ramp; it never reaches full thickness`,
+      t.samples > 0 ? `Wing ${fdi}: thinnest material ${WING_EDGE_RAMP_MM} mm or more from the edge, in mm` : `Wing ${fdi}: too narrow to reach full thickness inside its tapered edge`,
       t.minMm,
       minLimit,
     ),
-    check(`${id}.space`, !wing.space?.conflict, wing.space?.conflict ? `Wing ${fdi}: insufficient space for the wing (mm)` : `Wing ${fdi}: space against the antagonist`, wing.space?.conflict?.minClearanceMm ?? wing.space?.minClearanceMm),
+    check(`${id}.space`, !wing.space?.conflict, wing.space?.conflict ? `Wing ${fdi}: insufficient space for the wing against the antagonist, closest in mm` : `Wing ${fdi}: space against the antagonist, closest in mm`, wing.space?.conflict?.minClearanceMm ?? wing.space?.minClearanceMm),
   ];
 }
 

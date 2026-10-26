@@ -35,6 +35,11 @@ const TERMS: Array<[term: string, meaning: string]> = [
   ['Connector', 'The joint between two units of a bridge.'],
   ['Draft', 'What auto-design proposed. Nothing is kept until you accept it.'],
   ['Colour maps', 'Clearance or thickness painted on the crown; the legend gives the scale.'],
+  ['Occlusal clearance', 'Map of the space to the opposing teeth; below 0 mm the crown bites into them.'],
+  ['Proximal clearance', 'Map of the space to the neighbouring teeth; below 0 mm the contact is too tight.'],
+  ['Material thickness', 'Map of how thick the crown is; the warning colour marks where it is below the material minimum.'],
+  ['Unmillable (tool radius)', 'Map of the inside of the crown the milling tool cannot reach (tool radius in Parameters).'],
+  ['Undercut (blockout depth)', 'Insertion axis map: how deep each hidden part of the prep is blocked out.'],
 ];
 
 /** Shortcuts and a short glossary, over the viewport. Not modal: the scene stays usable while it is open. */
