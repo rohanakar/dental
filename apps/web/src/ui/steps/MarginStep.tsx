@@ -2,6 +2,14 @@ import { unitKind } from '@dcad/shared';
 import { useDesignStore, selectActiveTooth } from '../../design/store';
 import { marginTool } from '../../tools/marginTool';
 import { useToolStore } from '../../tools/toolStore';
+import { isWing } from '../../tools/wing';
+
+/** The Margin step's hint for a Maryland wing's outline. */
+function wingOutlineHint(drafting: boolean, anchors: number, drawn: boolean): string {
+  if (drafting) return anchors < 3 ? 'Keep clicking around the wing area.' : 'Click the first point (or press Enter) to close the outline.';
+  if (drawn) return 'Drag a point to adjust the outline, or click on the tooth to start drawing it again.';
+  return 'Click around the area the wing covers on the lingual surface: 0.5 mm above the gingiva, 1 mm below the incisal edge, wrapping onto the side facing the pontic.';
+}
 import { ImplantPositionPanel, useIsImplant } from './ImplantPanel';
 import { MarginWarning } from './MarginIssues';
 
@@ -19,6 +27,7 @@ export function MarginStep() {
   const tooth = useDesignStore(selectActiveTooth);
   const pontic = useDesignStore((s) => unitKind(s.doc.setup, s.activeFdi) === 'pontic');
   const anchors = useToolStore((s) => s.marginAnchors);
+  const wing = useDesignStore((s) => isWing(s.doc.setup, s.activeFdi));
   const surface = useToolStore((s) => s.surface);
   const implant = useIsImplant();
   if (!tooth) return null;
@@ -31,7 +40,9 @@ export function MarginStep() {
   return (
     <div className="step-body">
       <p className="hint-box">
-        {drafting
+        {wing
+          ? wingOutlineHint(drafting, anchors.length, Boolean(margin))
+          : drafting
           ? anchors.length < 3
             ? 'Keep clicking along the margin. The path follows the margin ridge between clicks.'
             : 'Click the first point (or press Enter) to close the margin.'

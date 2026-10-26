@@ -2,6 +2,7 @@ import {
   archIndex,
   BRIDGE_PRESETS,
   facingSide,
+  MARYLAND_CONNECTOR_MIN_AREA_MM2,
   minConnectorAreaMm2,
   type ConnectorDesign,
   type CrownAdapt,
@@ -26,6 +27,7 @@ import { designPontic, proposePonticPose, type PonticBaseGap } from './pontic';
 import { bvhRayCaster, createBvh, type RayCaster } from './raycast';
 import type { IntaglioSurface } from './thickness';
 import { findNeighbourContacts, mesialFromBuccal } from './toothFrame';
+import { designWingUnit, type WingUnitReport } from './wingUnit';
 import { implantRetainer, implantUnitWidths, unionMeshOf, channelCount } from './implantBridge';
 import type { ImplantUnit } from './implantCrown';
 import { implantToWorld } from './implantLibrary';
@@ -324,6 +326,8 @@ export interface BridgeUnitInput {
   /** Pontics: centre override (a click on the ridge); places the proposed pose, also when a frame is stored. */
   centre?: V3;
   template?: CrownTemplate;
+  /** Abutments: a Maryland wing on the outline region (designWingUnit) instead of a crown; it has no pose. */
+  wing?: boolean;
   /** Implant crowns (abutments): the Ti-base, the scan-body pose and the screw channel, instead of a margin. */
   implant?: ImplantUnit;
   /** Reduced units: the cutback; the framework joins the connectors and the union (framework.ts). */
@@ -355,8 +359,8 @@ export interface BridgeInput {
 export interface BridgeUnitResult {
   fdi: number;
   kind: UnitKind;
-  /** Same shape as a single crown; a pontic adds `base` (its gap to the ridge). */
-  design: CrownDesign & { base?: PonticBaseGap };
+  /** Same shape as a single crown; a pontic adds `base` (its gap to the ridge), a Maryland wing `wing`. */
+  design: CrownDesign & { base?: PonticBaseGap; wing?: WingUnitReport };
   /** The frame it was designed in: an abutment's without contacts toward connected units, or the pontic frame. */
   frame: CrownFrame;
   /** True when no pose was given: design.pose is a proposal (the app stores it with setCrown, one batch per bridge). */
@@ -374,7 +378,7 @@ export interface BridgeUnitResult {
 export interface BridgeConnectorResult extends ConnectorGeometry {
   /** The stored settings it was built from. */
   settings: ConnectorDesign;
-  /** The material minimum (minConnectorAreaMm2) and minimum height (BRIDGE_PRESETS). */
+  /** The material minimum (minConnectorAreaMm2; next to a wing, the Maryland minimum) and minimum height (BRIDGE_PRESETS). */
   minAreaMm2: number;
   minHeightMm: number;
   cached: boolean;
@@ -580,6 +584,24 @@ export function designBridge(input: BridgeInput): BridgeResult {
     if (!u.frame || !u.margin || !u.region) throw new Error(`Abutment ${u.fdi} needs a frame and a margin`);
     const sides = sidesOf(u.fdi);
     const frame = dropContacts(u.frame, sides);
+    if (u.wing) {
+      // A Maryland wing follows from its outline, the axis and its parameters: there is no pose to propose.
+      const region = u.region;
+      const keyParts = ['wing', ...common, u.fdi, u.params, frame, u.margin];
+      const design = () => {
+        const d = designWingUnit({ jaw, antagonist, region, axis, params: u.params, maps: input.maps });
+        // Its centre (the end of the connector lines) is the natural tooth's: on the arch curve, in the middle of the wing's extent along it.
+        let lo = Infinity, hi = -Infinity;
+        for (let v = d.shellStart; v < d.mesh.positions.length / 3; v++) {
+          const s = curve.project(pointAt(d.mesh.positions, v));
+          lo = Math.min(lo, s);
+          hi = Math.max(hi, s);
+        }
+        return { ...d, pose: { ...d.pose, position: curve.pointAt((lo + hi) / 2) } };
+      };
+      work.set(u.fdi, unit(u, keyParts, frame, u.pose ? null : { pose: { position: [0, 0, 0], quaternion: [0, 0, 0, 1], scale: [1, 1, 1] }, warnings: [] }, design));
+      continue;
+    }
     const adapt = dropAdaptSides(u.adapt, sides);
     const crown = { fdi: u.fdi, jaw, antagonist, region: u.region, frame, margin: u.margin, axis, params: u.params, template: u.template, maps: input.maps, adapt };
     const proposal = u.pose ? null : proposeCrownPoseFor(crown);
@@ -656,22 +678,29 @@ export function designBridge(input: BridgeInput): BridgeResult {
     const [fa, fb] = settings.between;
     const wa = work.get(fa), wb = work.get(fb);
     if (!wa || !wb) throw new Error(`Connector ${fa}–${fb}: both units must be in the bridge`);
-    const minAreaMm2 = minConnectorAreaMm2(material, fa, fb);
-    if (settings.areaMm2 < minAreaMm2) warnings.push(`Connector ${fa}–${fb}: ${settings.areaMm2} mm² is below the ${material} minimum of ${minAreaMm2} mm².`);
+    // Next to a Maryland wing the minimum is 3 mm × 2 mm (MARYLAND_CONNECTOR) instead of the material's area.
+    const maryland = Boolean(wa.result.design.wing || wb.result.design.wing);
+    const minAreaMm2 = maryland ? MARYLAND_CONNECTOR_MIN_AREA_MM2 : minConnectorAreaMm2(material, fa, fb);
+    if (settings.areaMm2 < minAreaMm2) warnings.push(`Connector ${fa}–${fb}: ${settings.areaMm2} mm² is below the ${maryland ? 'Maryland' : material} minimum of ${minAreaMm2} mm².`);
     const key = hashInputs(['connector', ...common, wa.key, wb.key, settings, minHeightMm]);
     const hit = cache?.get<ConnectorGeometry>(key);
     let geometry = hit;
     if (!geometry) {
-      const unitOf = (w: UnitWork): ConnectorUnit => ({
-        fdi: w.result.fdi,
-        mesh: assemblyMesh(w.result),
-        shellStart: w.result.design.shellStart,
-        solid: w.solid,
-        inner: w.inner,
-        centre: w.result.design.pose.position,
-        buccal: w.result.frame.buccal,
-        blMm: w.blMm,
-      });
+      const unitOf = (w: UnitWork): ConnectorUnit => {
+        const wing = w.result.design.wing;
+        return {
+          fdi: w.result.fdi,
+          mesh: assemblyMesh(w.result),
+          shellStart: w.result.design.shellStart,
+          solid: w.solid,
+          inner: w.inner,
+          centre: w.result.design.pose.position,
+          buccal: w.result.frame.buccal,
+          blMm: w.blMm,
+          // The end sinks only into the wing, never deeper than its thickness − 0.2 mm, and must clear the tooth.
+          ...(wing ? { wing: { maxSinkMm: Math.max(0, wing.params.wingThicknessMm - 0.2), cementGapMm: wing.params.cementGapMm } } : {}),
+        };
+      };
       geometry = designConnector({
         between: [fa, fb],
         a: unitOf(wa),

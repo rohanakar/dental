@@ -149,6 +149,13 @@ describe('applyCommand', () => {
     expect(tooth(35).cutback).toEqual({ ...CUTBACK_DEFAULTS, mode: 'facial', thicknessMm: 1.2 });
     expect(tooth(35).steps).toEqual(anatomic.steps);
 
+    // 35 becomes a Maryland wing: its prep margin is not a wing outline (margin stale, crown gone), and its connector
+    // restarts at the Maryland minimum (3 × 2 mm, 4.72 mm²), which it never goes below.
+    doc = applyCommand(doc, { type: 'setCaseSetup', setup: { ...doc.setup, teeth: doc.setup.teeth.map((t) => (t.fdi === 35 ? { ...t, restoration: 'maryland-wing' as const } : t)) } });
+    expect(tooth(35)).not.toHaveProperty('crown');
+    expect(tooth(35).steps.margin).toBe('stale');
+    expect(doc.bridges[0]!.connectors[0]!.areaMm2).toBe(4.72);
+    expect(() => applyCommand(doc, { type: 'setConnector', between: [35, 36], areaMm2: 4.5 })).toThrow(CommandError);
     // Implant bridges: no bridge on both implants and prepared teeth; an implant unit's position step holds its
     // scan-body match (never a margin), on a non-engaging Ti-base; its screw channel stays within the library maximum.
     const implantSetup = (restoration37: 'anatomic-crown' | 'implant-crown') => ({

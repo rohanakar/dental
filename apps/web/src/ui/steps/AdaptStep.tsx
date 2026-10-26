@@ -11,6 +11,8 @@ import { CrownStatusView } from './CrownStatusView';
 import { FocusControls, MapSelect, ReadaptNotice } from './CrownViewControls';
 import { CutbackPanel } from './FrameworkPanels';
 import './NudgePad.css';
+import { isWing } from '../../tools/wing';
+import { WingAdapt } from './WingPanel';
 
 const SIDES = [
   { key: 'occlusion', label: 'Occlusion', what: 'antagonist' },
@@ -69,10 +71,11 @@ function AdaptPanel() {
 
   if (!tooth) return null;
   if (!crown) return <div className="step-body warning">{bridge ? 'Propose the bridge first.' : 'Propose a crown first.'}</div>;
+  if (isWing(doc.setup, tooth.fdi)) return <WingAdapt />;
   const frame = tooth.frame;
   const stale = adaptationStale(tooth);
   // A bridge adapts the occlusion of every unit at once; contacts exist only on free sides.
-  const units = bridge ? doc.teeth.filter((t) => bridge.teeth.includes(t.fdi) && t.crown?.kind === 'template') : [];
+  const units = bridge ? doc.teeth.filter((t) => bridge.teeth.includes(t.fdi) && t.crown?.kind === 'template' && !isWing(doc.setup, t.fdi)) : [];
 
   const adapt = (key: (typeof SIDES)[number]['key']) => {
     const value = targets[key];

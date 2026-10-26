@@ -26,6 +26,9 @@ describe('shared schemas', () => {
     expect(errorCodes([unit(35), unit(36, 'anatomic-crown', 'lithium-disilicate')], [[35, 36]])).toEqual(['mixed-materials']);
     expect(errorCodes([unit(35, 'pontic'), unit(36, 'pontic')], [[35, 36]])).toEqual(['no-abutment']);
     expect(errorCodes([unit(35), unit(36, 'pontic')], [])).toEqual(['unconnected-pontic']);
+    // Maryland wings connect to pontics (a cantilever is valid), never to crowns.
+    expect(validate([unit(11, 'maryland-wing'), unit(12, 'pontic')], [[11, 12]]).errors).toEqual([]);
+    expect(errorCodes([unit(11, 'maryland-wing'), unit(21)], [[11, 21]])).toEqual(['connector-not-permitted']);
 
     // Warning only: lithium disilicate past 3 units.
     const ld = midline.map((t) => ({ ...t, material: 'lithium-disilicate' as const }));

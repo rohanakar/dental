@@ -75,7 +75,7 @@ export interface AdaptReport {
 }
 
 export interface AdaptConflict {
-  kind: 'insufficient reduction' | 'contact too tight';
+  kind: 'insufficient reduction' | 'contact too tight' | 'insufficient space for the wing';
   /** Active vertices still closer than target − tolerance. */
   vertices: number;
   minClearanceMm: number;

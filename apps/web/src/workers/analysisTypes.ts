@@ -5,6 +5,8 @@ import type { ConnectorEnd, ConnectorFailure } from '../geometry/connectors';
 import type { GapCheck } from '../geometry/intaglio';
 import type { MeshValidation } from '../geometry/meshValidate';
 import type { PonticBaseGap } from '../geometry/pontic';
+import type { ToothClearance } from '../geometry/connectors';
+import type { WingUnitReport } from '../geometry/wingUnit';
 import type { ScrewChannelReport } from '../geometry/implantCrown';
 import type { TiBaseGapCheck } from '../geometry/tiBase';
 
@@ -48,6 +50,8 @@ export interface AxisRequest {
   occlusal: V3;
   /** Fixed axis to evaluate; omitted = search for the least-undercut axis. */
   direction?: V3;
+  /** Maryland wings: a point inside the outline (the frame origin); the region is flood-filled from it. */
+  seed?: V3;
 }
 
 export interface AxisAnalysis {
@@ -137,6 +141,8 @@ export interface FocusFacesRequest {
   /** Dense margin, xyz per point. */
   margin: Float32Array;
   occlusal: V3;
+  /** Maryland wings: a point inside the outline (the frame origin). */
+  seed?: V3;
 }
 
 export interface AutoMarginRequest {
@@ -160,7 +166,14 @@ export type FrameView = CrownRequest['frame'];
 /** Common insertion axis of a bridge's abutments (searchCommonAxis). */
 export interface BridgeAxisRequest {
   jawSha: string;
-  abutments: Array<{ fdi: number; /** Dense margin, xyz per point. */ margin: Float32Array; occlusal: V3 }>;
+  abutments: Array<{
+    fdi: number;
+    /** Dense margin, xyz per point. */
+    margin: Float32Array;
+    occlusal: V3;
+    /** Maryland wings: a point inside the outline (the frame origin); the region is flood-filled from it. */
+    seed?: V3;
+  }>;
   /** Search cone around the mean occlusal direction (default 25°). */
   coneDeg?: number;
 }
@@ -247,6 +260,8 @@ export interface BridgeUnitRequest {
   adapt?: CrownAdapt;
   /** Pontics: centre override (a click on the ridge); places the proposed pose. Pass it again with a stored frame. */
   centre?: V3;
+  /** Abutments: a Maryland wing on the outline, flood-filled from the frame origin (no pose; designWingUnit). */
+  wing?: boolean;
   /** Implant crowns: the Ti-base and the scan-body pose, instead of a margin. */
   implant?: ImplantUnitRequest;
   /** Reduced units: the cutback; their frameworks join the connectors and the union. */
@@ -280,6 +295,8 @@ export interface BridgeUnitView extends CrownResult {
   connectedSides: ProximalSide[];
   /** Pontics: gap from the base to the ridge, and the layout on the arch. */
   base?: PonticBaseGap;
+  /** Maryland wings: thickness, space against the antagonist, bonded and blocked-out area. */
+  wing?: WingUnitReport;
   layout?: PonticLayoutView;
   cached: boolean;
 }
@@ -304,7 +321,9 @@ export interface BridgeConnectorView {
   available: { heightMm: number; bottom: V3; top: V3 };
   span: [number, number];
   ends: [ConnectorEnd, ConnectorEnd];
-  /** 'insufficient-height', 'too-wide' or 'fit-clearance'. */
+  /** Connectors to a Maryland wing: clearance to the natural tooth. */
+  toothClearance?: ToothClearance;
+  /** 'insufficient-height', 'too-wide', 'fit-clearance' or 'tooth-clash'. */
   failures: ConnectorFailure[];
   warnings: string[];
   cached: boolean;

@@ -32,6 +32,13 @@ import { signedIntaglioDistance, type IntaglioSurface } from './thickness';
  * densely over the end cap and the side wall next to it. A wall too thin for
  * both the clearance and a MIN_SINK_MM overlap fails with "fit-clearance";
  * the end then sinks less, and never as far as the fitting surface.
+ *
+ * Maryland wings (ConnectorUnit.wing): the section is centred on the wing's
+ * proximal part facing the other unit; the end sinks at most the wing
+ * thickness − 0.2 mm and stays WING_FIT_CLEARANCE_MM from the fitting surface,
+ * measured over the part of the end inside the wing; the rest of the
+ * connector must clear the natural tooth by the cement gap, at its place and
+ * along the insertion path ('tooth-clash').
  */
 
 export const CONNECTOR_HYGIENE_MM = 1.0;
@@ -40,6 +47,12 @@ export const CONNECTOR_EMBRASURE_MM = 1.0;
 export const CONNECTOR_MAX_WIDTH_FRACTION = 0.8;
 /** Connector ends stay this far from the units' fitting surfaces. */
 export const CONNECTOR_FIT_CLEARANCE_MM = 0.2;
+/**
+ * In a Maryland wing the end stays this far from the fitting surface (it never goes through it). The wing is 0.7 mm
+ * thick and feathered toward its outline, so the 0.2 mm wall of a crown would keep a connector off most of its
+ * proximal part; the sink is capped at the wing thickness − 0.2 mm instead (ConnectorUnit.wing.maxSinkMm).
+ */
+export const WING_FIT_CLEARANCE_MM = 0.05;
 /** Connector ends sink at most this deep into their units. */
 export const CONNECTOR_MAX_SINK_MM = 1.0;
 /** Relative area margin of the tube polygon over the designed area. */
@@ -69,6 +82,8 @@ const normalize = (a: V3): V3 => {
   return [a[0] / l, a[1] / l, a[2] / l];
 };
 const reject = (a: V3, n: V3): V3 => sub(a, scale(n, dot(a, n)));
+/** The clearance a connector end keeps from its unit's fitting surface. */
+const fitClearanceOf = (unit: { wing?: unknown }): number => (unit.wing ? WING_FIT_CLEARANCE_MM : CONNECTOR_FIT_CLEARANCE_MM);
 const pointAt = (a: Float32Array, i: number): V3 => [a[i * 3]!, a[i * 3 + 1]!, a[i * 3 + 2]!];
 
 /** One end of a connection: a designed unit (retainer or pontic). */
@@ -87,6 +102,11 @@ export interface ConnectorUnit {
   buccal: V3;
   /** Bucco-lingual width of the unit, mm. */
   blMm: number;
+  /**
+   * A Maryland wing on a natural tooth: the end sinks at most `maxSinkMm` (the wing thickness − 0.2 mm), and the
+   * connector must clear the tooth (toothClearance): by the cement gap, and along the insertion path.
+   */
+  wing?: { maxSinkMm: number; cementGapMm: number };
 }
 
 export interface ConnectorInput {
@@ -111,9 +131,11 @@ export interface ConnectorInput {
 
 /**
  * 'insufficient-height': less room than the minimum height; 'too-wide': wider than CONNECTOR_MAX_WIDTH_FRACTION of
- * the narrower unit; 'fit-clearance': an end closer than CONNECTOR_FIT_CLEARANCE_MM to its unit's fitting surface.
+ * the narrower unit; 'fit-clearance': an end closer than CONNECTOR_FIT_CLEARANCE_MM to its unit's fitting surface;
+ * 'tooth-clash': a connector to a Maryland wing hits the natural tooth, or passes it closer than the cement gap,
+ * where it is not inside the wing, at its place or along the insertion path.
  */
-export type ConnectorFailureCode = 'insufficient-height' | 'too-wide' | 'fit-clearance';
+export type ConnectorFailureCode = 'insufficient-height' | 'too-wide' | 'fit-clearance' | 'tooth-clash';
 
 export interface ConnectorFailure {
   code: ConnectorFailureCode;
@@ -154,6 +176,8 @@ export interface ConnectorGeometry {
   /** Tube extent along the line, relative to the centre: [between[0] end, between[1] end]. */
   span: [number, number];
   ends: [ConnectorEnd, ConnectorEnd];
+  /** Connectors to a Maryland wing: the clearance to the natural tooth (toothClearance). */
+  toothClearance?: ToothClearance;
   failures: ConnectorFailure[];
   warnings: string[];
 }
@@ -177,6 +201,28 @@ function facing(unit: ConnectorUnit, dir: V3, axis: V3): { point: V3; ridge: num
     if (along >= max - MARGINAL_RIDGE_BAND_MM) ridge = Math.max(ridge, dot(p, axis));
   }
   return { point: scale(sum, 1 / count), ridge };
+}
+
+/**
+ * A wing's proximal part facing `dir`: the area-weighted centroid of its outer faces whose normal is within 60° of
+ * `dir` (the proximal wrap of the outline); the facing area when it has none.
+ */
+function proximalPart(unit: ConnectorUnit, dir: V3): V3 {
+  const P = unit.mesh.positions;
+  const idx = unit.mesh.indices;
+  let sum: V3 = [0, 0, 0];
+  let total = 0;
+  for (let f = 0; f < idx.length; f += 3) {
+    const ia = idx[f]!, ib = idx[f + 1]!, ic = idx[f + 2]!;
+    if (ia < unit.shellStart || ib < unit.shellStart || ic < unit.shellStart) continue;
+    const pa = pointAt(P, ia), pb = pointAt(P, ib), pc = pointAt(P, ic);
+    const n = cross(sub(pb, pa), sub(pc, pa));
+    const area2 = Math.hypot(n[0], n[1], n[2]);
+    if (area2 < 1e-12 || dot(n, dir) < 0.5 * area2) continue;
+    sum = add(sum, scale(add(add(pa, pb), pc), area2 / 3));
+    total += area2;
+  }
+  return total > 0 ? scale(sum, 1 / total) : facing(unit, dir, dir).point;
 }
 
 /** Unit-local polygon of the cross-section: N points on the ellipse (w/2, h/2), scaled to the area. */
@@ -210,10 +256,21 @@ function endSamples(polygon: Array<[number, number]>): Array<[number, number, nu
  * through it; Infinity beyond FIT_SEARCH_MM). `cap` is the end-cap centre, `back` the unit vector from it toward
  * the connector centre and `sink` the end's depth (for the side-wall samples).
  */
-function endClearance(cap: V3, back: V3, sink: number, samples: Array<[number, number, number]>, widthDir: V3, heightDir: V3, surface: IntaglioSurface): number {
+function endClearance(
+  cap: V3,
+  back: V3,
+  sink: number,
+  samples: Array<[number, number, number]>,
+  widthDir: V3,
+  heightDir: V3,
+  surface: IntaglioSurface,
+  within?: RayCaster,
+): number {
   let min = Infinity;
   for (const [x, y, d] of samples) {
     const p = add(cap, add(add(scale(widthDir, x), scale(heightDir, y)), scale(back, d * sink)));
+    // A wing end: only the part inside the wing counts; beside the wing the tooth clearance applies (toothClearance).
+    if (within && within.all(p, heightDir, 60).length % 2 === 0) continue;
     const s = signedIntaglioDistance(p, surface, FIT_SEARCH_MM);
     if (s) min = Math.min(min, s.distance);
   }
@@ -241,7 +298,11 @@ export function designConnector(input: ConnectorInput): ConnectorGeometry {
   // Automatic centre: midpoint of the facing areas, plus the stored offsets.
   const fa = facing(a, direction, axis);
   const fb = facing(b, scale(direction, -1), axis);
-  const auto = scale(add(fa.point, fb.point), 0.5);
+  let auto = scale(add(fa.point, fb.point), 0.5);
+  // A Maryland wing: the section is centred on the wing's proximal part facing the other unit (the connector attaches
+  // there, lingual of the contact area); along the line it stays between the units.
+  const wingPart = a.wing ? proximalPart(a, direction) : b.wing ? proximalPart(b, scale(direction, -1)) : null;
+  if (wingPart) auto = add(auto, reject(sub(wingPart, auto), direction));
   const c0 = add(auto, add(scale(widthDir, input.buccalMm), scale(axis, input.occlusalMm)));
 
   // Available height on the connector's vertical line.
@@ -295,7 +356,7 @@ export function designConnector(input: ConnectorInput): ConnectorGeometry {
   const samples = endSamples(polygon);
   /** Signed clearance of an end cap at t on the line (unit on the `sign` side), `sink` deep in its unit. */
   const clearanceAt = (unit: ConnectorUnit, sign: 1 | -1, t: number, sink: number) =>
-    endClearance(add(centre, scale(direction, t)), scale(direction, -sign), sink, samples, widthDir, axis, unit.inner);
+    endClearance(add(centre, scale(direction, t)), scale(direction, -sign), sink, samples, widthDir, axis, unit.inner, unit.wing ? unit.solid : undefined);
   const end = (unit: ConnectorUnit, sign: 1 | -1): { t: number; surface: number } => {
     const toward = scale(direction, sign); // from the centre toward this unit
     const hits = unit.solid.all(centre, toward, 40);
@@ -314,8 +375,21 @@ export function designConnector(input: ConnectorInput): ConnectorGeometry {
     // Distances change by at most the distance moved, so sinking by (clearance at the surface − the required
     // clearance) keeps it; step back where the sampled end disagrees.
     const c0 = clearance(0);
-    let sink = Math.min(CONNECTOR_MAX_SINK_MM, c0 - CONNECTOR_FIT_CLEARANCE_MM);
-    while (sink > MIN_SINK_MM && clearance(sink) < CONNECTOR_FIT_CLEARANCE_MM - FIT_CLEARANCE_TOLERANCE_MM) sink -= SINK_STEP_MM;
+    const required = fitClearanceOf(unit);
+    // A wing end must also stay clear of the tooth beside the wing (the end samples outside it).
+    const clearsTooth = (sink: number) => {
+      if (!unit.wing) return true;
+      const cap = add(centre, scale(direction, surface + sign * sink));
+      const back = scale(direction, -sign);
+      return samples.every(([x, y, d]) => {
+        const p = add(cap, add(add(scale(widthDir, x), scale(axis, y)), scale(back, d * sink)));
+        if (insideAny([unit.solid], p, axis)) return true;
+        const c = pointToothClearance(p, input.jaw, axis, unit.wing!.cementGapMm + 1);
+        return c.mm >= unit.wing!.cementGapMm && !c.swept;
+      });
+    };
+    let sink = Math.min(unit.wing?.maxSinkMm ?? CONNECTOR_MAX_SINK_MM, c0 - required);
+    while (sink > MIN_SINK_MM && (clearance(sink) < required - FIT_CLEARANCE_TOLERANCE_MM || !clearsTooth(sink))) sink -= SINK_STEP_MM;
     // A wall too thin for the clearance: overlap the unit by MIN_SINK_MM, or by half the distance to the fitting
     // surface when that is less, so the end never reaches it (the clearance check below fails).
     if (sink < MIN_SINK_MM) sink = Math.max(0, Math.min(MIN_SINK_MM, c0 / 2));
@@ -332,17 +406,35 @@ export function designConnector(input: ConnectorInput): ConnectorGeometry {
   const finalEnd = (unit: ConnectorUnit, sign: 1 | -1, t: number, surface: number): ConnectorEnd => {
     const sinkMm = sign * (t - surface);
     const fitClearanceMm = clearanceAt(unit, sign, t, Math.max(0, sinkMm));
-    if (fitClearanceMm < CONNECTOR_FIT_CLEARANCE_MM - FIT_CLEARANCE_TOLERANCE_MM) {
+    const required = fitClearanceOf(unit);
+    if (fitClearanceMm < required - FIT_CLEARANCE_TOLERANCE_MM) {
       failures.push({
         code: 'fit-clearance',
-        message: `Connector ${label}: its end in ${unit.fdi} is ${fitClearanceMm < 0 ? 'through' : `${fitClearanceMm.toFixed(2)} mm from`} the fitting surface (at least ${CONNECTOR_FIT_CLEARANCE_MM} mm); the wall there is too thin for a connector.`,
+        message: `Connector ${label}: its end in ${unit.fdi} is ${fitClearanceMm < 0 ? 'through' : `${fitClearanceMm.toFixed(2)} mm from`} the fitting surface (at least ${required} mm); the wall there is too thin for a connector.`,
         valueMm: fitClearanceMm,
-        limitMm: CONNECTOR_FIT_CLEARANCE_MM,
+        limitMm: required,
       });
     }
     return { fdi: unit.fdi, point: add(centre, scale(direction, t)), sinkMm, fitClearanceMm };
   };
   const ends: [ConnectorEnd, ConnectorEnd] = [finalEnd(a, -1, tA, ea.surface), finalEnd(b, 1, tB, eb.surface)];
+
+  // Connectors to a Maryland wing: clear of the natural tooth, outside the wing.
+  let tooth: ToothClearance | undefined;
+  const wings = [a, b].filter((u) => u.wing);
+  if (wings.length > 0) {
+    const gapMm = Math.max(...wings.map((u) => u.wing!.cementGapMm));
+    tooth = toothClearance({ centre, direction, widthDir, axis, polygon, span: [tA, tB], jaw: input.jaw, inside: wings.map((u) => u.solid), gapMm });
+    if (tooth.clashSamples > 0) {
+      const where = tooth.sweptSamples > 0 && tooth.minMm >= gapMm ? 'along the insertion path' : tooth.minMm < 0 ? `${(-tooth.minMm).toFixed(2)} mm deep` : `${tooth.minMm.toFixed(3)} mm from it`;
+      failures.push({
+        code: 'tooth-clash',
+        message: `Connector ${label} clashes with the abutment (${where}; at least ${gapMm} mm outside the wing): move it or make it smaller.`,
+        valueMm: tooth.minMm,
+        limitMm: gapMm,
+      });
+    }
+  }
 
   return {
     between: input.between,
@@ -357,9 +449,92 @@ export function designConnector(input: ConnectorInput): ConnectorGeometry {
     available: { heightMm: availableMm, bottom: add(centre, scale(axis, lowest - z)), top: add(centre, scale(axis, top - z)) },
     span: [tA, tB],
     ends,
+    ...(tooth ? { toothClearance: tooth } : {}),
     failures,
     warnings,
   };
+}
+
+/** Clearance of a connector to the natural tooth next to a Maryland wing. */
+export interface ToothClearance {
+  /** Tube surface points tested (outside the wing). */
+  samples: number;
+  /**
+   * Smallest clearance to the jaw scan: the distance to the closest scan point, negative (minus the depth along the
+   * axis) for points inside the tooth; capped at the search distance (1 mm beyond the gap).
+   */
+  minMm: number;
+  /** Points closer than the cement gap, inside the tooth, or with tooth structure ahead along the insertion path. */
+  clashSamples: number;
+  /** Of those: points outside the tooth that meet it when the bridge is inserted (moving along −axis onto the tooth). */
+  sweptSamples: number;
+}
+
+/** A point is inside one of the closed solids (an odd number of crossings along `dir`). */
+const insideAny = (solids: RayCaster[], p: V3, dir: V3): boolean => solids.some((solid) => solid.all(p, dir, 60).length % 2 === 1);
+
+/**
+ * Clearance of a point to the jaw scan: the closest-point distance (capped at `reach`), or minus the depth along
+ * +axis when the point is inside the tooth (the first hit along +axis is a back face); `swept` when the tooth is
+ * ahead of it along +axis (the bridge seats along −axis, so the point passes there on the way in).
+ */
+function pointToothClearance(p: V3, jaw: RayCaster, axis: V3, reach: number): { mm: number; swept: boolean } {
+  const ahead = jaw.first(p, axis, 60);
+  if (ahead && dot(ahead.normal, axis) > 0) return { mm: -ahead.distance, swept: false };
+  const closest = jaw.closestPoint(p, reach);
+  return { mm: closest ? closest.distance : reach, swept: Boolean(ahead) };
+}
+
+/** Stations along the tube for the tooth clearance, mm apart. */
+const TOOTH_SAMPLE_STEP_MM = 0.1;
+
+/**
+ * Tooth clearance of a connector next to a wing. Points on the tube surface
+ * (side wall at stations TOOTH_SAMPLE_STEP_MM apart, and both caps) that lie
+ * inside a wing solid are skipped: there the connector is part of the wing.
+ * Every other point must be at least `gapMm` from the jaw scan, and nothing of
+ * the jaw may lie ahead of it along +axis: the bridge seats moving along
+ * −axis, so the connector sweeps the space above (in +axis) its final place.
+ * A ray along +axis tells both: a back-facing first hit means the point is
+ * inside the tooth, a front-facing one that the tooth is in the way.
+ */
+function toothClearance(input: {
+  centre: V3;
+  direction: V3;
+  widthDir: V3;
+  axis: V3;
+  polygon: Array<[number, number]>;
+  span: [number, number];
+  jaw: RayCaster;
+  inside: RayCaster[];
+  gapMm: number;
+}): ToothClearance {
+  const { centre, direction, widthDir, axis, polygon, span, jaw, gapMm } = input;
+  const reach = gapMm + 1;
+  let samples = 0, clash = 0, swept = 0, min = reach;
+  const test = (p: V3) => {
+    if (insideAny(input.inside, p, axis)) return;
+    samples++;
+    const c = pointToothClearance(p, jaw, axis, reach);
+    min = Math.min(min, c.mm);
+    if (c.mm < gapMm) clash++;
+    else if (c.swept) {
+      clash++;
+      swept++;
+    }
+  };
+  const [t0, t1] = span;
+  const stations = Math.max(2, Math.ceil((t1 - t0) / TOOTH_SAMPLE_STEP_MM) + 1);
+  const at = (t: number, x: number, y: number): V3 => add(centre, add(scale(direction, t), add(scale(widthDir, x), scale(axis, y))));
+  for (let k = 0; k < stations; k++) {
+    const t = t0 + ((t1 - t0) * k) / (stations - 1);
+    for (const [x, y] of polygon) test(at(t, x, y));
+  }
+  for (const t of [t0, t1]) {
+    test(at(t, 0, 0));
+    for (const f of [1 / 3, 2 / 3]) for (const [x, y] of polygon) test(at(t, f * x, f * y));
+  }
+  return { samples, minMm: min, clashSamples: clash, sweptSamples: swept };
 }
 
 /** Closed prism along `dir` from t0 to t1 over the section polygon (u along widthDir, v along heightDir), outward. */

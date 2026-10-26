@@ -4,6 +4,7 @@ import { useOrchestrator } from '../ai/orchestrator';
 import { useDesignStore } from '../design/store';
 import { isImplantTooth } from '../tools/implantTool';
 import './bridge.css';
+import { stepLabelFor, unitName } from './steps/WingPanel';
 
 export const STEPS: Array<{ id: StepId; label: string; available: boolean }> = [
   { id: 'setup', label: 'Case setup', available: true },
@@ -59,7 +60,7 @@ export function StepNav() {
 
   const unitLabel = (fdi: number) => {
     const b = bridgeOf({ bridges }, fdi);
-    return `${fdi} · ${unitKind(setup, fdi) === 'pontic' ? 'pontic' : 'crown'}${b ? ` (${b.teeth[0]}–${b.teeth.at(-1)})` : ''}`;
+    return `${fdi} · ${unitName(setup, fdi)}${b ? ` (${b.teeth[0]}–${b.teeth.at(-1)})` : ''}`;
   };
 
   return (
@@ -91,7 +92,7 @@ export function StepNav() {
                 onClick={() => setActiveStep(id)}
               >
                 <span className="step-label">
-                  {stepLabel(id, isImplantTooth({ setup }, activeFdi))}
+                  {stepLabelFor(setup, activeFdi, id, stepLabel(id, isImplantTooth({ setup }, activeFdi)))}
                   {id === 'axis' && commonAxis.length > 1 && <span className="step-note"> · common for {commonAxis.join(', ')}</span>}
                 </span>
                 {status === 'stale' && <span className="badge stale">stale</span>}

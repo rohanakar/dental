@@ -22,6 +22,7 @@ import { SetupStep } from './steps/SetupStep';
 import { ToolStatus } from './ToolStatus';
 import { Toolbar, VIEWS } from './Toolbar';
 import { Viewport } from './Viewport';
+import { stepLabelFor } from './steps/WingPanel';
 
 function isTyping(target: EventTarget | null): boolean {
   const t = target as HTMLElement | null;
@@ -85,7 +86,9 @@ function StepPanel() {
   const step = useDesignStore((s) => s.activeStep);
   // The assistant needs the server; offline it only says so, so start it closed.
   const offline = useSessionStore((s) => s.offline);
-  const label = stepLabel(step, useImplantLabels());
+  const implantLabels = useImplantLabels();
+  const wingLabel = useDesignStore((s) => stepLabelFor(s.doc.setup, s.activeFdi, step, ''));
+  const label = wingLabel || stepLabel(step, implantLabels);
   return (
     <section className="step-panel">
       <h2>{label}</h2>

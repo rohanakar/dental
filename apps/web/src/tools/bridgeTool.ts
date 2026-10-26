@@ -29,6 +29,7 @@ import { cutbackFor } from '../design/framework';
 import { CROWN_MAPS, crownMapLegend } from './crownLegend';
 import { implantMissing, implantRequestOf, isImplantTooth } from './implantTool';
 import { type CrownStatus, type LegendSpec, useToolStore } from './toolStore';
+import { isWing } from './wing';
 
 /** One designed bridge: every unit and connector, plus the union and its checks when asked for (worker designBridge). */
 export type BridgeResult = BridgeResultView;
@@ -150,6 +151,7 @@ function buildRequest(ctx: BridgeContext, opts: BridgeRequestOptions): BridgeReq
       ...(t.frame ? { frame: frameView(t.frame) } : {}),
       ...(centre ? { centre } : {}),
       ...(kind !== 'pontic' && t.margin ? { margin: fromMarginPoints(t.margin.points) } : {}),
+      ...(isWing(doc.setup, t.fdi) ? { wing: true } : {}),
       ...(t.implant ? { implant: implantRequestOf(t) } : {}),
       ...(opts.withPoses !== false && crown ? { pose: crown.pose } : {}),
       ...(adapt ? { adapt } : {}),

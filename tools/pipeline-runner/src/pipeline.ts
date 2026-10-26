@@ -143,6 +143,8 @@ export interface RunOptions {
    * proposer's ridge confidence.
    */
   auto?: boolean;
+  /** Bridge cases: connector settings to apply over the defaults, by pair ("11-12"), e.g. a moved connector. */
+  connectors?: Record<string, { areaMm2?: number; buccalMm?: number; occlusalMm?: number }>;
 }
 
 export async function runCase(spec: GoldenCase, baseDir: string, options: RunOptions = {}): Promise<CaseResult> {

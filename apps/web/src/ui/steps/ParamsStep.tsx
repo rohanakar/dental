@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { DesignParams, MATERIAL_PRESETS, type DesignParams as Params } from '@dcad/shared';
 import { useDesignStore, selectActiveTooth } from '../../design/store';
 import { MATERIAL_LABEL } from './SetupStep';
+import { paramGroupsFor, paramValue } from './WingPanel';
 import { useIsImplant } from './ImplantPanel';
 
 type Field = { key: keyof Params; label: string; hint: string };
@@ -62,10 +63,13 @@ function rejected(key: keyof Params, raw: string, kept: number): string {
 export function ParamsStep() {
   const tooth = useDesignStore(selectActiveTooth);
   const material = useDesignStore((s) => s.doc.setup.teeth.find((t) => t.fdi === s.activeFdi)?.material);
+  const setup = useDesignStore((s) => s.doc.setup);
   const [errors, setErrors] = useState<Partial<Record<keyof Params, string>>>({});
   const implant = useIsImplant();
   if (!tooth) return null;
   const params = tooth.params;
+  /** The value in use: an unset implant or wing parameter shows its default. */
+  const valueOf = (key: keyof Params): number => params[key] ?? IMPLANT_DEFAULTS[key] ?? paramValue(params, key);
   const fromPreset = material !== undefined && JSON.stringify(params) === JSON.stringify(MATERIAL_PRESETS[material]);
 
   /** Apply a valid value; otherwise put the field back to the value in use and say what is allowed. */
@@ -74,12 +78,12 @@ export function ParamsStep() {
     const value = Number(raw);
     const next = { ...params, [key]: value };
     const valid = raw !== '' && Number.isFinite(value) && DesignParams.safeParse(next).success;
-    setErrors((e) => ({ ...e, [key]: valid ? undefined : rejected(key, raw, params[key] ?? 0) }));
+    setErrors((e) => ({ ...e, [key]: valid ? undefined : rejected(key, raw, valueOf(key)) }));
     if (!valid) {
-      input.value = String(params[key]);
+      input.value = String(valueOf(key));
       return;
     }
-    if (value !== params[key]) useDesignStore.getState().dispatch({ type: 'setParams', fdi: tooth.fdi, params: next });
+    if (value !== valueOf(key)) useDesignStore.getState().dispatch({ type: 'setParams', fdi: tooth.fdi, params: next });
   };
 
   return (
@@ -89,7 +93,7 @@ export function ParamsStep() {
         recompute the crown.
       </p>
       <div className="param-grid">
-        {[...GROUPS, ...(implant ? [IMPLANT_GROUP] : [])].map((group) => (
+        {[...paramGroupsFor(setup, tooth.fdi, GROUPS), ...(implant ? [IMPLANT_GROUP] : [])].map((group) => (
           <fieldset key={group.title}>
             <legend>{group.title}</legend>
             {group.fields.map(({ key, label, hint }) => {
@@ -103,12 +107,12 @@ export function ParamsStep() {
                     {/* key on the value: undo/redo and preset resets refresh the uncontrolled input */}
                     <input
                       id={id}
-                      key={`${key}:${params[key]}`}
+                      key={`${key}:${valueOf(key)}`}
                       type="number"
                       step={0.01}
                       min={min}
                       max={max}
-                      defaultValue={params[key] ?? IMPLANT_DEFAULTS[key]}
+                      defaultValue={valueOf(key)}
                       aria-describedby={`${id}-hint${error ? ` ${id}-error` : ''}`}
                       onBlur={(e) => commit(key, e.currentTarget)}
                       onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}

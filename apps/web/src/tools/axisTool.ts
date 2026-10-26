@@ -8,6 +8,7 @@ import type { AxisAnalysis, BridgeAxisResult } from '../workers/analysisTypes';
 import { isStale } from '../workers/latestWins';
 import { errorText, fromMarginPoints, toothContext, type ToothContext } from './context';
 import { useToolStore, type AxisReport, type V3 } from './toolStore';
+import { wingSeed } from './wing';
 
 /** Undercut depths at or above this show as fully red. */
 export const UNDERCUT_RANGE_MM: [number, number] = [0, 0.5];
@@ -135,7 +136,7 @@ class AxisTool {
     const { margin, frame } = ctx?.tooth ?? {};
     if (!ctx || !margin || !frame) return;
     const result = await this.run('Searching for the least-undercut axis…', () =>
-      analysis.axis({ jawSha: ctx.jaw.sha256, margin: fromMarginPoints(margin.points), occlusal: [...frame.occlusal] }),
+      analysis.axis({ jawSha: ctx.jaw.sha256, margin: fromMarginPoints(margin.points), occlusal: [...frame.occlusal], ...wingSeed(useDesignStore.getState().doc.setup, ctx.fdi, frame) }),
     );
     if (!result) return;
     const axis: InsertionAxis = { direction: result.direction, source: 'auto' };
@@ -177,6 +178,7 @@ class AxisTool {
         margin: fromMarginPoints(margin.points),
         occlusal: [...frame.occlusal],
         direction: [...axis.direction],
+        ...wingSeed(useDesignStore.getState().doc.setup, fdi, frame),
       });
       return axisReport(result, margin.points.length);
     } catch {
@@ -211,6 +213,7 @@ class AxisTool {
         margin: fromMarginPoints(margin.points),
         occlusal: [...frame.occlusal],
         direction: [...axis.direction],
+        ...wingSeed(useDesignStore.getState().doc.setup, ctx.fdi, frame),
       }),
     );
     if (result) this.show(result, axis, margin);
@@ -246,7 +249,12 @@ class AxisTool {
   private bridgeRequest(ctx: ToothContext, abutments: readonly ReadyAbutment[]) {
     return {
       jawSha: ctx.jaw.sha256,
-      abutments: abutments.map((a) => ({ fdi: a.fdi, margin: fromMarginPoints(a.margin.points), occlusal: v3(a.frame.occlusal) })),
+      abutments: abutments.map((a) => ({
+        fdi: a.fdi,
+        margin: fromMarginPoints(a.margin.points),
+        occlusal: v3(a.frame.occlusal),
+        ...wingSeed(useDesignStore.getState().doc.setup, a.fdi, a.frame),
+      })),
     };
   }
 
@@ -301,7 +309,13 @@ class AxisTool {
       const [analyses, found] = await Promise.all([
         Promise.all(
           abutments.map((a) =>
-            analysis.axisUnlatched({ jawSha: ctx.jaw.sha256, margin: fromMarginPoints(a.margin.points), occlusal: v3(a.frame.occlusal), direction: v3(axis.direction) }),
+            analysis.axisUnlatched({
+              jawSha: ctx.jaw.sha256,
+              margin: fromMarginPoints(a.margin.points),
+              occlusal: v3(a.frame.occlusal),
+              direction: v3(axis.direction),
+              ...wingSeed(useDesignStore.getState().doc.setup, a.fdi, a.frame),
+            }),
           ),
         ),
         this.searchFor(ctx, abutments),

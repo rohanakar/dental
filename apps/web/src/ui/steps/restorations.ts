@@ -16,12 +16,14 @@ import { analysis } from '../../workers/geometryClient';
 import { IMPLANT_NEEDS, implantReadiness } from './implantReadiness';
 import { millReadiness, readinessNeeds, type ReadinessItem } from './readiness';
 import { MATERIAL_LABEL } from './SetupStep';
+import { isWing } from '../../tools/wing';
+import { wingReadinessRows } from './WingPanel';
 
 /** A restoration of the case: a single crown, or a bridge (its units in arch order). */
 export interface Restoration {
   kind: 'crown' | 'bridge';
   teeth: number[];
-  /** "11 crown", "14 implant crown", "21 reduced crown", "bridge 12–22", "framework bridge 35–37". */
+  /** "11 crown", "14 implant crown", "21 reduced crown", "bridge 12–22", "framework bridge 35–37", "Maryland bridge 12–11". */
   name: string;
 }
 
@@ -33,11 +35,17 @@ const reducedUnit = (doc: DesignDocument, fdi: number) => {
 
 function nameOf(doc: DesignDocument, kind: Restoration['kind'], teeth: readonly number[]): string {
   if (kind === 'bridge') {
-    const type = teeth.some((f) => reducedUnit(doc, f)) ? 'framework bridge' : teeth.some((f) => isImplantTooth(doc, f)) ? 'implant bridge' : 'bridge';
+    const type = teeth.some((f) => reducedUnit(doc, f))
+      ? 'framework bridge'
+      : teeth.some((f) => isImplantTooth(doc, f))
+        ? 'implant bridge'
+        : teeth.some((f) => isWing(doc.setup, f))
+          ? 'Maryland bridge'
+          : 'bridge';
     return `${type} ${teeth[0]}–${teeth.at(-1)}`;
   }
   const fdi = teeth[0]!;
-  return `${fdi} ${isImplantTooth(doc, fdi) ? 'implant crown' : reducedUnit(doc, fdi) ? 'reduced crown' : 'crown'}`;
+  return `${fdi} ${isImplantTooth(doc, fdi) ? 'implant crown' : reducedUnit(doc, fdi) ? 'reduced crown' : isWing(doc.setup, fdi) ? 'wing' : 'crown'}`;
 }
 
 /** Every restoration of the case in arch order: each bridge once, then each tooth that is in no bridge. */
@@ -157,7 +165,12 @@ async function designBridge(doc: DesignDocument, teeth: number[], ref: string, n
       const tooth = toothOf(doc, fdi);
       const view = result.units.find((u) => u.fdi === fdi);
       if (!tooth) continue;
-      const items = readinessOf(doc, tooth, { axis: axisOf.get(fdi) ?? null, crown: view ? unitStatus(view) : null, neighbours: freeNeighbours(doc, tooth, view?.frame) }, view?.implant);
+      // A Maryland wing: no contacts, its outline row instead of the prep margin's (as BridgeFinalize shows it).
+      const wing = isWing(doc.setup, fdi);
+      const neighbours = wing ? { mesial: false, distal: false } : freeNeighbours(doc, tooth, view?.frame);
+      const items = readinessOf(doc, tooth, { axis: axisOf.get(fdi) ?? null, crown: view ? unitStatus(view) : null, neighbours }, view?.implant)
+        .filter((i) => !(wing && i.id === 'margin'))
+        .concat(wing ? wingReadinessRows(view, tooth.margin?.points) : []);
       open.push(...openOf(items, `${fdi}: `));
     }
     open.push(...bridgeGate(result).filter((c) => !c.passed).map((c) => ({ label: c.message, detail: gateDetail(c) })));

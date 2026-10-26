@@ -1,6 +1,6 @@
 # Resin-bonded (Maryland) bridges
 
-Status: **in progress** (2026-10-25). Phase A (geometry) has landed; phase B (schemas, reducer, connectors to wings, UI, runner case) is next.
+Status: **in progress** (2026-10-26). Phases A and B have landed: Maryland bridges in the editor, the runner and Export all. The AI items (outline proposer, wing gate in bridgeGate, agent terms) are next.
 Depends on: [2026-10-25-bridge-mode.md](2026-10-25-bridge-mode.md) (pontics, connectors, union, anterior teeth).
 Used by: [2026-10-25-inlay-bridges.md](2026-10-25-inlay-bridges.md) (the patch intaglio introduced here).
 
@@ -244,3 +244,53 @@ Also:
   - Self-touching live-wire traces are simplified.
 - **Open:** an outline in an undercut folds the wing, which then reports not printable. Until a side-wall blockout
   exists, the phase B gate must fail on `outlineUndercutPoints > 0` or `undercutFaces > 0`.
+
+### Phase B (2026-10-26): wing units in the editor, connectors to wings, export, runner case
+- **Shared:**
+  - `maryland-wing` (role abutment; connects to a pontic, a reduced pontic or a wing).
+  - Optional `wingThicknessMm` and `wingEdgeThicknessMm` params.
+  - `MARYLAND_CONNECTOR`: the minimum is a 3 × 2 mm ellipse, 4.72 mm², for every material.
+  - `connectionMinAreaMm2`.
+  - A warning for lithium disilicate wings on posterior teeth.
+- **Reducer:** switching crown ↔ wing makes the margin stale and drops the crown; connectors restart at the new
+  minimum.
+- **Geometry:**
+  - `geometry/wingUnit.ts` (`designWingUnit`, `wingRegion`, `wingGapCheck`, `wingChecks`).
+  - Wing units in `designBridge`: the centre is on the arch curve, and the Maryland minimum applies next to a wing.
+  - Connectors to wings sit on the proximal part. The sink is ≤ thickness − 0.2 mm and keeps 0.05 mm from the fitting
+    surface.
+  - Tooth clearance along the insertion path, with the new `'tooth-clash'` failure.
+  - Wing seating and wing checks on the union.
+- **UI:**
+  - Setup: Crown / Wing / Implant / Pontic.
+  - Margin step: "Wing outline", with no kink warning.
+  - A Wing group in Parameters, and a wing panel in Adapt.
+  - Finalize rows: outline, seat, space, bonded area.
+  - The sidecar carries the wing; Export all includes Maryland bridges.
+  - No gizmo or nudges on a wing.
+- **Runner:** `synthetic-maryland-11-12`, 30/30 checks:
+  - wing 0.700 mm, edge 0.200 mm; fitting gap error ≤ 0.00002 mm
+  - connector measured at 4.722 mm², 3.0 × 2.0 mm, with no tooth clash
+  - the union is one solid of genus 0
+- **Test:** "passes every check on the synthetic Maryland bridge, and fails a connector that clashes with the tooth"
+  (107 → 108). The shared and reducer tests are extended.
+- **E2E:**
+  - `tools/e2e/maryland.mjs`: 16/16, Export all included.
+  - `ai-bridge.mjs` got a race fix: a view change sometimes hadn't rendered when the test clicked, so it clicked in
+    the old view. `clickWorld` now waits until the surface under the cursor is the target point. Main showed the
+    same race 2 times in 8 runs.
+- **Verified on the integrated tree:** typecheck, 108 tests, build, runner 6/6 (the existing outputs are
+  byte-identical), and the browser tests `bridge.mjs` 28/28, `ai-bridge.mjs` 16/16 twice, `implant.mjs` 31/31,
+  `maryland.mjs` 16/16 and `anterior-export.mjs` 13/13.
+- **Deviations:**
+  - The Maryland 3 × 2 mm minimum replaces the material area minimum next to a wing.
+  - The wing-end fit clearance is relaxed to 0.05 mm.
+  - The synthetic outline wraps onto 11's distal-lingual surface.
+  - The wing gate goes through the existing gates, not `bridgeGate` (`ai/` was off limits).
+- **Open:**
+  - The connector can extend about 1 mm beyond the wing's cervical border.
+  - No side-wall blockout.
+  - The Adapt step stays "pending" for wings.
+  - `bridge.mjs` and `implant.mjs` use the same click pattern and should get the `clickWorld` guard.
+  - AI items: the outline proposer, `wingChecks` in `bridgeGate` plus `qa.test`, `connectionMinAreaMm2` in the
+    prompts, wing terms, and the wing seed in AI flows.

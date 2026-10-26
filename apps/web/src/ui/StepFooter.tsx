@@ -4,6 +4,7 @@ import { DraftReview } from './ai/AutoDesign';
 import { stepLabel, useImplantLabels } from './StepNav';
 import { missingBefore, neighbours } from './stepGuide';
 import './StepFooter.css';
+import { stepLabelFor } from './steps/WingPanel';
 
 /** Back / Next under the step panel, and the way to an earlier step this one still needs. */
 export function StepFooter() {
@@ -12,7 +13,7 @@ export function StepFooter() {
   const kind = useDesignStore((s) => unitKind(s.doc.setup, s.activeFdi));
   const { setActiveStep } = useDesignStore.getState();
   const implant = useImplantLabels();
-  const labelOf = (id: StepId) => stepLabel(id, implant);
+  const labelOf = (id: StepId) => stepLabelFor(useDesignStore.getState().doc.setup, useDesignStore.getState().activeFdi, id, stepLabel(id, implant));
   const steps = stepsFor(kind);
   const { prev, next } = neighbours(step, steps);
   const missing = missingBefore(step, statuses, steps);

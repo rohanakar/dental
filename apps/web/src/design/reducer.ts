@@ -13,7 +13,8 @@ import {
   downstreamSteps,
   jawOf,
   MATERIAL_PRESETS,
-  minConnectorAreaMm2,
+  connectionMinAreaMm2,
+  MARYLAND_CONNECTOR_MIN_AREA_MM2,
   normalizeConnections,
   pairKey,
   RESTORATION_ROLE,
@@ -104,6 +105,15 @@ function changeKind(tooth: ToothDesign, kind: UnitKind): ToothDesign {
 }
 
 /**
+ * An abutment switched between a crown and a Maryland wing: a prep margin is not a wing outline (nor the other way
+ * round), so the margin and everything after it is redone, and the crown (or the wing's placeholder) goes.
+ */
+function changeRetainer(tooth: ToothDesign): ToothDesign {
+  const { crown: _crown, ...rest } = tooth;
+  return { ...rest, steps: { ...markStaleFrom(tooth.steps, 'margin'), proposal: 'pending', adapt: 'pending' } };
+}
+
+/**
  * The unit's connected sides changed: a side with a connector has no contact, so its adaptation target goes, and the
  * adaptation is stale (connector and contact geometry changed).
  */
@@ -188,7 +198,11 @@ function setCaseSetup(doc: DesignDocument, cmd: CommandOf<'setCaseSetup'>): Desi
   const setup = { ...cmd.setup, connections };
   const { errors } = validateBridges(setup);
   if (errors.length) throw new CommandError(`Invalid bridge setup: ${errors.map((e) => e.message).join('; ')}`);
-  const bridges = deriveBridges(setup, doc.bridges);
+  // A tooth that switched between a crown and a Maryland wing gets its connectors at the new minimum.
+  const isWingIn = (s: DesignDocument['setup'], fdi: number) => s.teeth.find((t) => t.fdi === fdi)?.restoration === 'maryland-wing';
+  const switched = (fdi: number) => doc.setup.teeth.some((t) => t.fdi === fdi) && isWingIn(doc.setup, fdi) !== isWingIn(setup, fdi);
+  const kept = doc.bridges.map((b) => ({ ...b, connectors: b.connectors.filter((c) => !c.between.some(switched)) }));
+  const bridges = deriveBridges(setup, kept);
   const axisStale = abutmentsWithNewAxisSet(doc, setup, bridges);
   const teeth = setup.teeth.map((order) => {
     const existing = doc.teeth.find((t) => t.fdi === order.fdi);
@@ -200,6 +214,7 @@ function setCaseSetup(doc: DesignDocument, cmd: CommandOf<'setCaseSetup'>): Desi
     }
     const kind = RESTORATION_ROLE[order.restoration].role;
     if (before && RESTORATION_ROLE[before.restoration].role !== kind) tooth = changeKind(tooth, kind);
+    else if (before && (before.restoration === 'maryland-wing') !== (order.restoration === 'maryland-wing')) tooth = changeRetainer(tooth);
     if (before) tooth = switchSupport(tooth, before.restoration, order.restoration);
     tooth = syncEngaging(tooth, bridges.some((b) => b.teeth.includes(order.fdi)));
     if (axisStale.has(order.fdi)) tooth = { ...tooth, steps: markStaleFrom(tooth.steps, 'axis') };
@@ -218,9 +233,10 @@ function setConnector(doc: DesignDocument, cmd: CommandOf<'setConnector'>): Desi
   const i = doc.bridges.findIndex((br) => br.connectors.some((c) => pairKey(c.between) === key));
   if (i < 0) throw new CommandError(`${cmd.type}: ${a} and ${b} are not connected`);
   const material = doc.setup.teeth.find((t) => t.fdi === a)!.material;
-  const min = minConnectorAreaMm2(material, a, b);
+  const min = connectionMinAreaMm2(doc.setup.teeth, a, b);
   if (cmd.areaMm2 !== undefined && cmd.areaMm2 < min) {
-    throw new CommandError(`${cmd.type}: ${cmd.areaMm2} mm² is below the ${material} minimum of ${min} mm² for ${a}–${b}`);
+    const which = min === MARYLAND_CONNECTOR_MIN_AREA_MM2 ? 'Maryland' : material;
+    throw new CommandError(`${cmd.type}: ${cmd.areaMm2} mm² is below the ${which} minimum of ${min} mm² for ${a}–${b}`);
   }
   const bridges = doc.bridges.slice();
   const bridge = bridges[i]!;

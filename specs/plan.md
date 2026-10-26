@@ -267,3 +267,12 @@ See [2026-10-25-implant-bridges.md](2026-10-25-implant-bridges.md).
 - 107 tests.
 
 See [2026-10-26-anterior-margin-and-export-all.md](2026-10-26-anterior-margin-and-export-all.md).
+
+**2026-10-26: Maryland (resin-bonded) bridges.** Wing retainers on lingual or palatal enamel.
+- The wing outline is traced with the live-wire; the wing is 0.7 mm thick with feathered edges and an antagonist space
+  check.
+- Connectors to wings are at least 3 × 2 mm and are checked for clearance from the tooth along the insertion path.
+- Single-wing cantilever or two-wing designs, included in Export all.
+- The bridge auto-design E2E is now immune to a view-change race.
+
+108 tests. See [2026-10-25-maryland-bridges.md](2026-10-25-maryland-bridges.md).

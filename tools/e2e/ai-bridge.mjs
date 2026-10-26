@@ -45,7 +45,24 @@ const settle = async () => {
     await page.waitForTimeout(250);
   }
 };
+/**
+ * Click a world point once the view shows it. settle() can return before a view key's animation has rendered its
+ * first frame (two equal camera samples 250 ms apart while the renderer is still busy), and a click in the previous
+ * view lands on whatever hides the point: for 35 from buccal, the buccal wall 6 mm off the prep top, which gives a
+ * wrong frame. So wait until the surface under the point's projection is the point itself.
+ */
 const clickWorld = async (p) => {
+  for (let i = 0; i < 40; i++) {
+    const miss = await page.evaluate((q) => {
+      const v = window.__dcad.viewer;
+      const s = v.project(q);
+      const hit = s && v.raycast(s.x, s.y);
+      return hit ? Math.hypot(hit.point.x - q[0], hit.point.y - q[1], hit.point.z - q[2]) : Infinity;
+    }, p);
+    if (miss < 0.3) break;
+    await page.waitForTimeout(250);
+    await settle();
+  }
   const s = await page.evaluate((q) => window.__dcad.viewer.project(q), p);
   await page.mouse.click(s.x, s.y);
 };

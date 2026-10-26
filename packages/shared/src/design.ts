@@ -6,7 +6,7 @@ import {
   Fdi,
   FdiPair,
   facingSide,
-  minConnectorAreaMm2,
+  connectionMinAreaMm2,
   normalizeConnections,
   pairKey,
   type ProximalSide,
@@ -213,14 +213,13 @@ export type DesignDocument = z.infer<typeof DesignDocument>;
  */
 export function deriveBridges(setup: Pick<CaseSetup, 'teeth' | 'connections'>, previous: readonly BridgeDesign[] = []): BridgeDesign[] {
   const kept = new Map(previous.flatMap((b) => b.connectors).map((c) => [pairKey(c.between), c] as const));
-  const material = new Map(setup.teeth.map((t) => [t.fdi, t.material] as const));
   const connections = normalizeConnections(setup.connections);
   return bridgesOf(setup).map((teeth) => {
     const connectors = connections
       .filter(([a, b]) => a !== b && teeth.includes(a) && teeth.includes(b))
       .map((between): ConnectorDesign => {
         const [a, b] = between;
-        const min = Math.max(minConnectorAreaMm2(material.get(a)!, a, b), minConnectorAreaMm2(material.get(b)!, a, b));
+        const min = connectionMinAreaMm2(setup.teeth, a, b);
         const old = kept.get(pairKey(between));
         if (!old) return { between, areaMm2: min, buccalMm: 0, occlusalMm: 0 };
         return old.areaMm2 >= min ? old : { ...old, areaMm2: min };

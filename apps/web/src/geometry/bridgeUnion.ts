@@ -1,3 +1,4 @@
+import type { QaCheck } from '@dcad/shared';
 import type { BridgeConnectorResult, BridgeUnitInput, BridgeUnitResult } from './bridge';
 import { measureConnector, type ConnectorFailure, type ConnectorMeasure } from './connectors';
 import type { CrownInput } from './crown';
@@ -7,6 +8,7 @@ import { meshTopology, validateClosedMesh } from './meshValidate';
 import type { V3 } from './pca';
 import { bvhRayCaster, createBvh } from './raycast';
 import { countSelfIntersections } from './selfIntersect';
+import { wingChecks, wingGapCheck } from './wingUnit';
 import { implantSeatingCheck } from './implantBridge';
 
 /**
@@ -83,11 +85,20 @@ export interface PonticBaseCheck {
   ok: boolean;
 }
 
+/** A Maryland wing's own checks (wingChecks: outline and surface undercut, thickness, space). */
+export interface WingCheck {
+  fdi: number;
+  checks: QaCheck[];
+  ok: boolean;
+}
+
 export interface BridgeChecks {
   union: BridgeUnionCheck;
   connectors: ConnectorCheck[];
   seating: SeatingCheck[];
   ponticBase: PonticBaseCheck[];
+  /** Maryland wings (absent in bridges without wings). */
+  wings?: WingCheck[];
   /** One line per failed check. */
   failures: string[];
   ok: boolean;
@@ -165,16 +176,18 @@ export function checkBridgeUnion(input: {
       if (s) (s.ok ? seating : (failures.push(s.failure), seating)).push(s.check);
     }
     if (result.kind === 'abutment' && u.region) {
-      const distance = distanceFromMargin(jaw.positions, jaw.graph, u.region.vertexMask, u.region.loopVertices);
-      const onUnion = measureIntaglioGap({
-        positions: jaw.positions,
-        normals: jaw.smoothNormals,
-        vertexMask: u.region.vertexMask,
-        distance,
-        axis,
-        params: u.params,
-        intaglio: unionRay,
-      });
+      // A wing's seating is its uniform cement gap along the tooth normals (wingGapCheck), a crown's the intaglio gap.
+      const onUnion = design.wing
+        ? wingGapCheck({ jaw, region: u.region, gapMm: design.wing.params.cementGapMm, surface: unionRay })
+        : measureIntaglioGap({
+            positions: jaw.positions,
+            normals: jaw.smoothNormals,
+            vertexMask: u.region.vertexMask,
+            distance: distanceFromMargin(jaw.positions, jaw.graph, u.region.vertexMask, u.region.loopVertices),
+            axis,
+            params: u.params,
+            intaglio: unionRay,
+          });
       const deltaMeanMm = Math.abs(onUnion.meanErrorMm - design.gapCheck.meanErrorMm);
       const deltaMaxMm = Math.abs(onUnion.maxErrorMm - design.gapCheck.maxErrorMm);
       const ok =
@@ -220,12 +233,22 @@ export function checkBridgeUnion(input: {
     }
   }
 
+  const wings: WingCheck[] = [];
+  for (const { result } of input.units) {
+    const wing = result.design.wing;
+    if (!wing) continue;
+    const checks = wingChecks(result.fdi, wing);
+    for (const c of checks) if (!c.passed) failures.push(`${c.message}${c.value !== undefined ? `: ${c.value}` : ''}.`);
+    wings.push({ fdi: result.fdi, checks, ok: checks.every((c) => c.passed) });
+  }
+
   return {
     union: solid,
     connectors,
     seating,
     ponticBase,
+    ...(wings.length ? { wings } : {}),
     failures,
-    ok: solid.ok && connectors.every((c) => c.ok) && seating.every((s) => s.ok) && ponticBase.every((p) => p.ok),
+    ok: solid.ok && connectors.every((c) => c.ok) && seating.every((s) => s.ok) && ponticBase.every((p) => p.ok) && wings.every((w) => w.ok),
   };
 }

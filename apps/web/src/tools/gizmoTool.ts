@@ -5,6 +5,7 @@ import { useDesignStore } from '../design/store';
 import type { Viewer } from '../engine/Viewer';
 import { crownTool } from './crownTool';
 import { userEdit } from './nudge';
+import { isWing } from './wing';
 
 /** Schema limit for one moveCrown command. */
 const MAX_STEP_MM = 2;
@@ -88,7 +89,8 @@ class GizmoTool {
     const tooth = doc.teeth.find((t) => t.fdi === activeFdi);
     const frame = tooth?.frame;
     const crown = tooth?.crown;
-    const on = enabled && useGizmoStore.getState().enabled && Boolean(frame) && crown?.kind === 'template';
+    // A Maryland wing follows its outline: it has no pose to move.
+    const on = enabled && useGizmoStore.getState().enabled && Boolean(frame) && crown?.kind === 'template' && !isWing(doc.setup, activeFdi);
     const key = on ? [frame, crown, activeFdi, crownTool.current()] : [];
     if (key.length === this.shown.length && key.every((x, i) => x === this.shown[i])) return;
     this.shown = key;

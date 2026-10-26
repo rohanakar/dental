@@ -5,7 +5,7 @@ import { minConnectorAreaMm2 } from '@dcad/shared';
 import { afterAll, describe, expect, it } from 'vitest';
 import { runBridgeCase } from './bridgePipeline';
 import { writeSyntheticFrameworkCase } from './frameworkGolden';
-import { writeSyntheticBridgeCase, writeSyntheticCase } from './golden';
+import { writeSyntheticBridgeCase, writeSyntheticCase, writeSyntheticMarylandCase } from './golden';
 import { runCase } from './pipeline';
 import { writeSyntheticImplantCase } from './implantGolden';
 import { runImplantBridgeCase } from './implantPipeline';
@@ -68,6 +68,37 @@ describe('pipeline runner', () => {
       expect(toward).toBeGreaterThan(0.5);
     }
     expect(bridgeStl.byteLength).toBe(84 + 50 * metrics.union!.triangles);
+  });
+
+  // Maryland 11w–[12]: a single-retainer cantilever on a wing bonded to 11's palatal surface (wings are the point).
+  it('passes every check on the synthetic Maryland bridge, and fails a connector that clashes with the tooth', async () => {
+    const caseDir = join(dir, 'maryland');
+    const spec = writeSyntheticMarylandCase(caseDir, { along: 600, across: 160 });
+    const { metrics, bridgeStl } = await runBridgeCase(spec, caseDir);
+    expect(metrics.checks.filter((c) => !c.passed)).toEqual([]);
+    expect(metrics.union).toMatchObject({ closed: true, printable: true, selfIntersections: 0, components: 1, genus: 0 });
+    // The wing: 0.7 ± 0.02 mm beyond the edge ramp (so never below 0.5 there), on a 0.03 ± 0.01 mm fitting gap, with
+    // room against the antagonist in the default synthetic occlusion.
+    const [wing] = metrics.wings!;
+    expect(wing!.thickness.samples).toBeGreaterThan(0);
+    expect(Math.abs(wing!.thickness.minMm - 0.7)).toBeLessThanOrEqual(0.02);
+    expect(Math.abs(wing!.thickness.maxMm - 0.7)).toBeLessThanOrEqual(0.02);
+    expect(Math.abs(wing!.fit.meanMm - 0.03)).toBeLessThanOrEqual(0.01);
+    expect(wing!.fit.maxErrorMm).toBeLessThanOrEqual(0.01);
+    expect(wing!.space?.conflict).toBeUndefined();
+    expect(wing!.area.bondedMm2).toBeGreaterThan(0);
+    // The connector: at least 3 mm high and 2 mm wide on the union, sunk at most 0.5 mm (wing thickness − 0.2) without
+    // reaching the fitting surface, and clear of the tooth.
+    const [c] = metrics.connectors;
+    expect(c!.measured!.heightMm).toBeGreaterThanOrEqual(3);
+    expect(c!.measured!.widthMm).toBeGreaterThanOrEqual(2);
+    expect(c!.designed.sinkMm[0]).toBeLessThanOrEqual(0.5 + 1e-9);
+    expect(c!.designed.fitClearanceMm[0]).toBeGreaterThan(0);
+    expect(c!.designed.toothClearance!.clashSamples).toBe(0);
+    expect(bridgeStl.byteLength).toBe(84 + 50 * metrics.union!.triangles);
+    // Moved 1 mm buccally, past the wing onto the tooth: a tooth clash.
+    const moved = await runBridgeCase(spec, caseDir, { connectors: { '11-12': { buccalMm: 1 } } });
+    expect(moved.metrics.checks.find((x) => x.id === 'connector.toothClearance.11-12')?.passed).toBe(false);
   });
 
   // The framework variant of 35–[36]–37: reduced crowns and a reduced pontic in CoCr, cut back 1.0 mm, with overpress.

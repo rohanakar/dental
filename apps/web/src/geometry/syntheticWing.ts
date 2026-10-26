@@ -9,8 +9,9 @@ import { PREP_MARGIN_R, syntheticPrepMargin, syntheticPrepSeed, syntheticTooth }
  *
  * The outline is a crescent on the lingual (palatal) half of the tooth's
  * superellipse footprint: the cervical border runs at footprint radius
- * `cervicalR`, the incisal/occlusal border at about 0.4–0.75, and the end
- * facing the pontic wraps onto that proximal surface. Footprint points are
+ * `cervicalR`, the incisal/occlusal border at about 0.4–0.65, and the end
+ * facing the pontic wraps onto the lingual half of that proximal surface,
+ * where the connector attaches. Footprint points are
  * mapped to xy from the tooth's analytic margin ring (syntheticPrepMargin,
  * which gives the footprint axes at any tooth) and dropped onto the scan
  * surface with a ray along −occlusal, so the anchors lie on the mesh they
@@ -29,17 +30,32 @@ export interface SyntheticWingOutline {
 
 /**
  * Outline in footprint polar coordinates (angle φ, radius r), for an outline
- * extending distally. φ = 3π/2 is the lingual midpoint and φ → 2π the distal
- * surface; r = 1 is where the tooth meets the gum. Cervical border first,
- * then the incisal border back.
+ * extending distally. φ = 3π/2 is the lingual midpoint and φ = 2π the distal
+ * surface's middle; r = 1 is where the tooth meets the gum. The lingual
+ * cervical border (at cervicalR) first, then the proximal wrap, then the
+ * incisal border back.
  */
-const CERVICAL_PHI = [3.75, 4.05, 4.4, 4.71, 5.0, 5.35, 5.7, 6.05];
+const CERVICAL_PHI = [3.95, 4.2, 4.45, 4.71, 5.0, 5.35];
+/**
+ * The proximal wrap onto the surface facing the pontic, where the connector
+ * attaches: across the lingual half of the proximal surface to its middle,
+ * and up to the incisal third.
+ */
+const PROXIMAL: Array<[number, number]> = [
+  [5.6, 0.88],
+  [5.9, 0.9],
+  [6.15, 0.9],
+  [6.29, 0.9],
+  [6.29, 0.75],
+  [6.29, 0.6],
+];
 const INCISAL: Array<[number, number]> = [
-  [6.05, 0.75],
+  [6.05, 0.55],
   [5.6, 0.5],
   [5.0, 0.4],
   [4.4, 0.42],
-  [3.8, 0.65],
+  [4.0, 0.52],
+  [3.85, 0.7],
 ];
 const SEED: [number, number] = [3 * Math.PI / 2 + 0.3, 0.65];
 
@@ -61,8 +77,9 @@ export function syntheticWingOutline(input: {
   toward: 'mesial' | 'distal';
   along?: number;
   /**
-   * Footprint radius of the cervical border (default 0.9; 1 = the gum line). The synthetic dome turns vertical
-   * toward r = 1, where the grid's triangles grow to millimetres tall; above ~0.92 the outline lands in that band.
+   * Footprint radius of the lingual cervical border (default 0.9; 1 = the gum line). The synthetic dome turns
+   * vertical toward r = 1, where the grid's triangles grow to millimetres tall; above ~0.92 a long border lands in
+   * that band (and near r = 1 a wing would reach the concave junction with the gum).
    */
   cervicalR?: number;
 }): SyntheticWingOutline {
@@ -87,7 +104,7 @@ export function syntheticWingOutline(input: {
     if (!hit) throw new Error(`Tooth ${input.fdi}: no surface under the wing outline point (φ ${phi.toFixed(2)}, r ${r})`);
     return hit.point;
   };
-  const rc = input.cervicalR ?? 0.9;
-  const anchors: V3[] = [...CERVICAL_PHI.map((phi) => onSurface(phi, rc)), ...INCISAL.map(([phi, r]) => onSurface(phi, r))];
+  const rc = input.cervicalR ?? 0.86;
+  const anchors: V3[] = [...CERVICAL_PHI.map((phi) => onSurface(phi, rc)), ...[...PROXIMAL, ...INCISAL].map(([phi, r]) => onSurface(phi, r))];
   return { fdi: input.fdi, jaw: tooth.jaw, occlusal, anchors, seed: onSurface(SEED[0], SEED[1]) };
 }

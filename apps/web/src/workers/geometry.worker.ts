@@ -17,6 +17,7 @@ import {
 import type { V3 } from '../geometry/pca';
 import { writePly } from '../geometry/ply';
 import { prepRegion, prepSeedVertex, type PrepRegion } from '../geometry/prepRegion';
+import { wingRegion } from '../geometry/wingUnit';
 import { processScan } from '../geometry/processScan';
 import { bvhRayCaster, type RayCaster } from '../geometry/raycast';
 import { analyzeSurface, smoothVertexNormals, type SurfaceAnalysis } from '../geometry/surface';
@@ -73,8 +74,17 @@ function marginKey(points: Float32Array): string {
   return `${points.length}:${h}`;
 }
 
-/** Prep region inside a (dense) margin: snap to vertices, close the chain, flood fill from the prep top. */
-function regionFor(scan: RetainedScan, margin: Float32Array, occlusal: V3): PrepRegion & { loopVertices: Uint32Array } {
+/**
+ * Prep region inside a (dense) margin: snap to vertices, close the chain, flood fill from the prep top. A Maryland
+ * wing's outline is flood-filled from a seed inside it instead (wingRegion).
+ */
+function regionFor(scan: RetainedScan, margin: Float32Array, occlusal: V3, seed?: V3): PrepRegion & { loopVertices: Uint32Array } {
+  if (seed) {
+    const key = `wing-region:${marginKey(margin)}:${seed.map((x) => x.toFixed(4)).join(',')}`;
+    return registry.cached(scan, key, () =>
+      wingRegion({ positions: scan.positions, indices: scan.indices, graph: surfaceOf(scan).graph, weight: weightOf(scan), ray: rayOf(scan), outline: margin, seed }),
+    );
+  }
   return registry.cached(scan, `region:${marginKey(margin)}:${occlusal.map((x) => x.toFixed(4)).join(',')}`, () => {
     const ray = rayOf(scan);
     const { graph } = surfaceOf(scan);
@@ -238,7 +248,7 @@ const api = {
     const t0 = performance.now();
     const scan = registry.get(request.jawSha);
     const ray = rayOf(scan);
-    const region = regionFor(scan, request.margin, request.occlusal);
+    const region = regionFor(scan, request.margin, request.occlusal, request.seed);
     const base = { positions: scan.positions, indices: scan.indices, faceMask: region.faceMask };
     let direction: V3;
     let undercutAreaMm2: number;
@@ -309,7 +319,7 @@ const api = {
 
   /** Face ids (BVH order) of the prep region inside the margin, for the focus view. */
   focusFaces(request: FocusFacesRequest): Uint32Array {
-    const { faceMask, faceCount } = regionFor(registry.get(request.jawSha), request.margin, request.occlusal);
+    const { faceMask, faceCount } = regionFor(registry.get(request.jawSha), request.margin, request.occlusal, request.seed);
     const ids = new Uint32Array(faceCount);
     for (let f = 0, k = 0; f < faceMask.length; f++) if (faceMask[f]) ids[k++] = f;
     return Comlink.transfer(ids, [ids.buffer as ArrayBuffer]);
@@ -319,7 +329,7 @@ const api = {
   bridgeAxis(request: BridgeAxisRequest): BridgeAxisResult {
     const t0 = performance.now();
     const scan = registry.get(request.jawSha);
-    const regions = request.abutments.map((a) => regionFor(scan, a.margin, a.occlusal));
+    const regions = request.abutments.map((a) => regionFor(scan, a.margin, a.occlusal, a.seed));
     const abutments = request.abutments.map((a, i) => ({ fdi: a.fdi, faceMask: regions[i]!.faceMask, margin: a.margin, occlusal: a.occlusal }));
     const found = searchCommonAxis({ positions: scan.positions, indices: scan.indices, ray: rayOf(scan), abutments, coneDeg: request.coneDeg });
     // A margin that does not close on the surface lets its prep region leak onto the neighbours: the axis is then
@@ -383,8 +393,8 @@ const api = {
       if (u.kind === 'pontic') return u;
       if (implant) return { ...u, implant: implants.unitOf(implant) };
       if (!u.frame || !u.margin) throw new Error(`Abutment ${u.fdi} needs a frame and a margin`);
-      const region = regionFor(scan, u.margin, u.frame.occlusal);
-      if (!region.closed) throw new Error(`Abutment ${u.fdi}: the prep region is not closed by the margin; fix the margin first`);
+      const region = regionFor(scan, u.margin, u.frame.occlusal, u.wing ? u.frame.origin : undefined);
+      if (!region.closed) throw new Error(`Abutment ${u.fdi}: the ${u.wing ? 'wing outline does not close a region' : 'prep region is not closed by the margin'}; fix the ${u.wing ? 'outline' : 'margin'} first`);
       return { ...u, region };
     });
     const design = designBridge({

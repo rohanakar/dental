@@ -19,6 +19,7 @@ import { MARGIN_COLOR, marginTool } from './marginTool';
 import { implantTool, isImplantTooth } from './implantTool';
 import { MARGIN_VIEW_DISTANCE_MM, marginView } from './marginView';
 import { useToolStore } from './toolStore';
+import { isWing } from './wing';
 
 export const FRAME_COLORS = { occlusal: '#4c8dff', mesial: '#2fbf71', buccal: '#f0a030', distal: '#a970ff' } as const;
 const AXIS_COLOR = '#b07cff';
@@ -294,7 +295,8 @@ class DesignTools {
       o.remove('margin:anchors');
     }
     // Where the margin doubles back (the crown would fold there): marked while it can be fixed (MarginIssues.tsx).
-    const kinks = margin && step === 'margin' && tooth ? marginProblems(margin.points.map((m) => m.p), { fdi: tooth.fdi, frame: tooth.frame }).kinks : [];
+    // A Maryland wing's outline has corners by design: no kink markers on it.
+    const kinks = margin && step === 'margin' && tooth && !isWing(useDesignStore.getState().doc.setup, tooth.fdi) ? marginProblems(margin.points.map((m) => m.p), { fdi: tooth.fdi, frame: tooth.frame }).kinks : [];
     if (kinks.length > 0) o.setMarkers('margin:kinks', kinks.map((k) => k.point), { color: '#ffffff', outline: '#d64545', sizePx: 20 });
     else o.remove('margin:kinks');
 

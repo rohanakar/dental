@@ -9,6 +9,7 @@ import { CrownStatusView } from './CrownStatusView';
 import { FocusControls, MapSelect } from './CrownViewControls';
 import { MarginNotice } from './MarginIssues';
 import { NudgePad } from './NudgePad';
+import { isWing } from '../../tools/wing';
 import { ScrewChannelPanel } from './ImplantPanel';
 
 /** How the crown (or bridge) is shown: visibility, colour map, opacity and the focus view. */
@@ -111,7 +112,7 @@ function BridgeProposal() {
         <>
           <BridgeResultPanel />
           <CrownStatusView />
-          <NudgePad label={`Adjust ${activeFdi}, ${kind}`} />
+          {isWing(doc.setup, activeFdi) ? <p className="muted small">The wing follows its outline: change the outline or its thickness.</p> : <NudgePad label={`Adjust ${activeFdi}, ${kind}`} />}
           <ScrewChannelPanel />
           <CrownView what="bridge" />
         </>

@@ -2,6 +2,7 @@ import type { DesignDocument, Pose, ToothDesign } from '@dcad/shared';
 import type { IndexedMesh } from '../geometry/mesh';
 import type { MeshValidation } from '../geometry/meshValidate';
 import { writeBinaryStl } from '../geometry/stl';
+import type { WingUnitReport } from '../geometry/wingUnit';
 import type { ImplantResultView } from '../workers/analysisTypes';
 import { implantSidecar } from './implantExport';
 
@@ -85,6 +86,8 @@ export interface BridgeConstructionInput {
       minAxialThicknessMm?: number;
       gapCheck?: unknown;
       base?: unknown;
+      /** Maryland wings. */
+      wing?: WingUnitReport;
       /** Implant crowns: the screw channel and the Ti-base fit. */
       implant?: ImplantResultView;
     }>;
@@ -97,6 +100,8 @@ export interface BridgeConstructionInput {
       heightMm: number;
       widthMm: number;
       available: { heightMm: number };
+      /** Connectors to a Maryland wing. */
+      toothClearance?: unknown;
       failures: ReadonlyArray<{ code: string; message: string }>;
     }>;
     union?: {
@@ -105,6 +110,7 @@ export interface BridgeConstructionInput {
         connectors: ReadonlyArray<{ between: [number, number]; measured: { minAreaMm2: number; heightMm: number; widthMm: number }; ok: boolean }>;
         seating: unknown;
         ponticBase: unknown;
+        wings?: unknown;
         failures: readonly string[];
         ok: boolean;
       };
@@ -147,6 +153,8 @@ export function bridgeConstructionInfo(input: BridgeConstructionInput) {
         implant: implantSidecar(t, u.implant),
         validation: u.validation,
         metrics: { minAxialThicknessMm: u.minAxialThicknessMm, gapCheck: u.gapCheck, ...(u.base ? { ponticBase: u.base } : {}) },
+        // Maryland wings: the outline is `margin`; the wing's thickness, fit, space and bonded / blocked-out area.
+        ...(u.wing ? { wing: wingConstructionInfo(u.wing) } : {}),
       };
     }),
     connectors: result.connectors.map((c) => {
@@ -156,17 +164,29 @@ export function bridgeConstructionInfo(input: BridgeConstructionInput) {
         settings: c.settings,
         minAreaMm2: c.minAreaMm2,
         minHeightMm: c.minHeightMm,
-        designed: { areaMm2: c.areaMm2, heightMm: c.heightMm, widthMm: c.widthMm, availableHeightMm: c.available.heightMm },
+        designed: { areaMm2: c.areaMm2, heightMm: c.heightMm, widthMm: c.widthMm, availableHeightMm: c.available.heightMm, ...(c.toothClearance ? { toothClearance: c.toothClearance } : {}) },
         measured: measured ? { minAreaMm2: measured.measured.minAreaMm2, heightMm: measured.measured.heightMm, widthMm: measured.measured.widthMm, ok: measured.ok } : null,
         failures: c.failures.map((f) => f.message),
       };
     }),
     warnings: [...result.warnings],
     validation: checks
-      ? { ok: checks.ok, union: checks.union, seating: checks.seating, ponticBase: checks.ponticBase, failures: [...checks.failures] }
+      ? { ok: checks.ok, union: checks.union, seating: checks.seating, ponticBase: checks.ponticBase, ...(checks.wings ? { wings: checks.wings } : {}), failures: [...checks.failures] }
       : null,
     /** Length unit of every value (`units` lists the bridge's units). */
     lengthUnit: 'mm' as const,
+  };
+}
+
+/** The sidecar fields of a Maryland wing (plain numbers; the space report without its adaptation internals). */
+function wingConstructionInfo(w: WingUnitReport) {
+  return {
+    params: w.params,
+    thicknessMm: { min: w.thickness.minMm, max: w.thickness.maxMm, mean: w.thickness.meanMm, edgeMin: w.thickness.rampMinMm },
+    fit: w.fit,
+    area: w.area,
+    blockout: w.blockout,
+    space: w.space ? { targetMm: w.space.targetMm, minClearanceMm: w.space.minClearanceMm, thinnedMm: w.space.thinning?.maxMm ?? 0, conflict: w.space.conflict ?? null } : null,
   };
 }
 

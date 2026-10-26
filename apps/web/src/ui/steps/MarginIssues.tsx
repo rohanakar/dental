@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { useDesignStore } from '../../design/store';
 import { marginProblems, type MarginProblems } from '../../tools/marginCheck';
 import './MarginIssues.css';
+import { isWing } from '../../tools/wing';
 
 /** The problems of a tooth's closed margin (null when it has none, or no margin). */
 function problemsOf(tooth: ToothDesign | undefined): MarginProblems | null {
@@ -15,7 +16,9 @@ function problemsOf(tooth: ToothDesign | undefined): MarginProblems | null {
 }
 
 /** The problems of the margin of `fdi` in a document (null when it has none, or no margin). */
-export const marginProblemsOf = (doc: DesignDocument, fdi: number): MarginProblems | null => problemsOf(doc.teeth.find((t) => t.fdi === fdi));
+export const marginProblemsOf = (doc: DesignDocument, fdi: number): MarginProblems | null =>
+  // A Maryland wing's outline has corners by design: its Finalize row checks it instead (WingPanel).
+  isWing(doc.setup, fdi) ? null : problemsOf(doc.teeth.find((t) => t.fdi === fdi));
 
 /** One line per problem, with its value and the limit. */
 function problemLines(p: MarginProblems): string[] {
@@ -32,8 +35,9 @@ function problemLines(p: MarginProblems): string[] {
  */
 export function MarginWarning({ fdi }: { fdi: number }) {
   const tooth = useDesignStore((s) => s.doc.teeth.find((t) => t.fdi === fdi));
+  const wing = useDesignStore((s) => isWing(s.doc.setup, fdi));
   const problems = useMemo(() => problemsOf(tooth), [tooth]);
-  if (!problems) return null;
+  if (!problems || wing) return null;
   return (
     <div className="warning margin-problems" role="status">
       <strong>The crown would fold at this margin.</strong>

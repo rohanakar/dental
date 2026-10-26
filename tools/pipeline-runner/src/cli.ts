@@ -5,11 +5,11 @@
  *
  * --synthetic first writes the synthetic cases (no patient data) into
  * data/golden: synthetic-36, the bridges synthetic-bridge-35-37 and
- * synthetic-bridge-12-22, the implant bridge synthetic-implant-bridge-35-37 and
- * the CoCr framework variant synthetic-framework-35-37. Each case writes
- * <out>/<id>/metrics.json and crown.stl (a bridge case: bridge.stl; a
- * framework bridge: framework.stl and overpress-<fdi>.stl). --auto also runs
- * every case with the
+ * synthetic-bridge-12-22, the implant bridge synthetic-implant-bridge-35-37,
+ * the CoCr framework variant synthetic-framework-35-37 and the Maryland bridge
+ * synthetic-maryland-11-12. Each case writes <out>/<id>/metrics.json and
+ * crown.stl (a bridge case: bridge.stl; a framework bridge: framework.stl and
+ * overpress-<fdi>.stl). --auto also runs every case with the
  * automatic margin (classical.margin-ridge) instead of the scripted anchors,
  * writing <out>/<id>-auto/. Exits 1 if any check fails or a case errors.
  */
@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { runBridgeCase } from './bridgePipeline';
 import { SYNTHETIC_FRAMEWORK_ID, writeSyntheticFrameworkCase } from './frameworkGolden';
-import { GoldenCase, SYNTHETIC_BRIDGES, writeSyntheticBridgeCase, writeSyntheticCase, type SyntheticBridgeKind } from './golden';
+import { GoldenCase, SYNTHETIC_BRIDGES, SYNTHETIC_MARYLAND, writeSyntheticBridgeCase, writeSyntheticCase, writeSyntheticMarylandCase, type SyntheticBridgeKind } from './golden';
 import { runCase } from './pipeline';
 import { GoldenImplantCase, SYNTHETIC_IMPLANT_BRIDGE, writeSyntheticImplantCase } from './implantGolden';
 import { runImplantBridgeCase } from './implantPipeline';
@@ -56,6 +56,10 @@ if (values.synthetic) {
   const t3 = performance.now();
   writeSyntheticFrameworkCase(frameworkDir);
   console.log(`wrote ${frameworkDir} (${Math.round(performance.now() - t3)} ms)`);
+  const marylandDir = join(casesDir, SYNTHETIC_MARYLAND.id);
+  const t4 = performance.now();
+  writeSyntheticMarylandCase(marylandDir);
+  console.log(`wrote ${marylandDir} (${Math.round(performance.now() - t4)} ms)`);
 }
 
 if (!existsSync(casesDir)) {

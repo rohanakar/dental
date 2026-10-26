@@ -29,6 +29,10 @@ These scripts drive the real web app in headless Chrome (Playwright, `channel: '
   from the old view flagged in the Margin step (warning and kink marker) and in Crown proposal, "Fix the margin";
   crowns and the bridge; Finalize → Export all, with the zip unzipped in Node (each STL a closed solid, the manifest).
   Screenshots go to `out/e2e/anterior/` (`E2E_OUT`). Exits non-zero on a failed check.
+- `maryland.mjs` (offline): the Maryland bridge 11w–[12] on the golden case `synthetic-maryland-11-12` (write it with
+  `pnpm --filter @dcad/pipeline-runner run --synthetic`): setup (Wing on 11), the frame click on the palatal surface,
+  the "Wing outline" live-wire, the common axis, Propose bridge, the Adapt wing panel and Check bridge, Finalize and
+  the export (one closed solid of genus 0; the sidecar carries the wing). Screenshots go to `out/e2e/maryland/`.
 
 ```bash
 pnpm dev:web                          # terminal 1 (and pnpm dev:api + Postgres for the online script)

@@ -6,6 +6,7 @@ import { analysis } from '../workers/geometryClient';
 import { isStale } from '../workers/latestWins';
 import { fromMarginPoints, toothContext, type ToothContext } from './context';
 import { useToolStore } from './toolStore';
+import { wingSeed } from './wing';
 
 /** Steps in which the crown is adjusted. */
 const FOCUS_STEPS: readonly StepId[] = ['proposal', 'adapt'];
@@ -55,7 +56,7 @@ class FocusTool {
     // A bridge keeps every abutment's prep in focus, whichever unit (a pontic too) is active.
     const bridge = tooth ? bridgeOf(doc, tooth.fdi) : undefined;
     const preps = (bridge ? bridge.teeth.flatMap((f) => doc.teeth.filter((t) => t.fdi === f)) : tooth ? [tooth] : []).flatMap((t) =>
-      t.margin && t.frame ? [{ margin: t.margin, occlusal: t.frame.occlusal }] : [],
+      t.margin && t.frame ? [{ margin: t.margin, occlusal: t.frame.occlusal, ...wingSeed(doc.setup, t.fdi, t.frame) }] : [],
     );
     const on = Boolean(focusPrep && FOCUS_STEPS.includes(activeStep) && tooth?.crown && preps.length > 0);
     // Scene objects are in the key so a re-added scan gets the look again.
@@ -99,7 +100,7 @@ class FocusTool {
   }
 
   /** The prep regions of every abutment of a bridge, fetched one after the other (the worker call is latest-wins). */
-  private async focusBridge(ctx: ToothContext, preps: Array<{ margin: MarginLine; occlusal: readonly number[] }>, key: unknown[], surroundings: number): Promise<void> {
+  private async focusBridge(ctx: ToothContext, preps: Array<{ margin: MarginLine; occlusal: readonly number[]; seed?: [number, number, number] }>, key: unknown[], surroundings: number): Promise<void> {
     const v = this.viewer;
     const parts: Uint32Array[] = [];
     try {
@@ -109,7 +110,7 @@ class FocusTool {
           parts.push(hit.faces);
           continue;
         }
-        const faces = await analysis.focusFaces({ jawSha: ctx.jaw.sha256, margin: fromMarginPoints(p.margin.points), occlusal: v3(p.occlusal) });
+        const faces = await analysis.focusFaces({ jawSha: ctx.jaw.sha256, margin: fromMarginPoints(p.margin.points), occlusal: v3(p.occlusal), ...(p.seed ? { seed: p.seed } : {}) });
         this.bridgeCache.set(p.margin, { sha: ctx.jaw.sha256, occlusal: p.occlusal, faces });
         parts.push(faces);
         if (this.key !== key) return; // superseded

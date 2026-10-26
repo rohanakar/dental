@@ -37,6 +37,7 @@ export * from './bridgeUnion';
 export * from './patchRetainer';
 export * from './wing';
 export * from './syntheticWing';
+export * from './wingUnit';
 
 // Implants (screw-retained on Ti-bases): library format, synthetic library and scans, scan-body registration,
 // Ti-base fitting surface. The Node directory loader (implantLibraryNode.ts) is not exported here (node:fs).

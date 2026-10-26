@@ -52,7 +52,7 @@ export function facingSide(a: number, b: number): ProximalSide {
   return b % 10 < a % 10 ? 'mesial' : 'distal';
 }
 
-export const RestorationType = z.enum(['anatomic-crown', 'pontic', 'implant-crown', 'reduced-crown', 'reduced-pontic']);
+export const RestorationType = z.enum(['anatomic-crown', 'pontic', 'maryland-wing', 'implant-crown', 'reduced-crown', 'reduced-pontic']);
 export type RestorationType = z.infer<typeof RestorationType>;
 
 /** What a unit is in a bridge: an abutment sits on a prep (retainer), a pontic replaces a missing tooth. */
@@ -75,6 +75,8 @@ export interface RestorationRole {
 export const RESTORATION_ROLE: Record<RestorationType, RestorationRole> = {
   'anatomic-crown': { role: 'abutment', connectors: true },
   pontic: { role: 'pontic', connectors: true },
+  /** Resin-bonded (Maryland) wing on an unprepared abutment: connects to pontics and other wings only. */
+  'maryland-wing': { role: 'abutment', connectors: true, connectsTo: ['pontic', 'reduced-pontic', 'maryland-wing'] },
   /** Screw-retained on a library Ti-base: the scan-body match replaces the margin (specs/2026-10-25-implant-bridges.md). */
   'implant-crown': { role: 'abutment', connectors: true },
   'reduced-crown': { role: 'abutment', connectors: true, reduced: true },
@@ -112,6 +114,22 @@ export const BRIDGE_PRESETS: Record<Material, BridgePreset> = {
 export const minConnectorAreaMm2 = (material: Material, a: number, b: number): number =>
   BRIDGE_PRESETS[material].connectorMinAreaMm2[isPosterior(a) || isPosterior(b) ? 'posterior' : 'anterior'];
 
+/**
+ * Connectors of a Maryland wing: at least 3 mm high and 2 mm wide (Kern's zirconia RBFDP guidance, the strictest
+ * published), for every material. It replaces the material area minimum: a wing's connector sits lingual of the
+ * contact area, where a 3 × 3 mm section does not fit, so it may be narrower than high.
+ */
+export const MARYLAND_CONNECTOR = { minHeightMm: 3, minWidthMm: 2 } as const;
+/** The Maryland minimum as an area: the ellipse of 3 × 2 mm (π/4 · 6 = 4.712), rounded up to 0.01 mm². */
+export const MARYLAND_CONNECTOR_MIN_AREA_MM2 = Math.ceil(((Math.PI / 4) * MARYLAND_CONNECTOR.minHeightMm * MARYLAND_CONNECTOR.minWidthMm) * 100) / 100;
+
+/** The minimum connector area between two teeth of a setup: the Maryland minimum next to a wing, else the material's. */
+export function connectionMinAreaMm2(teeth: ReadonlyArray<{ fdi: number; restoration: RestorationType; material: Material }>, a: number, b: number): number {
+  const ta = teeth.find((t) => t.fdi === a), tb = teeth.find((t) => t.fdi === b);
+  if (ta?.restoration === 'maryland-wing' || tb?.restoration === 'maryland-wing') return MARYLAND_CONNECTOR_MIN_AREA_MM2;
+  return Math.max(0, ...[ta, tb].filter((t) => t !== undefined).map((t) => minConnectorAreaMm2(t.material, a, b)));
+}
+
 export const DesignParams = z.object({
   /** Cement gap applied beyond the margin ramp. */
   cementGapMm: z.number().min(0).max(0.3),
@@ -131,6 +149,10 @@ export const DesignParams = z.object({
   proximalContactMm: z.number().min(-0.2).max(0.5),
   /** Pontics only: gap between the pontic base and the ridge (0 = passive contact, negative = pressure). */
   ponticRidgeGapMm: z.number().min(-0.3).max(3).default(0),
+  /** Maryland wings only: wing thickness (default 0.7 mm; it is never thinned below 0.5 mm). */
+  wingThicknessMm: z.number().min(0.5).max(1.5).optional(),
+  /** Maryland wings only: thickness at the outline, rising to the wing thickness within 1 mm (default 0.2 mm). */
+  wingEdgeThicknessMm: z.number().min(0.05).max(0.5).optional(),
   /** Implant crowns only: bonding gap to the Ti-base; omitted = the library's. */
   tiBaseGapMm: z.number().min(0).max(0.2).optional(),
   /** Implant crowns only: minimum material around the screw channel; omitted = 0.8 mm. */
@@ -345,6 +367,10 @@ export function validateBridges(setup: Pick<CaseSetup, 'teeth' | 'connections'>)
   for (const t of setup.teeth) {
     if (RESTORATION_ROLE[t.restoration].role === 'pontic' && !connected.has(t.fdi)) {
       errors.push({ code: 'unconnected-pontic', message: `Pontic ${t.fdi} is not connected to a neighbour`, teeth: [t.fdi] });
+    }
+    // Lithium disilicate wings are indicated for anterior teeth only.
+    if (t.restoration === 'maryland-wing' && t.material === 'lithium-disilicate' && isPosterior(t.fdi)) {
+      warnings.push({ code: 'indication-position', message: `${MATERIAL_LABEL[t.material]} Maryland wings are indicated for anterior teeth; ${t.fdi} is posterior`, teeth: [t.fdi] });
     }
   }
 

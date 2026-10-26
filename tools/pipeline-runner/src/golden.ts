@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Cutback, Fdi, FdiPair, jawOf, Material, RestorationType, Vec3 } from '@dcad/shared';
-import { syntheticArch, syntheticPrepMargin, syntheticPrepSeed, writeBinaryStl } from '@dcad/web/geometry';
+import { bvhRayCaster, createBvh, syntheticArch, syntheticPrepMargin, syntheticPrepSeed, syntheticWingOutline, writeBinaryStl } from '@dcad/web/geometry';
 import { z } from 'zod';
 
 /** One unit of a golden bridge. Abutments carry the scripted clicks; pontics need none (they are laid out on the arch). */
@@ -9,9 +9,9 @@ export const GoldenBridgeUnit = z.object({
   fdi: Fdi,
   /** The restoration type; its role (RESTORATION_ROLE) makes the unit an abutment or a pontic. */
   restoration: RestorationType,
-  /** Abutments: "click the prep". */
+  /** Abutments: "click the prep" (a Maryland wing: the click on the lingual surface, inside the outline). */
   seed: Vec3.optional(),
-  /** Abutments: margin anchor clicks, in order around the prep. */
+  /** Abutments: margin anchor clicks, in order around the prep (a Maryland wing: the wing outline). */
   marginAnchors: z.array(Vec3).min(3).optional(),
   /** Abutments: reference margin (closed polyline). */
   marginRing: z.array(Vec3).min(3).optional(),
@@ -173,6 +173,48 @@ export function writeSyntheticBridgeCase(dir: string, kind: SyntheticBridgeKind,
     seed: first.seed!,
     marginAnchors: first.marginAnchors!,
     bridge: { units, connections: bridge.connections },
+  };
+  writeFileSync(join(dir, 'case.json'), `${JSON.stringify(spec, null, 2)}\n`);
+  return GoldenCase.parse(spec);
+}
+
+/** The synthetic Maryland bridge: upper 11w–[12], a single-retainer cantilever with the wing on 11's palatal surface. */
+export const SYNTHETIC_MARYLAND = {
+  id: 'synthetic-maryland-11-12',
+  wing: 11,
+  pontic: 12,
+  scan: 'upper-maryland.stl',
+  antagonistScan: 'lower.stl',
+} as const;
+
+/** The jaw of the synthetic Maryland bridge: the upper arch with 12 missing and every other tooth unprepared. */
+export const syntheticMarylandScan = (options: { along?: number; across?: number } = {}) =>
+  syntheticArch({ jaw: 'upper', along: options.along ?? 1000, across: options.across ?? 500, preps: [], missing: [SYNTHETIC_MARYLAND.pontic] });
+
+/**
+ * Write the synthetic Maryland golden case (no patient data) into `dir`: the
+ * upper jaw with 12 missing, the natural lower arch as the antagonist, and
+ * case.json with the scripted wing outline on 11's palatal surface
+ * (syntheticWingOutline) and the click inside it.
+ */
+export function writeSyntheticMarylandCase(dir: string, options: { along?: number; across?: number } = {}): GoldenCase {
+  const along = options.along ?? 1000;
+  const m = SYNTHETIC_MARYLAND;
+  mkdirSync(dir, { recursive: true });
+  const jaw = syntheticMarylandScan(options);
+  writeFileSync(join(dir, m.scan), writeBinaryStl(jaw));
+  writeFileSync(join(dir, m.antagonistScan), writeBinaryStl(syntheticArch({ jaw: 'lower', along: 600, across: 250, preps: [] })));
+  const ray = bvhRayCaster(createBvh({ positions: jaw.positions, indices: jaw.indices.slice() }));
+  const outline = syntheticWingOutline({ fdi: m.wing, ray, toward: 'distal', along });
+  const wing = { fdi: m.wing, restoration: 'maryland-wing' as const, seed: outline.seed, marginAnchors: outline.anchors };
+  const spec: GoldenCaseInput = {
+    id: m.id,
+    fdi: m.wing,
+    material: 'zirconia',
+    scans: { upper: m.scan, lower: m.antagonistScan },
+    seed: wing.seed,
+    marginAnchors: wing.marginAnchors,
+    bridge: { units: [wing, { fdi: m.pontic, restoration: 'pontic' }], connections: [[m.wing, m.pontic]] },
   };
   writeFileSync(join(dir, 'case.json'), `${JSON.stringify(spec, null, 2)}\n`);
   return GoldenCase.parse(spec);

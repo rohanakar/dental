@@ -32,6 +32,8 @@ import { IMPLANT_NEEDS, implantReadiness } from './implantReadiness';
 import { isImplantTooth } from '../../tools/implantTool';
 import { MATERIAL_LABEL } from './SetupStep';
 import '../bridge.css';
+import { unitName, wingReadinessRows } from './WingPanel';
+import { isWing } from '../../tools/wing';
 
 /** The active tooth's bridge (stable reference from the document), or undefined for a single crown. */
 export const useActiveBridge = (): BridgeDesign | undefined => useDesignStore((s) => bridgeOf(s.doc, s.activeFdi));
@@ -47,7 +49,7 @@ export function connectedTo(bridge: BridgeDesign, fdi: number, side: ProximalSid
   }
   return null;
 }
-const kindLabel = (doc: DesignDocument, fdi: number) => (unitKind(doc.setup, fdi) === 'pontic' ? 'pontic' : 'crown');
+const kindLabel = (doc: DesignDocument, fdi: number) => unitName(doc.setup, fdi);
 /** A length, never printed as "-0.000". */
 const mm = (v: number, digits = 2) => `${(Math.abs(v) < 0.5 * 10 ** -digits ? 0 : v).toFixed(digits)} mm`;
 const mm2 = (v: number) => `${v.toFixed(1)} mm²`;
@@ -599,12 +601,14 @@ export function BridgeFinalize() {
       params: tooth.params,
       material: materialLabel,
       adaptationStale: adaptationStale(tooth),
-      neighbours: freeNeighbours(doc, tooth, view?.frame),
-      needs: isImplantTooth(doc, tooth.fdi) ? IMPLANT_NEEDS : readinessNeeds(kind),
+      neighbours: isWing(doc.setup, tooth.fdi) ? { mesial: false, distal: false } : freeNeighbours(doc, tooth, view?.frame),
+      // A wing's outline has its own row (wingReadinessRows): the prep margin's kink rule does not fit its corners.
+      needs: isImplantTooth(doc, tooth.fdi) ? IMPLANT_NEEDS : { ...readinessNeeds(kind), ...(isWing(doc.setup, tooth.fdi) ? { margin: false } : {}) },
     })
       .concat(isImplantTooth(doc, tooth.fdi) ? implantReadiness(tooth, view?.implant, computing) : [])
       .map((i) => ({ ...i, id: `${tooth.fdi}-${i.id}`, ...(i.id === 'axis' && !axes ? { detail: 'Measuring…' } : {}) }));
-    return { title: `${tooth.fdi} · ${kind === 'pontic' ? 'pontic' : 'crown'}`, items };
+    items.push(...wingReadinessRows(computing ? undefined : view, tooth.margin?.points));
+    return { title: `${tooth.fdi} · ${unitName(doc.setup, tooth.fdi)}`, items };
   });
 
   const checked = check.current ? check.result : null;

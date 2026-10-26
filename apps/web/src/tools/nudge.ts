@@ -4,6 +4,7 @@ import { accept as acceptAutoDesign, useOrchestrator } from '../ai/orchestrator'
 import { readaptCommands } from '../design/adaptation';
 import { useDesignStore } from '../design/store';
 import { useToolStore } from './toolStore';
+import { isWing } from './wing';
 
 /** Nudge sizes: small and Shift (large). */
 export const MOVE_MM = { small: 0.1, large: 0.5 } as const;
@@ -47,6 +48,7 @@ export function userEdit(cmds: Command | Command[]): boolean {
 /** Apply one clinical nudge to the active tooth's crown as an undoable command. */
 export function nudge(n: Nudge): void {
   const { activeFdi: fdi } = useDesignStore.getState();
+  if (isWing(useDesignStore.getState().doc.setup, fdi)) return; // a Maryland wing follows its outline: nothing to move
   const cmd: Command =
     n.kind === 'move'
       ? { type: 'moveCrown', fdi, direction: n.direction, mm: n.mm }

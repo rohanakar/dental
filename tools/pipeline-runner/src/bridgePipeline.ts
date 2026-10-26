@@ -29,8 +29,11 @@ import {
   proposeMarginAnchors,
   searchCommonAxis,
   smoothVertexNormals,
+  snapToVertex,
   writeBinaryStl,
   type BridgeUnitInput,
+  type ToothClearance,
+  type WingUnitReport,
   type ProcessedScan,
   type V3,
 } from '@dcad/web/geometry';
@@ -116,6 +119,8 @@ export interface BridgeCaseMetrics {
       /** Per end (between[0], between[1]): depth in the unit, and the signed clearance to its fitting surface. */
       sinkMm: [number, number];
       fitClearanceMm: [number, number];
+      /** Connectors to a Maryland wing: clearance to the natural tooth. */
+      toothClearance?: ToothClearance;
     };
     measured?: { minAreaMm2: number; heightMm: number; widthMm: number; at: V3 };
     failures: string[];
@@ -143,6 +148,8 @@ export interface BridgeCaseMetrics {
     deltaMaxMm: number;
   }>;
   ponticBase: Array<{ fdi: number; samples: number; minGapMm: number; meanGapMm: number; targetMm: number }>;
+  /** Maryland wings: thickness, fitting gap, space against the antagonist, bonded and blocked-out area. */
+  wings?: Array<{ fdi: number } & WingUnitReport>;
   /** Reduced units: framework, veneer space, shortfall, overpress and reassembly (frameworkPipeline.ts). */
   framework?: FrameworkMetrics;
   warnings: string[];
@@ -199,6 +206,7 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
   if (bridges.length !== 1) throw new Error(`Case ${spec.id}: expected one bridge, found ${bridges.length}`);
   const bridge = bridges[0]!;
   const kindOf = (fdi: number): UnitKind => RESTORATION_ROLE[bridgeSpec.units.find((u) => u.fdi === fdi)!.restoration].role;
+  const isWing = (fdi: number): boolean => bridgeSpec.units.find((u) => u.fdi === fdi)!.restoration === 'maryland-wing';
 
   const prepJaw = jawOf(bridge.teeth[0]!);
   const antagonistJaw = prepJaw === 'lower' ? 'upper' : 'lower';
@@ -242,7 +250,8 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
     estimates.map(({ u, marginAnchors, frame: estimate }) => {
         const aligned = archAlignedFrame({ frame: estimate, fdi: u.fdi, curve, ray });
         const frame = { ...aligned.frame, warnings: estimate.warnings };
-        const auto = options.auto ? proposeMarginAnchors({ positions, indices, ray, frame }) : null;
+        // A wing's outline is always the scripted one (the outline proposer is an AI item); its region is filled from the click.
+        const auto = options.auto && !isWing(u.fdi) ? proposeMarginAnchors({ positions, indices, ray, frame }) : null;
         const trace = marginFromAnchors({
           positions,
           indices,
@@ -251,7 +260,9 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
           ray,
           anchors: auto ? auto.anchors : marginAnchors,
         });
-        const seedVertex = prepSeedVertex({ positions, indices, ray, loopVertices: trace.loopVertices, occlusal: frame.occlusal });
+        const seedVertex = isWing(u.fdi)
+          ? snapToVertex(positions, indices, ray, u.seed!)
+          : prepSeedVertex({ positions, indices, ray, loopVertices: trace.loopVertices, occlusal: frame.occlusal });
         if (seedVertex === null) throw new Error(`Case ${spec.id}: could not find the ${u.fdi} prep top inside the margin`);
         const region = prepRegion({ positions, indices, graph: analysis.graph, loopVertices: trace.loopVertices, seedVertex });
         let meanDev: number | undefined, maxDev: number | undefined;
@@ -295,6 +306,7 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
       frame: a.frame,
       margin: a.trace.points,
       region: { ...a.region, loopVertices: a.trace.loopVertices },
+      ...(isWing(fdi) ? { wing: true } : {}),
       adapt: {
         occlusion: { clearanceMm: params.occlusalClearanceMm },
         ...(a.frame.mesialContact ? { mesial: contactTarget } : {}),
@@ -311,7 +323,7 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
       antagonist: antagonistRay,
       axis: axis.direction,
       units,
-      connectors: bridge.connectors,
+      connectors: bridge.connectors.map((c) => ({ ...c, ...options.connectors?.[`${c.between[0]}-${c.between[1]}`] })),
       material: spec.material,
       curve,
       maps: ['thickness', 'occlusion', 'proximal', 'unmillable'],
@@ -425,6 +437,21 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
   for (const p of union.checks.ponticBase) {
     check(`ponticBase.${p.fdi}`, p.ok, `Pontic ${p.fdi}: smallest base gap to the ridge, within the target −0.02/+0.05 mm (mm)`, p.minGapMm, round(p.targetMm - 0.02));
   }
+  // Maryland wings: the wing gate (outline and surface undercut, thickness ≥ the minimum, space), the target thickness
+  // beyond the edge ramp, the fitting gap, and the Maryland connector minimum (3 mm high × 2 mm wide).
+  const wings = result.units.flatMap((r) => (r.design.wing ? [{ fdi: r.fdi, ...r.design.wing }] : []));
+  for (const w of union.checks.wings ?? []) for (const c of w.checks) checks.push(c);
+  for (const w of wings) {
+    const t = w.thickness;
+    check(`wing.targetThickness.${w.fdi}`, t.samples > 0 && Math.abs(t.minMm - w.params.wingThicknessMm) <= 0.02 && Math.abs(t.maxMm - w.params.wingThicknessMm) <= 0.02, `Wing ${w.fdi}: thickness beyond the edge ramp is the wing thickness ± 0.02 (smallest, mm)`, t.minMm, w.params.wingThicknessMm);
+    check(`wing.fit.${w.fdi}`, w.fit.samples > 0 && Math.abs(w.fit.meanMm - w.params.cementGapMm) <= 0.01 && w.fit.maxErrorMm <= 0.01, `Wing ${w.fdi}: fitting gap is the cement gap ± 0.01 (largest error, mm)`, w.fit.maxErrorMm, 0.01);
+  }
+  for (const c of result.connectors) {
+    if (!c.toothClearance) continue;
+    const label = `${c.between[0]}-${c.between[1]}`;
+    check(`connector.maryland.${label}`, c.heightMm >= 3 && c.widthMm >= 2, `Connector ${label}: at least 3 mm high and 2 mm wide (Maryland minimum; height, mm)`, c.heightMm, 3);
+    check(`connector.toothClearance.${label}`, c.toothClearance.clashSamples === 0, `Connector ${label}: clear of the abutment tooth, at its place and along the insertion path (mm)`, c.toothClearance.minMm);
+  }
   const framework = await time('framework', () => frameworkChecks(result, check));
 
   const metrics: BridgeCaseMetrics = {
@@ -471,6 +498,7 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
           lengthMm: round(c.span[1] - c.span[0]),
           sinkMm: [round(c.ends[0].sinkMm), round(c.ends[1].sinkMm)] as [number, number],
           fitClearanceMm: [round(c.ends[0].fitClearanceMm), round(c.ends[1].fitClearanceMm)] as [number, number],
+          ...(c.toothClearance ? { toothClearance: { ...c.toothClearance, minMm: round(c.toothClearance.minMm) } } : {}),
         },
         ...(measured ? { measured: { minAreaMm2: round(measured.minAreaMm2), heightMm: round(measured.heightMm), widthMm: round(measured.widthMm), at: roundV(measured.at) } } : {}),
         failures: c.failures.map((f) => f.message),
@@ -498,6 +526,7 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
       deltaMaxMm: round(s.deltaMaxMm, 6),
     })),
     ponticBase: union.checks.ponticBase.map((p) => ({ fdi: p.fdi, samples: p.samples, minGapMm: round(p.minGapMm, 5), meanGapMm: round(p.meanGapMm, 5), targetMm: p.targetMm })),
+    ...(wings.length ? { wings } : {}),
     ...(framework ? { framework: framework.metrics } : {}),
     warnings: result.warnings,
     checks,
