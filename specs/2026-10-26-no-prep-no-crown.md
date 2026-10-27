@@ -1,6 +1,12 @@
 # One-click crown on a tooth without a prep: say so before the margin, not after it
 
-Status: **proposed** (2026-10-26).
+Status: **dropped** (2026-10-27), not built.
+
+**Why dropped.** exocad and 3Shape have no "is this tooth prepared?" check either. They trust the order form, as dcad
+trusts case setup, and a wrong tooth simply gives a bad margin. Also, since the margin refiner
+(`2026-10-26-margin-ai.md`), the margin gate already stops a natural tooth: the line detours away from its anchors,
+wander 1.37–1.64 against a limit of 1.15. The user: "most probably we can remove" it. The prep finder stays, because
+the tooth frames that are ready for review depend on it.
 
 ## Goal
 
