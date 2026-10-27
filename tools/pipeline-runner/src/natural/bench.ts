@@ -83,7 +83,8 @@ export const SYNTHETIC_CASES: NaturalCase[] = (Object.keys(VARIANTS) as Array<ke
  * Real labelled jaws from Teeth3DS+ (data/teeth3ds, see its LOADER.md): local evaluation only, licence CC BY-NC-ND 4.0;
  * never commit them or anything derived. No scanner colour. Pose-normalised: +z is occlusal on both arches.
  */
-export const TEETH3DS_DIR = join(import.meta.dirname, '../../../../data/teeth3ds');
+/** DCAD_TEETH3DS_DIR points a git worktree (which has no data/) at the main checkout's copy. */
+export const TEETH3DS_DIR = process.env.DCAD_TEETH3DS_DIR ?? join(import.meta.dirname, '../../../../data/teeth3ds');
 const TEETH3DS_JAWS = [
   'teeth3ds_sample/01F4JV8X/01F4JV8X_upper',
   'data_part_1/upper/EA8SBGX4/EA8SBGX4_upper',
