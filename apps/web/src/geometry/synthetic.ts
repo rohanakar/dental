@@ -313,8 +313,13 @@ export function syntheticArch(options: ArchOptions = {}): SyntheticArch {
       positions[v * 3] = x;
       positions[v * 3 + 1] = y;
       positions[v * 3 + 2] = jaw === 'lower' ? z : 2 * 7 + OCCLUSAL_GAP - z;
-      if (colors) {
-        const t = Math.min(1, Math.max(0, (tooth - cover) / 1.0));
+      if (colors && gingiva) {
+        // Scanner-like: the gum is pink right up to the tooth; the tooth's cervical 0.6 mm is stained (a confound).
+        const stain = tooth > cover ? Math.max(0, 1 - (tooth - cover) / 0.6) * 0.45 : 0;
+        const rgb = tooth > cover ? [238 + (196 - 238) * stain, 232 + (170 - 232) * stain, 214 + (120 - 214) * stain] : [205, 118, 124];
+        colors.set(rgb.map(Math.round), v * 3);
+      } else if (colors) {
+        const t = Math.min(1, Math.max(0, tooth / 1.0));
         colors[v * 3] = Math.round(205 + (238 - 205) * t);
         colors[v * 3 + 1] = Math.round(118 + (232 - 118) * t);
         colors[v * 3 + 2] = Math.round(124 + (214 - 124) * t);

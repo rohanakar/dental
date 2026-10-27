@@ -1,7 +1,8 @@
 /**
  * Natural-tooth margin benchmark (specs/2026-10-27-natural-margin-research.md). On a natural (unprepared) tooth the
  * margin is the gingival margin: the line where the tooth meets the gum. Synthetic jaws with every tooth natural are
- * labelled per vertex (tooth FDI, 0 = gum); the truth is the labelled tooth/gum boundary, the same form as Teeth3DS.
+ * labelled per vertex (tooth FDI, 0 = gum); the truth is the labelled tooth/gum line (the foot of the tooth wall), the
+ * same form as Teeth3DS.
  * Variants add what real scans have: gum over the tooth's base with papillae between teeth (a scalloped line), a soft
  * crease, scan noise, scanner-like colour, an off-centre click. A method sees the mesh, the click and the tooth frame,
  * never the labels.
@@ -34,6 +35,8 @@ export interface NaturalVariant {
   noiseMm?: number;
   /** Scanner-like vertex colour (tooth ivory, gum pink, with per-vertex colour noise). */
   colors?: boolean;
+  /** Front teeth (incisors, canines) lean labially by this many degrees: undercuts, as on real scans. */
+  leanDeg?: number;
 }
 
 export interface NaturalCase {
@@ -52,8 +55,8 @@ export const VARIANTS = {
   gum: { gingiva: { coverMm: 0.6, papillaMm: 1.8 }, soften: 4, noiseMm: 0.03 },
   /** As `gum`, with scanner colour. */
   'gum+colour': { gingiva: { coverMm: 0.6, papillaMm: 1.8 }, soften: 4, noiseMm: 0.03, colors: true },
-  /** Higher gum and papillae, a softer crease, more noise (with an off-centre click in the cases). */
-  hard: { gingiva: { coverMm: 0.9, papillaMm: 2.6 }, soften: 8, noiseMm: 0.05 },
+  /** Higher gum and papillae, a softer crease, more noise, front teeth leaning 20° (and an off-centre click). */
+  hard: { gingiva: { coverMm: 0.9, papillaMm: 2.6 }, soften: 8, noiseMm: 0.05, leanDeg: 20 },
 } satisfies Record<string, NaturalVariant>;
 
 const TEETH: Array<{ jaw: 'upper' | 'lower'; fdi: number }> = [
@@ -108,7 +111,7 @@ export interface NaturalCaseData {
   input: NaturalInput;
   /** Per-vertex labels (tooth FDI, 0 = gum): for scoring only. */
   labels: Uint8Array;
-  /** Points on the labelled boundary of the tooth (edge midpoints). */
+  /** Points on the tooth's labelled tooth/gum line (gum-side vertices of the boundary edges). */
   truth: V3[];
 }
 
@@ -159,6 +162,21 @@ function taubin(positions: Float32Array, indices: Uint32Array, iterations: numbe
   return p;
 }
 
+/** One 1-ring average of the colours: the scanner's colour is a little soft across the tooth/gum line. */
+function blurColors(colors: Uint8Array, indices: Uint32Array): Uint8Array {
+  const nv = colors.length / 3;
+  const { offsets, neighbors } = buildVertexAdjacency(indices, nv);
+  const out = new Uint8Array(colors.length);
+  for (let v = 0; v < nv; v++) {
+    for (let ch = 0; ch < 3; ch++) {
+      let sum = colors[v * 3 + ch]!;
+      for (let k = offsets[v]!; k < offsets[v + 1]!; k++) sum += colors[neighbors[k]! * 3 + ch]!;
+      out[v * 3 + ch] = Math.round(sum / (1 + offsets[v + 1]! - offsets[v]!));
+    }
+  }
+  return out;
+}
+
 /** Deterministic per-channel colour noise (scanner colour is never flat). */
 function noisyColors(colors: Uint8Array, seed: number): Uint8Array {
   let s = seed >>> 0;
@@ -179,7 +197,16 @@ function archFor(jaw: 'upper' | 'lower', variantName: keyof typeof VARIANTS): Ar
   const hit = archCache.get(key);
   if (hit) return hit;
   const variant: NaturalVariant = VARIANTS[variantName];
-  const mesh = syntheticArch({ jaw, along: ALONG, across: ACROSS, preps: [], labels: true, ...(variant.gingiva ? { gingiva: variant.gingiva } : {}), ...(variant.colors ? { colors: true } : {}) });
+  const mesh = syntheticArch({
+    jaw,
+    along: ALONG,
+    across: ACROSS,
+    preps: [],
+    labels: true,
+    ...(variant.gingiva ? { gingiva: variant.gingiva } : {}),
+    ...(variant.colors ? { colors: true } : {}),
+    ...(variant.leanDeg ? { anteriorLeanDeg: variant.leanDeg } : {}),
+  });
   let positions = mesh.positions;
   if (variant.soften) positions = taubin(positions, mesh.indices, variant.soften);
   if (variant.noiseMm) positions = withScanNoise({ positions, indices: mesh.indices }, variant.noiseMm, (jaw === 'upper' ? 1 : 2) * 1000 + Math.round(variant.noiseMm * 1000)).positions;
@@ -191,7 +218,7 @@ function archFor(jaw: 'upper' | 'lower', variantName: keyof typeof VARIANTS): Ar
     positions,
     indices,
     normals,
-    ...(mesh.colors ? { colors: noisyColors(mesh.colors, jaw === 'upper' ? 11 : 22) } : {}),
+    ...(mesh.colors ? { colors: noisyColors(blurColors(mesh.colors, mesh.indices), jaw === 'upper' ? 11 : 22) } : {}),
     labels: mesh.labels!,
     ray,
     surface,
@@ -201,19 +228,22 @@ function archFor(jaw: 'upper' | 'lower', variantName: keyof typeof VARIANTS): Ar
   return arch;
 }
 
-/** Points on the tooth/gum boundary of one tooth: midpoints of the mesh edges whose ends are labelled differently. */
+/**
+ * Points on the tooth/gum line of one tooth: the gum-side vertex of every mesh edge whose ends are labelled tooth and
+ * not-tooth, i.e. the foot of the tooth wall, where the mesh's crease is. (Not the edge midpoints: at the demo
+ * resolution the last wall triangles are 0.8–1.7 mm tall, so a midpoint sits partway up the wall.)
+ */
 export function boundaryPoints(positions: Float32Array, indices: Uint32Array, labels: Uint8Array, fdi: number): V3[] {
   const seen = new Set<number>();
   const out: V3[] = [];
-  const nv = positions.length / 3;
   for (let f = 0; f < indices.length; f += 3) {
     for (let e = 0; e < 3; e++) {
       const a = indices[f + e]!, b = indices[f + ((e + 1) % 3)]!;
       if ((labels[a] === fdi) === (labels[b] === fdi)) continue;
-      const key = Math.min(a, b) * nv + Math.max(a, b);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push([(positions[a * 3]! + positions[b * 3]!) / 2, (positions[a * 3 + 1]! + positions[b * 3 + 1]!) / 2, (positions[a * 3 + 2]! + positions[b * 3 + 2]!) / 2]);
+      const gum = labels[a] === fdi ? b : a;
+      if (seen.has(gum)) continue;
+      seen.add(gum);
+      out.push([positions[gum * 3]!, positions[gum * 3 + 1]!, positions[gum * 3 + 2]!]);
     }
   }
   return out;
