@@ -7,7 +7,7 @@
  * crease, scan noise, scanner-like colour, an off-centre click. A method sees the mesh, the click and the tooth frame,
  * never the labels.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   analyzeSurface,
@@ -102,6 +102,25 @@ export const REAL_CASES: NaturalCase[] = existsSync(TEETH3DS_DIR)
       const id = path.split('/').at(-1)!.split('_')[0]!;
       return REAL_TEETH[jaw].filter((fdi) => labels.has(fdi)).map((fdi) => ({ name: `T3D ${id} ${fdi}`, jaw, fdi, variant: 'teeth3ds' as const, teeth3ds: join(TEETH3DS_DIR, path) }));
     })
+  : [];
+
+/**
+ * Held-out real jaws (Teeth3DS+ test split, data/teeth3ds-holdout: <ID>_<jaw>.obj/.json, flat): scored once, with
+ * every method's parameters frozen. Never tune on them.
+ */
+export const HOLDOUT_DIR = process.env.DCAD_TEETH3DS_HOLDOUT_DIR ?? join(import.meta.dirname, '../../../../data/teeth3ds-holdout');
+export const HOLDOUT_CASES: NaturalCase[] = existsSync(HOLDOUT_DIR)
+  ? readdirSync(HOLDOUT_DIR)
+      .filter((f) => f.endsWith('.obj'))
+      .sort()
+      .flatMap((file) => {
+        const path = join(HOLDOUT_DIR, file.replace(/\.obj$/, ''));
+        if (!existsSync(`${path}.json`)) return [];
+        const jaw = path.endsWith('upper') ? ('upper' as const) : ('lower' as const);
+        const labels = new Set((JSON.parse(readFileSync(`${path}.json`, 'utf8')) as { labels: number[] }).labels);
+        const id = file.split('_')[0]!;
+        return REAL_TEETH[jaw].filter((fdi) => labels.has(fdi)).map((fdi) => ({ name: `HOLD ${id} ${fdi}`, jaw, fdi, variant: 'teeth3ds' as const, teeth3ds: path }));
+      })
   : [];
 
 export const NATURAL_CASES: NaturalCase[] = [...SYNTHETIC_CASES, ...REAL_CASES];

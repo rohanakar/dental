@@ -8,7 +8,7 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { NATURAL_CASES, REAL_CASES, ROW_HEADER, SYNTHETIC_CASES, formatRow, prepareNaturalCase, runNaturalBench, scoreNatural, summarize, truthPolyline, type NaturalMethod } from './bench';
+import { HOLDOUT_CASES, NATURAL_CASES, REAL_CASES, ROW_HEADER, SYNTHETIC_CASES, formatRow, prepareNaturalCase, runNaturalBench, scoreNatural, summarize, truthPolyline, type NaturalMethod } from './bench';
 
 const arg = (name: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -17,10 +17,10 @@ const arg = (name: string) => {
 
 const names = (arg('methods') ?? 'refine').split(',').filter(Boolean);
 const only = arg('only');
-// --set synthetic | real | all (default all; real needs data/teeth3ds, see bench.ts).
+// --set synthetic | real | all | holdout (default all; real needs data/teeth3ds, holdout data/teeth3ds-holdout).
 const set = arg('set') ?? 'all';
 const out = arg('out') ?? `../../out/natural-margin-research/bench-${names.join('+')}.md`;
-const pool = set === 'synthetic' ? SYNTHETIC_CASES : set === 'real' ? REAL_CASES : NATURAL_CASES;
+const pool = set === 'synthetic' ? SYNTHETIC_CASES : set === 'real' ? REAL_CASES : set === 'holdout' ? HOLDOUT_CASES : NATURAL_CASES;
 const cases = only ? pool.filter((c) => c.name.includes(only)) : pool;
 
 if (names.includes('truth')) {
