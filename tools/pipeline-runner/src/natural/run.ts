@@ -1,14 +1,14 @@
 /**
  * Run the natural-tooth margin benchmark (bench.ts).
  *
- *   pnpm --filter @dcad/pipeline-runner exec tsx src/natural/run.ts --methods refine,<name> [--only <substr>] [--out <file>]
+ *   pnpm --filter @dcad/pipeline-runner exec tsx src/natural/run.ts --methods refine,<name> [--set synthetic|real|all] [--only <substr>] [--out <file>]
  *
  * A method is src/natural/methods/<name>.ts exporting `method: NaturalMethod`. `--methods truth` scores the truth
  * against itself (the benchmark's self-check: about 0 mm).
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { NATURAL_CASES, ROW_HEADER, formatRow, prepareNaturalCase, runNaturalBench, scoreNatural, summarize, truthPolyline, type NaturalMethod } from './bench';
+import { NATURAL_CASES, REAL_CASES, ROW_HEADER, SYNTHETIC_CASES, formatRow, prepareNaturalCase, runNaturalBench, scoreNatural, summarize, truthPolyline, type NaturalMethod } from './bench';
 
 const arg = (name: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -17,14 +17,17 @@ const arg = (name: string) => {
 
 const names = (arg('methods') ?? 'refine').split(',').filter(Boolean);
 const only = arg('only');
+// --set synthetic | real | all (default all; real needs data/teeth3ds, see bench.ts).
+const set = arg('set') ?? 'all';
 const out = arg('out') ?? `../../out/natural-margin-research/bench-${names.join('+')}.md`;
-const cases = only ? NATURAL_CASES.filter((c) => c.name.includes(only)) : NATURAL_CASES;
+const pool = set === 'synthetic' ? SYNTHETIC_CASES : set === 'real' ? REAL_CASES : NATURAL_CASES;
+const cases = only ? pool.filter((c) => c.name.includes(only)) : pool;
 
 if (names.includes('truth')) {
   // Self-check: the truth as a line (truthPolyline), scored against its own points.
   for (const spec of cases) {
     const { truth } = prepareNaturalCase(spec);
-    const s = scoreNatural(truth, truthPolyline(truth));
+    const s = scoreNatural(truth, truthPolyline(truth), spec.variant === 'teeth3ds');
     console.log(`${spec.name}: truth ${truth.length} points, mean ${s.meanMm.toFixed(3)} mm, coverage ${(s.coverage * 100).toFixed(0)}%, length ${s.truthLengthMm.toFixed(1)} mm`);
   }
   process.exit(0);
