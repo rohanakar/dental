@@ -89,6 +89,10 @@ async function openApp(name) {
       }, null, { timeout: 300000, polling: 200 }),
   };
   await page.goto(APP_URL);
+  // The one-click flow is under test: no frames from the scan bodies found on scan load
+  // (specs/2026-10-26-frames-from-case-setup.md); implant.mjs checks those.
+  await page.waitForFunction(() => Boolean(window.__dcad?.tools));
+  await page.evaluate(() => window.__dcad.tools.getState().set({ autoFrames: false }));
   await page.getByRole('button', { name: /continue offline/i }).click();
   return h;
 }

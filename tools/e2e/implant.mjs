@@ -224,7 +224,17 @@ if (ONLY !== 'single') {
   await h.shot('01-setup');
 
   await loadScans(h);
-  await frames(h, [35, 37]);
+  // Frames ready (specs/2026-10-26-auto-frames-jaws-implants.md): Tooth frame frames 35 and 37 from the scan bodies
+  // found, and places pontic 36, as one undo step.
+  const before = await h.state(() => window.__dcad.design.getState().past.length);
+  await h.step('Tooth frame');
+  await h.waitFor(() => [35, 36, 37].every((f) => window.__dcad.design.getState().doc.teeth.find((t) => t.fdi === f)?.frame), null, 120000);
+  const auto = await h.state((truth) => {
+    const d = window.__dcad.design.getState();
+    const off = (fdi) => +Math.hypot(...d.doc.teeth.find((t) => t.fdi === fdi).frame.origin.map((o, k) => o - truth[fdi][k])).toFixed(2);
+    return { d35: off(35), d37: off(37), past: d.past.length };
+  }, { 35: TRUTH[35].topCentre, 37: TRUTH[37].topCentre });
+  expect(auto.d35 < 0.5 && auto.d37 < 0.5 && auto.past === before + 1, 'auto frames: 35 and 37 framed on their scan bodies and pontic 36 placed, as one undo step', JSON.stringify({ before, ...auto }));
   // Align the implant units' frames to the arch, then place the pontic.
   await page.locator('.bridge-units button[title="Make 35 the active unit"]').first().click();
   await h.waitFor(() => !document.querySelector('.bridge-panel .spinner') && document.querySelector('.bridge-changes'));

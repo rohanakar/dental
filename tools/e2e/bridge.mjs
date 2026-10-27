@@ -555,17 +555,25 @@ if (!ONLY || ONLY === 'auto') {
   await page.getByRole('button', { name: 'Tooth 37', exact: true }).click();
   await page.getByRole('group', { name: 'Restoration for 36' }).getByRole('button', { name: 'Pontic' }).click();
   await loadScans(h, ['lower-bridge.stl', 'upper.stl']);
-  const before = await h.state(() => window.__dcad.design.getState().past.length);
-  await h.step('Tooth frame');
+  // Frames as soon as the scans are in, on the Scans step (specs/2026-10-26-frames-from-case-setup.md).
   await h.waitFor(() => [35, 36, 37].every((f) => window.__dcad.design.getState().doc.teeth.find((t) => t.fdi === f)?.frame), null, 120000);
   const auto = await h.state(async (along) => {
     const { syntheticPrepSeed } = await import('/src/geometry/synthetic.ts');
     const d = window.__dcad.design.getState();
     const off = (fdi) => Math.hypot(...d.doc.teeth.find((t) => t.fdi === fdi).frame.origin.map((o, k) => o - syntheticPrepSeed({ fdi, along })[k]));
-    return { d35: +off(35).toFixed(2), d37: +off(37).toFixed(2), past: d.past.length };
+    return { d35: +off(35).toFixed(2), d37: +off(37).toFixed(2), step: d.activeStep, frameDone: d.doc.teeth.find((t) => t.fdi === 35).steps.frame };
   }, ALONG);
-  expect(auto.d35 < 1 && auto.d37 < 1 && auto.past === before + 1, "auto frames: 35 and 37 framed on their preps and pontic 36 placed, as one undo step", JSON.stringify({ before, ...auto }));
+  expect(auto.d35 < 1 && auto.d37 < 1 && auto.step === 'scans' && auto.frameDone === 'done', "auto frames on scan load: 35 and 37 framed on their preps and pontic 36 placed, while still on Scans", JSON.stringify(auto));
   await h.shot('09-auto-frames');
+
+  // A tooth added in Case setup after the scans are in, with no prep on the scan: named once as unframed.
+  await h.step('Case setup');
+  await page.getByRole('button', { name: 'Tooth 46', exact: true }).click();
+  await h.waitFor(() => /No frame for 46/.test(window.__dcad.tools.getState().message?.text ?? ''), null, 60000).catch(() => {});
+  const named = await h.state(() => window.__dcad.tools.getState().message?.text ?? '');
+  expect(/No frame for 46/.test(named), 'a tooth added after the scans, with no prep found, is named for a click on Tooth frame', named);
+  await page.getByRole('button', { name: 'Tooth 46', exact: true }).click();
+  await h.step('Tooth frame');
 
   // Disjoint from the setup: 37's frame put on the prep of 35 is named, and the bridge panel reports the order.
   await h.state(() => window.__dcad.tools.getState().set({ autoArmed: false }));

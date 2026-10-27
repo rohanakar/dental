@@ -1,6 +1,6 @@
 # Every tooth chosen in Case setup gets its tooth frame as soon as its scan is in
 
-Status: **proposed** (2026-10-26).
+Status: **done** (2026-10-27).
 
 ## Goal
 
@@ -85,3 +85,36 @@ On main 12d5821 (`specs/2026-10-26-auto-frames.md`):
   - `implant.mjs`: the implant crowns are framed on scan load.
   - `first-run`: the demo is unchanged.
   - Every script passes. Click-flow scripts keep `autoFrames` off.
+
+## Implementation summary
+
+**What was built:**
+- **Frames on scan load** (`tools/controller.ts`, `tools/autoFrames.ts`):
+  - `autoFrames()` runs on every controller sync, on any step, not only on Tooth frame;
+  - so it runs when a scan becomes ready, when Case setup changes, and when the prep finder's result arrives;
+  - it waits while any transaction (an auto-design draft) is open, and checks again before dispatching.
+- **A restoration change** between a prep crown and an implant crown: a frame that this pass set from the other kind
+  of site, and that the user has not moved, counts as no frame and is set again. Tried-once keys include the kind.
+- **Teeth that could not be framed** are named once, until the set changes: "No frame for 46 yet: click it on Tooth
+  frame." This covers no prep or scan body found, a count that does not pair, and Maryland wings and inlays or onlays
+  on a loaded jaw.
+- **The rail and resume:** no change was needed. `steps.frame` is `done` once frames are set, and `resumeStep`
+  follows the statuses.
+
+**Deviations:**
+- **The footer's Next on Scans** still goes to Tooth frame (now a quick review: frames set, auto-design ready).
+  Skipping the step would hide the frames the user is meant to check.
+- **Frames are not held back in a read-only view;** the app has none today.
+
+**Verification:**
+- `pnpm typecheck` clean; `pnpm test` 124; build passes.
+- **`bridge.mjs`, auto part:**
+  - right after the scans load, while still on Scans, 35 and 37 are framed on their preps (under 1 mm) and pontic
+    36 is placed, and the rail shows Tooth frame done;
+  - adding 46 in Case setup, with no prep on that scan, is named ("No frame for 46 yet").
+- **Browser scripts** (with both specs' work and the clinical review): `first-run`, `crown-move`, `ai-bridge`,
+  `bridge`, `implant`, `ai-implant`, `maryland`, `ai-maryland` and `inlay` pass.
+  - `ai-implant` turns auto frames off: scan bodies are now framed on load, so its first click already ran the
+    bridge.
+- **A fix found by `bridge.mjs`:** adding a tooth also makes it active, which clears the status line. The notice
+  about unframed teeth is now set after that settles.

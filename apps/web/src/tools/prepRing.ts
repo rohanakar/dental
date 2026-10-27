@@ -1,8 +1,8 @@
-import { jawOf } from '@dcad/shared';
+import { type DesignDocument, isImplantRestoration, jawOf } from '@dcad/shared';
 import { useDesignStore } from '../design/store';
 import { prepFor, type PrepFinding } from '../geometry/prepFinder';
+import { sceneController } from '../state/sceneController';
 import { analysis } from '../workers/geometryClient';
-import { toothContext } from './context';
 import { demoPrep } from './demoPrep';
 import { PREP_MARGIN } from './marginView';
 import type { ToolState, V3 } from './toolStore';
@@ -17,7 +17,7 @@ import type { ToolState, V3 } from './toolStore';
 const FAR_FROM_PREP_MM = 6;
 
 /** The worker's finding per jaw scan and antagonist; null while it is computed (or after it failed). */
-const findings = new Map<string, PrepFinding | null>();
+const findings = new Map<string, PrepFinding | 'pending' | null>();
 let onFound: (() => void) | null = null;
 
 /** Called once a finding arrives, so the ring can be drawn (the controller re-syncs). */
@@ -25,35 +25,57 @@ export function onPrepsFound(callback: () => void): void {
   onFound = callback;
 }
 
+const crownPrep = (setup: DesignDocument['setup'], fdi: number): boolean => {
+  const restoration = setup.teeth.find((t) => t.fdi === fdi)?.restoration;
+  return Boolean(restoration && PREP_MARGIN.includes(restoration));
+};
+
+export interface JawFinding {
+  finding: PrepFinding;
+  jawSha: string;
+  antagonistSha?: string;
+  /** The case's crown-prep teeth on this jaw (paired with the preps) and its implant teeth (with the scan bodies). */
+  preps: number[];
+  implants: number[];
+}
+
+/**
+ * The finding on one loaded jaw scan (its antagonist as context), with the case teeth it pairs
+ * (specs/2026-10-26-auto-frames-jaws-implants.md): 'pending' while the worker computes it (the first request per scan
+ * starts it), null when the jaw is not loaded, has no crown-prep or implant tooth, or the finder failed.
+ */
+export function jawFinding(jaw: 'upper' | 'lower'): JawFinding | 'pending' | null {
+  const { setup } = useDesignStore.getState().doc;
+  const scan = sceneController.geometryFor(jaw);
+  const antagonist = sceneController.geometryFor(jaw === 'upper' ? 'lower' : 'upper');
+  const onJaw = setup.teeth.filter((t) => jawOf(t.fdi) === jaw);
+  const preps = onJaw.filter((t) => crownPrep(setup, t.fdi)).map((t) => t.fdi);
+  const implants = onJaw.filter((t) => isImplantRestoration(t.restoration)).map((t) => t.fdi);
+  if (!scan || preps.length + implants.length === 0) return null;
+  const key = `${scan.sha256}:${antagonist?.sha256 ?? ''}`;
+  if (!findings.has(key)) {
+    findings.set(key, 'pending');
+    analysis
+      .findPreps(scan.sha256, antagonist?.sha256)
+      .then((finding) => findings.set(key, finding))
+      // No ring and no frames from the finding: the Tooth frame step works as before.
+      .catch(() => findings.set(key, null))
+      .finally(() => onFound?.());
+  }
+  const finding = findings.get(key)!;
+  if (!finding || finding === 'pending') return finding;
+  return { finding, jawSha: scan.sha256, ...(antagonist ? { antagonistSha: antagonist.sha256 } : {}), preps, implants };
+}
+
 /**
  * The finding on the active tooth's jaw, for a crown-prep tooth, with the case's crown-prep teeth on that jaw (the
- * teeth the preps are paired with); the first request per scan starts the worker.
+ * teeth the preps are paired with).
  */
 export function activeFinding(): { finding: PrepFinding; fdi: number; teeth: number[] } | null {
-  const ctx = toothContext();
-  const { setup } = useDesignStore.getState().doc;
-  const crownPrep = (fdi: number) => {
-    const restoration = setup.teeth.find((t) => t.fdi === fdi)?.restoration;
-    return Boolean(restoration && PREP_MARGIN.includes(restoration));
-  };
-  if (!ctx || !crownPrep(ctx.fdi)) return null;
-  const key = `${ctx.jaw.sha256}:${ctx.antagonist?.sha256 ?? ''}`;
-  if (!findings.has(key)) {
-    findings.set(key, null);
-    analysis
-      .findPreps(ctx.jaw.sha256, ctx.antagonist?.sha256)
-      .then((finding) => {
-        findings.set(key, finding);
-        onFound?.();
-      })
-      .catch(() => {
-        // No ring: the Tooth frame step works as before.
-      });
-  }
-  const finding = findings.get(key);
-  if (!finding) return null;
-  const teeth = setup.teeth.filter((t) => jawOf(t.fdi) === jawOf(ctx.fdi) && crownPrep(t.fdi)).map((t) => t.fdi);
-  return { finding, fdi: ctx.fdi, teeth };
+  const { doc, activeFdi } = useDesignStore.getState();
+  if (!doc.teeth.some((t) => t.fdi === activeFdi) || !crownPrep(doc.setup, activeFdi)) return null;
+  const found = jawFinding(jawOf(activeFdi));
+  return found && found !== 'pending' ? { finding: found.finding, fdi: activeFdi, teeth: found.preps } : null;
 }
 
 /** The top of the prep to ring for the active tooth: the demo's, else the one found on its scan; null if none. */

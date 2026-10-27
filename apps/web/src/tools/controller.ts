@@ -183,8 +183,9 @@ class DesignTools {
 
     if (ctx && step === 'margin') this.prepareSurface(ctx.jaw.sha256);
     this.drawOverlays(step);
-    // Case setup named the teeth: frame each crown-prep tooth from its prep for the user to review.
-    if (step === 'frame') autoFrames();
+    // Case setup named the teeth: frame each crown-prep and implant tooth from its prep or scan body as soon as its scan
+    // is in, on any step, for review (specs/2026-10-26-frames-from-case-setup.md).
+    autoFrames();
     if (step === 'axis') axisTool.sync();
     crownTool.sync(step);
     implantTool.sync(step, crownTool.current());
