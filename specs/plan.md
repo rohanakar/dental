@@ -375,3 +375,13 @@ with Auto-design next.
 - A model repair loop (Opus 5.5 through a local `claude -p` bridge) stays as a harness tool. Wiring it into
   one-click was tried and dropped: it added no accuracy, only minutes and cost.
 - 118 tests. See [2026-10-26-margin-ai.md](2026-10-26-margin-ai.md).
+
+**2026-10-27: natural-tooth margin research.** On a natural tooth the margin is the gum line, a concave crease.
+- **Team:** a proposer (15 ideas), a scout, a critic, four parallel experiments and a UX simulation, run on a new
+  labelled benchmark: synthetic jaws with gum and papillae, 23 real Teeth3DS+ teeth (local only), and a blind
+  held-out set of 24.
+- **Winner:** the crease-weighted random walker, 22 of 24 held-out real teeth correct (median 0.07–0.11 mm, about
+  50 ms, $0). Today's margin finder gets 0.
+- **Correction:** a concave-cheap live-wire and a two-click sector redraw take the simulated fix from 49/106 in 26 s
+  to 93/106 in 13 s.
+- No product code changed; 118 tests. See [2026-10-27-natural-margin-research.md](2026-10-27-natural-margin-research.md).
