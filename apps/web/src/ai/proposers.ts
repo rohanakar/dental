@@ -27,7 +27,9 @@ import { bridgeProposalCommands, bridgeRequest, frameView } from '../tools/bridg
 import { fromMarginPoints, toMarginPoints, type ToothContext } from '../tools/context';
 import { ALIGN_MIN_DEG, bridgeFramesRequest } from '../tools/frameTool';
 import { entryFor, implantCrownRequest, implantMatchCommands, implantTool, isImplantTooth } from '../tools/implantTool';
+import { marginKey } from '../tools/marginLine';
 import { PREP_MARGIN } from '../tools/marginView';
+import { useToolStore } from '../tools/toolStore';
 import { isWing, wingSeed } from '../tools/wing';
 import { inlayRequestOf, isCavity } from '../tools/inlay';
 import { inlayChecks } from '../geometry/inlayChecks';
@@ -42,7 +44,9 @@ import {
   cutbackGate,
   implantPathGate,
   implantSeatGate,
+  gumLineGate,
   marginGate,
+  passed,
   scanBodyGate,
   screwChannelGate,
   wingOutlineGate,
@@ -213,6 +217,19 @@ export const frameProposer: Proposer = {
   },
 };
 
+/** A prep's top within this horizontal distance (mm) of the tooth frame's origin counts as a prep at this tooth. */
+const PREP_AT_TOOTH_MM = 3;
+
+/**
+ * The margin (classical.margin-ridge@1). Which line it follows (specs/2026-10-27-natural-margin.md):
+ * - the line chosen in the Margin step (else a gum line the tooth already has): a prep's finish line or a natural
+ *   tooth's gum line;
+ * - otherwise the finish line when it passes its gate, or when the prep finder sees a prep at this tooth (it then
+ *   stops at the margin as before);
+ * - otherwise (no finish line all round, no prep seen) the gum line, as on a natural (unprepared) tooth.
+ * Neither the finish line's own gate (it passes on 19 of 47 real natural teeth, 1–2 mm off) nor the prep finder (10
+ * false preps on 12 natural real jaws) can tell a natural tooth on its own; the user's choice settles it.
+ */
 export const marginProposer: Proposer = {
   id: 'classical.margin-ridge@1',
   step: 'margin',
@@ -221,22 +238,76 @@ export const marginProposer: Proposer = {
     const ctx = requireContext(fdi);
     const frame = ctx.tooth.frame;
     if (!frame) throw new Error(`Set the tooth frame of ${ctx.fdi} first`);
-    const trace = await analysis.autoMargin({
-      jawSha: ctx.jaw.sha256,
-      frame: { origin: v3(frame.origin), occlusal: v3(frame.occlusal), mesial: v3(frame.mesial) },
-    });
-    // Closure: the prep region bounded by this margin must not leak.
-    const region = await analysis.axisUnlatched({ jawSha: ctx.jaw.sha256, margin: trace.points, occlusal: v3(frame.occlusal), direction: v3(frame.occlusal) });
-    const points = toMarginPoints(trace.points);
-    const margin = { anchors: trace.anchors.map((p) => ({ p })), points, source: 'auto' as const };
-    return {
-      proposerId: this.id,
-      output: { commands: [{ type: 'setMargin', fdi: ctx.fdi, margin }], artifact: { anchors: trace.anchors, points: points.map((m) => m.p) } },
-      qa: marginGate({ points: points.map((m) => m.p), lengthMm: trace.lengthMm, prepClosed: region.prepClosed, confidence: trace.confidence, wander: trace.wander }),
-      rationale: `The margin follows the prep's finish line, the sharpest edge below its walls, found in ${Math.round(trace.confidence * 100)}% of the directions around the tooth (${trace.lengthMm.toFixed(1)} mm long; ${trace.method}).`,
-    };
+    // The line chosen in the Margin step, else a gum line the tooth already has.
+    const chosen = useToolStore.getState().marginLine[ctx.fdi] ?? (ctx.tooth.margin?.line === 'gum' ? 'gum' : undefined);
+    if (chosen === 'gum') return gumLineProposal(ctx, frame, 'chosen');
+    const finish = await finishLineProposal(ctx, frame);
+    if (chosen === 'finish' || passed(finish.qa) || (await prepAtTooth(ctx, frame))) return finish;
+    return gumLineProposal(ctx, frame, 'fallback');
   },
 };
+
+type Frame = NonNullable<ToothContext['tooth']['frame']>;
+
+/** A prep's finish line: the refiner's best margin (geometry/marginRefine.ts), gated by marginGate. */
+async function finishLineProposal(ctx: ToothContext, frame: Frame): Promise<Proposal> {
+  const trace = await analysis.autoMargin({
+    jawSha: ctx.jaw.sha256,
+    frame: { origin: v3(frame.origin), occlusal: v3(frame.occlusal), mesial: v3(frame.mesial) },
+  });
+  // Closure: the prep region bounded by this margin must not leak.
+  const region = await analysis.axisUnlatched({ jawSha: ctx.jaw.sha256, margin: trace.points, occlusal: v3(frame.occlusal), direction: v3(frame.occlusal) });
+  const points = toMarginPoints(trace.points);
+  const margin = { anchors: trace.anchors.map((p) => ({ p })), points, source: 'auto' as const };
+  return {
+    proposerId: marginProposer.id,
+    output: { commands: [{ type: 'setMargin', fdi: ctx.fdi, margin }], artifact: { anchors: trace.anchors, points: points.map((m) => m.p) } },
+    qa: marginGate({ points: points.map((m) => m.p), lengthMm: trace.lengthMm, prepClosed: region.prepClosed, confidence: trace.confidence, wander: trace.wander }),
+    rationale: `The margin follows the prep's finish line, the sharpest edge below its walls, found in ${Math.round(trace.confidence * 100)}% of the directions around the tooth (${trace.lengthMm.toFixed(1)} mm long; ${trace.method}).`,
+  };
+}
+
+/** Whether the prep finder sees a prep at this tooth (its top within PREP_AT_TOOTH_MM of the frame origin, across the axis). */
+async function prepAtTooth(ctx: ToothContext, frame: Frame): Promise<boolean> {
+  try {
+    const finding = await analysis.findPreps(ctx.jaw.sha256, ctx.antagonist?.sha256);
+    const o = v3(frame.occlusal);
+    return finding.preps.some((p) => {
+      const d: V3 = [p.top[0] - frame.origin[0], p.top[1] - frame.origin[1], p.top[2] - frame.origin[2]];
+      const along = dot(d, o);
+      return Math.hypot(d[0] - along * o[0], d[1] - along * o[1], d[2] - along * o[2]) <= PREP_AT_TOOTH_MM;
+    });
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A natural tooth's gum line (geometry/naturalMargin.ts), gated by gumLineGate. Its checks are kept for the Margin
+ * step's doubt warning while the line stays as proposed.
+ */
+async function gumLineProposal(ctx: ToothContext, frame: Frame, why: 'chosen' | 'fallback'): Promise<Proposal> {
+  const view = await analysis.naturalMargin({
+    jawSha: ctx.jaw.sha256,
+    frame: { origin: v3(frame.origin), occlusal: v3(frame.occlusal), mesial: v3(frame.mesial), buccal: v3(frame.buccal) },
+    fdi: ctx.fdi,
+  });
+  const region = await analysis.axisUnlatched({ jawSha: ctx.jaw.sha256, margin: view.points, occlusal: v3(frame.occlusal), direction: v3(frame.occlusal) });
+  const points = toMarginPoints(view.points);
+  const margin = { anchors: view.anchors.map((p) => ({ p })), points, source: 'auto' as const, line: 'gum' as const };
+  const qa = gumLineGate({ lengthMm: view.lengthMm, prepClosed: region.prepClosed, agreementMm: view.agreementMm, perimeterRatio: view.perimeterRatio });
+  useToolStore.getState().set({ gumLineChecks: { fdi: ctx.fdi, key: marginKey(points), checks: qa } });
+  const length = `${view.lengthMm.toFixed(1)} mm long`;
+  return {
+    proposerId: marginProposer.id,
+    output: { commands: [{ type: 'setMargin', fdi: ctx.fdi, margin }], artifact: { anchors: view.anchors, points: points.map((m) => m.p), line: 'gum' } },
+    qa,
+    rationale:
+      why === 'chosen'
+        ? `The margin follows the gum line, where the tooth meets the gum, as chosen for this tooth (${length}).`
+        : `No finish line was found all the way round and no prep was seen at this tooth, so the margin follows the gum line, as on a natural tooth (${length}). If the tooth is prepared, choose Finish line in the Margin step.`,
+  };
+}
 
 /**
  * Wing outline (classical.wing-outline@1), the margin step of a Maryland wing: the lingual (palatal) surface around

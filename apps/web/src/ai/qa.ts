@@ -8,6 +8,31 @@ import type { FrameworkView } from '../workers/frameworkTypes';
 
 type V3 = readonly [number, number, number];
 
+/** The walker's and the watershed's gum lines agree within this mean distance (mm) on a trustworthy line. */
+export const GUM_LINE_MAX_DISAGREEMENT_MM = 0.3;
+/**
+ * A gum line shorter than this share of the tooth's nominal cervical ellipse has collapsed onto the crown. (Real gum
+ * lines run 1.2–2.4× the ellipse, scalloped round the papillae; smooth synthetic teeth about 1.0.)
+ */
+export const GUM_LINE_MIN_PERIMETER = 0.8;
+
+/**
+ * Gate for a natural tooth's gum line (geometry/naturalMargin.ts; specs/2026-10-27-natural-margin.md). The line is
+ * doubtful when the two methods that find it (the random walker and the watershed) disagree, or when it is too short
+ * to go round the tooth. On the development set (115 real cases, with the click moved 1.5 mm) this flags 7 of the 12
+ * wrong lines and 6 of the 103 right ones. The 120° kink rule of a prep's finish line is left out: a gum line turns
+ * sharply at the papillae.
+ */
+export function gumLineGate(input: { lengthMm: number; prepClosed?: boolean; agreementMm: number; perimeterRatio: number }): QaCheck[] {
+  const checks = [
+    check('margin.length', input.lengthMm >= MARGIN_LENGTH_MM[0] && input.lengthMm <= MARGIN_LENGTH_MM[1], 'Margin length within 8–60 mm', input.lengthMm, undefined, { unit: 'mm' }),
+    check('margin.agree', input.agreementMm <= GUM_LINE_MAX_DISAGREEMENT_MM, 'Two methods find the same gum line: mean distance between them', input.agreementMm, GUM_LINE_MAX_DISAGREEMENT_MM, { unit: 'mm', bound: 'max' }),
+    check('margin.round', input.perimeterRatio >= GUM_LINE_MIN_PERIMETER, 'The line goes round the whole tooth: its length over the tooth’s nominal outline', input.perimeterRatio, GUM_LINE_MIN_PERIMETER, { bound: 'min' }),
+  ];
+  if (input.prepClosed !== undefined) checks.unshift(check('margin.closed', input.prepClosed, 'The margin is closed all the way round the tooth'));
+  return checks;
+}
+
 /** Gates for the auto-design orchestrator: deterministic checks, not "confidence". */
 
 const round = (n: number, d = 3) => Number(n.toFixed(d));

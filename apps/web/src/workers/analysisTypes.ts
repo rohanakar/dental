@@ -181,6 +181,30 @@ export interface AutoMarginResult extends MarginTrace {
   ms: number;
 }
 
+/** A natural tooth's gum line (geometry/naturalMargin.ts, specs/2026-10-27-natural-margin.md). */
+export interface NaturalMarginRequest {
+  jawSha: string;
+  frame: { origin: V3; occlusal: V3; mesial: V3; buccal: V3 };
+  fdi: number;
+}
+
+export interface NaturalMarginView {
+  /** The gum line, closed, packed xyz. */
+  points: Float32Array;
+  /** Points along it about 2.5 mm apart, as live-wire anchors for editing. */
+  anchors: V3[];
+  lengthMm: number;
+  loops: number;
+  winding: number;
+  probeShiftMm: number;
+  recentreShiftMm: number;
+  /** Mean distance between the walker's and the watershed's lines (the doubt check). */
+  agreementMm: number;
+  /** Length over the tooth's nominal cervical ellipse (the doubt check). */
+  perimeterRatio: number;
+  ms: number;
+}
+
 /** Automatic Maryland wing outline (classical.wing-outline, geometry/wingOutline.ts). */
 export interface WingOutlineRequest {
   jawSha: string;

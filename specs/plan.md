@@ -385,3 +385,14 @@ with Auto-design next.
 - **Correction:** a concave-cheap live-wire and a two-click sector redraw take the simulated fix from 49/106 in 26 s
   to 93/106 in 13 s.
 - No product code changed; 118 tests. See [2026-10-27-natural-margin-research.md](2026-10-27-natural-margin-research.md).
+
+**2026-10-27: the margin on natural teeth.** A natural tooth's margin is now its gum line.
+- **The engine:** the research's random walker, with an inside probe so an off-centre click doesn't matter.
+  - 22 of 24 held-out real teeth correct, median 0.11 mm, about 0.1 s.
+  - 86% with the click 1.5 mm off.
+- **In the app:**
+  - the Margin step chooses Finish line or Gum line, and can Find either;
+  - one-click falls back to the gum line when no finish line or prep is found;
+  - correction uses a gum-crease live-wire and a two-click Redraw a section.
+- **The doubt warning** catches only 3 of 15 held-out misses; a better signal needs more real data.
+- 120 tests. See [2026-10-27-natural-margin.md](2026-10-27-natural-margin.md).

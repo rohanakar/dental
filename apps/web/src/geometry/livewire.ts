@@ -5,14 +5,20 @@ import type { SurfaceGraph } from './surface';
 /** Cost of traversing the edge u–v of the given length. */
 export type EdgeWeight = (u: number, v: number, lengthMm: number) => number;
 
+/** Which line a margin follows: a prep's convex finish line, or a natural tooth's concave gum line. */
+export type MarginLineKind = 'finish' | 'gum';
+
 /**
  * Live-wire edge cost = length × f(κ̄), κ̄ = mean endpoint curvature.
- * Convex ridges (the margin) are cheap: f = max(0.02, 1 / (1 + (κ̄/κ0)²)).
- * Concave chamfer floors and the sulcus cost extra: f = 1 + min(2, −κ̄/κ0).
+ * Finish line: convex ridges (the margin) are cheap: f = max(0.02, 1 / (1 + (κ̄/κ0)²)); concave chamfer floors and
+ * the sulcus cost extra: f = 1 + min(2, −κ̄/κ0).
+ * Gum line (a natural tooth, specs/2026-10-27-natural-margin.md): the same with the sign flipped, so the path runs
+ * along the concave crease where the tooth meets the gum.
  */
-export function liveWireWeight(curvature: Float32Array, kappa0 = 1): EdgeWeight {
+export function liveWireWeight(curvature: Float32Array, kappa0 = 1, line: MarginLineKind = 'finish'): EdgeWeight {
+  const sign = line === 'gum' ? -1 : 1;
   return (u, v, length) => {
-    const k = 0.5 * (curvature[u]! + curvature[v]!);
+    const k = 0.5 * sign * (curvature[u]! + curvature[v]!);
     const f = k > 0 ? Math.max(0.02, 1 / (1 + (k / kappa0) ** 2)) : 1 + Math.min(2, -k / kappa0);
     return length * f;
   };

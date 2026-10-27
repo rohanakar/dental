@@ -1084,3 +1084,11 @@ input[type='checkbox'] {
     border-top: 1px solid var(--border);
   }
 }
+
+/* Margin step: which line the margin follows (finish line or gum line). */
+.margin-line {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}

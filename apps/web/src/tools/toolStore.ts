@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type { ColorMapName, ColorStops } from '../engine/colormap';
+import type { QaCheck } from '@dcad/shared';
 import type { GapCheck } from '../geometry/intaglio';
+import type { MarginLineKind } from '../geometry/livewire';
 import type { MeshValidation } from '../geometry/meshValidate';
 import type { CrownMapName, CrownResult } from '../workers/analysisTypes';
 
@@ -25,6 +27,15 @@ export interface ToolState {
   frameWarnings: string[];
   /** Live-wire anchors placed so far (open path until the margin is closed). */
   marginAnchors: MarginAnchor[];
+  /**
+   * The line chosen per tooth in the Margin step: a prep's finish line or a natural tooth's gum line
+   * (specs/2026-10-27-natural-margin.md). Unset: the margin's own line, else the finish line; auto-design decides.
+   */
+  marginLine: Record<number, MarginLineKind>;
+  /** "Redraw a section" in progress: waiting for its first click, then for its second. */
+  sectionRedraw: { first: MarginAnchor | null } | null;
+  /** The doubt checks of the last automatic gum line, shown while that line is unchanged (`key`: its points). */
+  gumLineChecks: { fdi: number; key: string; checks: QaCheck[] } | null;
   /** Surface analysis (adjacency + curvature) status for the prep jaw. */
   surface: 'idle' | 'analysing' | 'ready' | 'error';
   axisReport: AxisReport | null;
@@ -117,6 +128,9 @@ const initial = {
   autoFrames: true,
   frameWarnings: [] as string[],
   marginAnchors: [] as MarginAnchor[],
+  marginLine: {} as Record<number, MarginLineKind>,
+  sectionRedraw: null as { first: MarginAnchor | null } | null,
+  gumLineChecks: null as { fdi: number; key: string; checks: QaCheck[] } | null,
   surface: 'idle' as const,
   axisReport: null,
   legend: null,

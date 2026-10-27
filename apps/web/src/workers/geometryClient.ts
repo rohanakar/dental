@@ -1,5 +1,6 @@
 import * as Comlink from 'comlink';
 import type { BufferGeometry } from 'three';
+import type { MarginLineKind } from '../geometry/livewire';
 import type { PrepFinding } from '../geometry/prepFinder';
 import type { GeometryWorkerApi } from './geometry.worker';
 import type {
@@ -18,6 +19,8 @@ import type {
   FocusFacesRequest,
   FrameEstimate,
   FrameRequest,
+  NaturalMarginRequest,
+  NaturalMarginView,
   ImplantEntryView,
   ImplantPathRequest,
   ImplantPathView,
@@ -91,8 +94,10 @@ export const analysis = {
   findPreps: (jawSha: string, antagonistSha?: string): Promise<PrepFinding> => geometryWorker().findPreps(jawSha, antagonistSha),
   estimateFrame: (request: FrameRequest): Promise<FrameEstimate> => latest.run('frame', () => geometryWorker().estimateFrame(request)),
   /** Live-wire shortest-path tree from one vertex: predecessor per vertex (-1 = none). */
-  liveWireTree: (sha: string, source: number): Promise<Int32Array> => latest.run('livewire', () => geometryWorker().liveWireTree(sha, source)),
-  traceMargin: (sha: string, anchors: V3[]): Promise<MarginTrace> => latest.run('margin', () => geometryWorker().traceMargin(sha, anchors)),
+  liveWireTree: (sha: string, source: number, line: MarginLineKind = 'finish'): Promise<Int32Array> =>
+    latest.run('livewire', () => geometryWorker().liveWireTree(sha, source, line)),
+  traceMargin: (sha: string, anchors: V3[], line: MarginLineKind = 'finish'): Promise<MarginTrace> =>
+    latest.run('margin', () => geometryWorker().traceMargin(sha, anchors, line)),
   smoothMargin: (sha: string, points: Float32Array, iterations: number): Promise<Float32Array> =>
     latest.run('margin', () => geometryWorker().smoothMargin(sha, points, iterations)),
   axis: (request: AxisRequest): Promise<AxisAnalysis> => latest.run('axis', () => geometryWorker().axisAnalysis(request)),
@@ -101,6 +106,8 @@ export const analysis = {
     latest.run('crown', () => (request.implant ? geometryWorker().designImplantCrown(request) : geometryWorker().designCrown(request))),
   /** Automatic margin (never superseded: used by the auto-design orchestrator). */
   autoMargin: (request: AutoMarginRequest): Promise<AutoMarginResult> => geometryWorker().autoMargin(request),
+  /** A natural tooth's gum line (never superseded: used by the margin proposer and the Margin step's Find). */
+  naturalMargin: (request: NaturalMarginRequest): Promise<NaturalMarginView> => geometryWorker().naturalMargin(request),
   /** Automatic Maryland wing outline (classical.wing-outline; never superseded). */
   wingOutline: (request: WingOutlineRequest): Promise<WingOutlineView> => geometryWorker().wingOutline(request),
   /** Frame/axis without "latest wins", so interactive tools cannot cancel an orchestrator run. */

@@ -1,7 +1,7 @@
 /**
  * Run the natural-tooth margin benchmark (bench.ts).
  *
- *   pnpm --filter @dcad/pipeline-runner exec tsx src/natural/run.ts --methods refine,<name> [--set synthetic|real|all] [--only <substr>] [--out <file>]
+ *   pnpm --filter @dcad/pipeline-runner exec tsx src/natural/run.ts --methods refine,<name> [--set synthetic|real|all|holdout] [--jitter <mm>] [--only <substr>] [--out <file>]
  *
  * A method is src/natural/methods/<name>.ts exporting `method: NaturalMethod`. `--methods truth` scores the truth
  * against itself (the benchmark's self-check: about 0 mm).
@@ -21,7 +21,14 @@ const only = arg('only');
 const set = arg('set') ?? 'all';
 const out = arg('out') ?? `../../out/natural-margin-research/bench-${names.join('+')}.md`;
 const pool = set === 'synthetic' ? SYNTHETIC_CASES : set === 'real' ? REAL_CASES : set === 'holdout' ? HOLDOUT_CASES : NATURAL_CASES;
-const cases = only ? pool.filter((c) => c.name.includes(only)) : pool;
+const picked = only ? pool.filter((c) => c.name.includes(only)) : pool;
+// --jitter <mm>: each case four times, the click moved this far along ±x and ±y (click robustness).
+const jitter = Number(arg('jitter') ?? 0);
+const cases = jitter
+  ? picked.flatMap((c) =>
+      ([[jitter, 0], [-jitter, 0], [0, jitter], [0, -jitter]] as Array<[number, number]>).map((o) => ({ ...c, name: `${c.name} click ${o[0]},${o[1]}`, clickOffset: [(c.clickOffset?.[0] ?? 0) + o[0], (c.clickOffset?.[1] ?? 0) + o[1]] as [number, number] })),
+    )
+  : picked;
 
 if (names.includes('truth')) {
   // Self-check: the truth as a line (truthPolyline), scored against its own points.

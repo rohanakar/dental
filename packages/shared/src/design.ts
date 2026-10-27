@@ -60,6 +60,11 @@ export const MarginLine = z.object({
   /** Dense resampled closed curve derived from the anchors. */
   points: z.array(MarginPoint),
   source: Source,
+  /**
+   * The line it follows: a prep's finish line (omitted: as before) or, on a natural tooth, the gum line
+   * (specs/2026-10-27-natural-margin.md). Drawing and editing use the matching live-wire.
+   */
+  line: z.enum(['finish', 'gum']).optional(),
 });
 export type MarginLine = z.infer<typeof MarginLine>;
 

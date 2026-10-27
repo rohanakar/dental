@@ -5,14 +5,23 @@ import { marginProblems, type MarginProblems } from '../../tools/marginCheck';
 import './MarginIssues.css';
 import { isWing } from '../../tools/wing';
 import { isCavity } from '../../tools/inlay';
+import { marginKey } from '../../tools/marginLine';
+import { useToolStore } from '../../tools/toolStore';
 
-/** The problems of a tooth's closed margin (null when it has none, or no margin). */
+/**
+ * The problems of a tooth's closed margin (null when it has none, or no margin). A natural tooth's gum line turns
+ * sharply at the papillae by nature, so it is held to the length only; its doubt checks show instead (GumLineDoubt).
+ */
 function problemsOf(tooth: ToothDesign | undefined): MarginProblems | null {
   if (!tooth?.margin || tooth.margin.points.length < 3) return null;
   const problems = marginProblems(
     tooth.margin.points.map((m) => m.p),
     { fdi: tooth.fdi, frame: tooth.frame },
   );
+  if (tooth.margin.line === 'gum') {
+    const failed = problems.failed.filter((c) => c.id === 'margin.length');
+    return failed.length > 0 ? { ...problems, failed, kinks: [] } : null;
+  }
   return problems.failed.length > 0 ? problems : null;
 }
 
@@ -45,8 +54,9 @@ export function MarginWarning({ fdi }: { fdi: number }) {
     <div className="warning margin-problems" role="status">
       <strong>The {unit} would fold at this margin.</strong>
       <ul>
-        {problemLines(problems).map((line) => (
-          <li key={line}>{line}</li>
+        {problemLines(problems).map((line, i) => (
+          // Two kinks on the same side read the same.
+          <li key={i}>{line}</li>
         ))}
       </ul>
       <span>
@@ -54,6 +64,33 @@ export function MarginWarning({ fdi }: { fdi: number }) {
           ? 'Drag the nearest point onto the margin, or click on the prep to trace it again with more points near the red mark.'
           : 'Click on the prep to trace the margin again.'}
       </span>
+    </div>
+  );
+}
+
+/**
+ * Margin step: a gum line found automatically that its doubt checks flag (qa.ts gumLineGate), while it is unchanged:
+ * which check failed, and how to fix it.
+ */
+export function GumLineDoubt({ fdi }: { fdi: number }) {
+  const margin = useDesignStore((s) => s.doc.teeth.find((t) => t.fdi === fdi)?.margin);
+  const doubt = useToolStore((s) => s.gumLineChecks);
+  if (margin?.line !== 'gum' || !doubt || doubt.fdi !== fdi || doubt.key !== marginKey(margin.points)) return null;
+  const failed = doubt.checks.filter((c) => !c.passed);
+  if (failed.length === 0) return null;
+  return (
+    <div className="warning margin-problems" role="status">
+      <strong>Check this gum line: it may be off in places.</strong>
+      <ul>
+        {failed.map((c) => (
+          <li key={c.id}>
+            {c.message}
+            {c.value !== undefined && `: ${c.value}${c.unit === 'mm' ? ' mm' : ''}`}
+            {c.threshold !== undefined && ` (${c.bound === 'min' ? 'at least' : 'at most'} ${c.threshold}${c.unit === 'mm' ? ' mm' : ''})`}
+          </li>
+        ))}
+      </ul>
+      <span>Where it is off, use Redraw a section: click where the wrong part starts and where it ends.</span>
     </div>
   );
 }

@@ -13,6 +13,7 @@ import {
   snapToVertex,
   traceClosedLoop,
   type EdgeWeight,
+  type MarginLineKind,
 } from '../geometry/livewire';
 import { principalAxes, type V3 } from '../geometry/pca';
 import { writePly } from '../geometry/ply';
@@ -24,6 +25,7 @@ import { processScan } from '../geometry/processScan';
 import { bvhRayCaster, type RayCaster } from '../geometry/raycast';
 import { analyzeSurface, smoothVertexNormals, type SurfaceAnalysis } from '../geometry/surface';
 import { refineMargin } from '../geometry/marginRefine';
+import { anchorsAlong, naturalMargin } from '../geometry/naturalMargin';
 import { designCrown } from '../geometry/crown';
 import type { PreopScan } from '../geometry/inlay';
 import { designInlayUnit } from '../geometry/inlayUnit';
@@ -50,6 +52,8 @@ import type {
   FrameEstimate,
   FrameRequest,
   MarginTrace,
+  NaturalMarginRequest,
+  NaturalMarginView,
   SurfaceInfo,
   WingOutlineRequest,
   WingOutlineView,
@@ -69,7 +73,9 @@ const surfaceOf = (scan: RetainedScan): SurfaceAnalysis =>
   registry.cached(scan, 'surface', () => analyzeSurface({ positions: scan.positions, indices: scan.indices, normals: scan.normals }));
 const smoothNormalsOf = (scan: RetainedScan): Float32Array =>
   registry.cached(scan, 'smoothNormals', () => smoothVertexNormals(scan.normals, surfaceOf(scan).graph, 3));
-const weightOf = (scan: RetainedScan): EdgeWeight => registry.cached(scan, 'weight', () => liveWireWeight(surfaceOf(scan).curvature));
+/** The live-wire weight for a prep's finish line (convex cheap) or a natural tooth's gum line (concave cheap). */
+const weightOf = (scan: RetainedScan, line: MarginLineKind = 'finish'): EdgeWeight =>
+  registry.cached(scan, line === 'gum' ? 'weightGum' : 'weight', () => liveWireWeight(surfaceOf(scan).curvature, 1, line));
 
 const DEG = 180 / Math.PI;
 const angleDeg = (a: V3, b: V3) => Math.acos(Math.min(1, Math.max(-1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]))) * DEG;
@@ -224,25 +230,36 @@ const api = {
   },
 
   /** Bounded live-wire tree from one vertex; the main thread looks up paths to the cursor in it. */
-  liveWireTree(sha256: string, source: number): Int32Array {
+  liveWireTree(sha256: string, source: number, line: MarginLineKind = 'finish'): Int32Array {
     const scan = registry.get(sha256);
     const { graph } = surfaceOf(scan);
-    const { pred } = dijkstraTree(scan.positions, graph, weightOf(scan), source, LIVEWIRE_RADIUS_MM);
+    const { pred } = dijkstraTree(scan.positions, graph, weightOf(scan, line), source, LIVEWIRE_RADIUS_MM);
     return Comlink.transfer(pred, [pred.buffer as ArrayBuffer]);
   },
 
-  traceMargin(sha256: string, anchors: V3[]): MarginTrace {
+  traceMargin(sha256: string, anchors: V3[], line: MarginLineKind = 'finish'): MarginTrace {
     const scan = registry.get(sha256);
     const trace = marginFromAnchors({
       positions: scan.positions,
       indices: scan.indices,
       graph: surfaceOf(scan).graph,
-      weight: weightOf(scan),
+      weight: weightOf(scan, line),
       ray: rayOf(scan),
       anchors,
     });
     const result: MarginTrace = { points: trace.points, anchorVertices: trace.anchorVertices, lengthMm: trace.lengthMm };
     return Comlink.transfer(result, [trace.points.buffer as ArrayBuffer]);
+  },
+
+  /** A natural tooth's gum line (geometry/naturalMargin.ts), with anchors along it for editing. */
+  naturalMargin(request: NaturalMarginRequest): NaturalMarginView {
+    const scan = registry.get(request.jawSha);
+    const { graph, curvature } = surfaceOf(scan);
+    const r = naturalMargin({ positions: scan.positions, indices: scan.indices, graph, curvature, ray: rayOf(scan), frame: request.frame, fdi: request.fdi });
+    const points = new Float32Array(r.points.flat());
+    const { points: _p, ...measures } = r;
+    const result: NaturalMarginView = { ...measures, points, anchors: anchorsAlong(r.points) };
+    return Comlink.transfer(result, [points.buffer as ArrayBuffer]);
   },
 
   /** Automatic margin: ridge anchors on radial profiles from the prep top, closed by the live-wire. */
