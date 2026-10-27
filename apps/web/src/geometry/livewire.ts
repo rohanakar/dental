@@ -269,8 +269,45 @@ export function snapToVertex(positions: Float32Array, indices: Uint32Array, ray:
   return best;
 }
 
+/** How far a clicked margin anchor may move onto the ridge: about a screen pixel or two at margin zoom. */
+export const ANCHOR_SNAP_MM = 0.3;
+
+/**
+ * The ridge vertex a click meant (specs/2026-10-27-margin-click-snap.md): within `radiusMm` of the clicked vertex
+ * along the surface, the one with the strongest curvature of the line's sign (convex for a finish line, concave for a
+ * gum line). The clicked vertex stays when it is on the ridge already (at least four-fifths as strong) or nothing
+ * there is a ridge. A click a pixel off the edge otherwise becomes an anchor the live-wire must pass through: the line dips to it
+ * and back, and a crown on that kink can fold.
+ */
+export function snapToRidge(positions: Float32Array, graph: SurfaceGraph, curvature: Float32Array, vertex: number, line: MarginLineKind, radiusMm = ANCHOR_SNAP_MM): number {
+  const sign = line === 'gum' ? -1 : 1;
+  const c: V3 = [positions[vertex * 3]!, positions[vertex * 3 + 1]!, positions[vertex * 3 + 2]!];
+  const r2 = radiusMm * radiusMm;
+  const seen = new Set([vertex]);
+  const queue = [vertex];
+  const clicked = sign * curvature[vertex]!;
+  let best = vertex;
+  let bestK = clicked;
+  while (queue.length > 0) {
+    const v = queue.pop()!;
+    for (let e = graph.offsets[v]!; e < graph.offsets[v + 1]!; e++) {
+      const u = graph.neighbors[e]!;
+      if (seen.has(u)) continue;
+      seen.add(u);
+      const d2 = (positions[u * 3]! - c[0]) ** 2 + (positions[u * 3 + 1]! - c[1]) ** 2 + (positions[u * 3 + 2]! - c[2]) ** 2;
+      if (d2 > r2) continue;
+      queue.push(u);
+      const k = sign * curvature[u]!;
+      if (k > bestK) [best, bestK] = [u, k];
+    }
+  }
+  return bestK > 0 && clicked < 0.8 * bestK ? best : vertex;
+}
+
 export interface MarginTrace {
   anchorVertices: number[];
+  /** Each input anchor where the trace took it: on the ridge when snapped (`ridge`), else its vertex. Packed xyz. */
+  anchorPoints?: Float32Array;
   /** Closed vertex chain (the prep-region barrier). */
   loopVertices: Uint32Array;
   /** Dense closed curve, resampled to ~spacingMm and projected onto the surface (packed xyz). */
@@ -291,14 +328,19 @@ export function marginFromAnchors(input: {
   ray: RayCaster;
   anchors: readonly V3[];
   spacingMm?: number;
+  /** Clicked anchors: snap each onto the line's ridge nearby (snapToRidge). Scripted anchors stay exact without it. */
+  ridge?: { curvature: Float32Array; line: MarginLineKind };
 }): MarginTrace {
-  const { positions, indices, graph, weight, ray } = input;
+  const { positions, indices, graph, weight, ray, ridge } = input;
   const anchorVertices: number[] = [];
-  for (const a of input.anchors) {
-    const v = snapToVertex(positions, indices, ray, a);
+  const anchorPoints = new Float32Array(input.anchors.length * 3);
+  input.anchors.forEach((a, i) => {
+    let v = snapToVertex(positions, indices, ray, a);
     if (v === null) throw new Error('Margin anchor is not near the surface');
+    if (ridge) v = snapToRidge(positions, graph, ridge.curvature, v, ridge.line);
+    anchorPoints.set(positions.subarray(v * 3, v * 3 + 3), i * 3);
     if (anchorVertices[anchorVertices.length - 1] !== v) anchorVertices.push(v);
-  }
+  });
   if (anchorVertices.length > 1 && anchorVertices[0] === anchorVertices[anchorVertices.length - 1]) anchorVertices.pop();
   if (anchorVertices.length < 3) throw new Error('A closed margin needs at least 3 distinct anchors');
   const loop = traceClosedLoop(positions, graph, weight, anchorVertices);
@@ -309,5 +351,5 @@ export function marginFromAnchors(input: {
     const hit = ray.closestPoint([points[i]!, points[i + 1]!, points[i + 2]!], 1);
     if (hit) points.set(hit.point, i);
   }
-  return { anchorVertices, loopVertices: Uint32Array.from(loop), points, lengthMm: polylineLength(points) };
+  return { anchorVertices, anchorPoints, loopVertices: Uint32Array.from(loop), points, lengthMm: polylineLength(points) };
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { type EdgeWeight, liveWireWeight, marginFromAnchors, polylineLength } from './livewire';
+import { sharpestTurnDeg } from './marginShape';
 import type { V3 } from './pca';
 import { analyzeSurface } from './surface';
 import { syntheticArch, syntheticPrepMargin } from './synthetic';
@@ -18,14 +19,15 @@ describe('live-wire margin on the synthetic prep', () => {
         const i = Math.floor((k * 720) / count) + 13;
         return [ring[i * 3]!, ring[i * 3 + 1]!, ring[i * 3 + 2]!];
       });
-    const traceWith = (weight: EdgeWeight, anchorCount = 7) =>
+    const traceWith = (weight: EdgeWeight, anchorCount = 7, anchors = anchorsOnRing(anchorCount), snap = false) =>
       marginFromAnchors({
         positions: prepared.positions,
         indices: prepared.indices,
         graph: analysis.graph,
         weight,
         ray: prepared.ray,
-        anchors: anchorsOnRing(anchorCount),
+        anchors,
+        ...(snap ? { ridge: { curvature: analysis.curvature, line: 'finish' as const } } : {}),
       });
     const deviation = (points: Float32Array) => {
       let sum = 0;
@@ -47,5 +49,18 @@ describe('live-wire margin on the synthetic prep', () => {
     const geodesic = deviation(traceWith((_u, _v, l) => l, 4).points);
     expect(sparse.mean).toBeLessThan(0.15);
     expect(geodesic.mean).toBeGreaterThan(2 * sparse.mean);
+
+    // A click 0.15 mm down the chamfer (specs/2026-10-27-margin-click-snap.md): snapped back onto the ridge it traces
+    // as a click on the ridge does; kept where it landed, the line bends down to it.
+    const weight = liveWireWeight(analysis.curvature);
+    const off = anchorsOnRing(7).map((a, k): V3 => (k === 3 ? [a[0], a[1], a[2] - 0.15] : a));
+    const turn = (t: ReturnType<typeof traceWith>) => sharpestTurnDeg(Array.from({ length: t.points.length / 3 }, (_, i): V3 => [t.points[i * 3]!, t.points[i * 3 + 1]!, t.points[i * 3 + 2]!]));
+    const anchorToRing = (t: ReturnType<typeof traceWith>) => distanceToClosedPolyline([t.anchorPoints![9]!, t.anchorPoints![10]!, t.anchorPoints![11]!], ring);
+    const kept = traceWith(weight, 7, off);
+    const snapped = traceWith(weight, 7, off, true);
+    expect(anchorToRing(kept)).toBeGreaterThan(0.15);
+    expect(anchorToRing(snapped)).toBeLessThan(0.1);
+    expect(turn(snapped)).toBeLessThan(turn(kept) - 5);
+    expect(Math.abs(turn(snapped) - turn(traceWith(weight, 7, anchorsOnRing(7), true)))).toBeLessThan(1);
   });
 });

@@ -438,3 +438,10 @@ with Auto-design next.
 - Auto-design bridge is the primary on Tooth frame once every unit is framed, and on Crown proposal while a margin
   is missing.
 - 125 tests. See [2026-10-26-bridge-out-of-the-box.md](2026-10-26-bridge-out-of-the-box.md).
+
+**2026-10-27: margin clicks snap onto the ridge.**
+- A clicked anchor moves to the strongest ridge within 0.3 mm, so a click a pixel off the edge no longer kinks the
+  line.
+- The kink had folded the demo crown's margin band since the demo jaw got its gum.
+- 125 tests. See [2026-10-27-margin-click-snap.md](2026-10-27-margin-click-snap.md).
+

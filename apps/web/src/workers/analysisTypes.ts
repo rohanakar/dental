@@ -47,6 +47,8 @@ export interface MarginTrace {
   points: Float32Array;
   /** Mesh vertex each anchor snapped to. */
   anchorVertices: number[];
+  /** Each input anchor where the trace took it (traceMargin: snapped onto the ridge), packed xyz. */
+  anchorPoints?: Float32Array;
   lengthMm: number;
 }
 

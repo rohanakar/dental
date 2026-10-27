@@ -251,9 +251,11 @@ const api = {
       weight: weightOf(scan, line),
       ray: rayOf(scan),
       anchors,
+      // The user's clicks: each onto the line's ridge nearby (specs/2026-10-27-margin-click-snap.md).
+      ridge: { curvature: surfaceOf(scan).curvature, line },
     });
-    const result: MarginTrace = { points: trace.points, anchorVertices: trace.anchorVertices, lengthMm: trace.lengthMm };
-    return Comlink.transfer(result, [trace.points.buffer as ArrayBuffer]);
+    const result: MarginTrace = { points: trace.points, anchorVertices: trace.anchorVertices, anchorPoints: trace.anchorPoints, lengthMm: trace.lengthMm };
+    return Comlink.transfer(result, [trace.points.buffer as ArrayBuffer, ...(trace.anchorPoints ? [trace.anchorPoints.buffer as ArrayBuffer] : [])]);
   },
 
   /**

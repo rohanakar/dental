@@ -650,11 +650,14 @@ class MarginTool {
     try {
       const line = marginLineOf(ctx.fdi);
       const trace = await analysis.traceMargin(ctx.jaw.sha256, anchors, line);
+      // The anchors where the trace took them: snapped onto the ridge, so the points sit on the line.
+      const snapped = trace.anchorPoints;
+      const at = (p: V3, i: number): V3 => (snapped && snapped.length === anchors.length * 3 ? [snapped[i * 3]!, snapped[i * 3 + 1]!, snapped[i * 3 + 2]!] : p);
       useDesignStore.getState().dispatch({
         type: 'setMargin',
         fdi: ctx.fdi,
         margin: {
-          anchors: anchors.map((p) => ({ p })),
+          anchors: anchors.map((p, i) => ({ p: at(p, i) })),
           points: toMarginPoints(trace.points),
           source: 'manual',
           ...(line === 'gum' ? { line } : {}),
