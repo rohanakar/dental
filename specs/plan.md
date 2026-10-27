@@ -396,3 +396,9 @@ with Auto-design next.
   - correction uses a gum-crease live-wire and a two-click Redraw a section.
 - **The doubt warning** catches only 3 of 15 held-out misses; a better signal needs more real data.
 - 120 tests. See [2026-10-27-natural-margin.md](2026-10-27-natural-margin.md).
+
+**2026-10-27: natural-tooth follow-up.**
+- The gum-line doubt now reads as what is wrong, said once.
+- Finalize judges a gum line by its closure and length, not the kink rule.
+- On a natural tooth it says first that the tooth must be prepared before a crown can be milled.
+- See [2026-10-27-natural-margin.md](2026-10-27-natural-margin.md).

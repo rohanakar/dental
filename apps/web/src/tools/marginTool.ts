@@ -110,7 +110,9 @@ class MarginTool {
     try {
       const proposal = await marginProposer.run({ fdi: ctx.fdi });
       useDesignStore.getState().dispatch(proposal.output.commands);
-      const failed = proposal.qa.filter((c) => !c.passed);
+      // A doubtful gum line is explained in the Margin step's warning box; a finish line's failed checks are said here.
+      const gum = proposal.output.commands.some((c) => c.type === 'setMargin' && c.margin.line === 'gum');
+      const failed = gum ? [] : proposal.qa.filter((c) => !c.passed);
       tools.set({
         message: failed.length
           ? { kind: 'warning', text: `${proposal.rationale ?? ''} Check it: ${failed.map((c) => c.message.toLowerCase()).join('; ')}.` }

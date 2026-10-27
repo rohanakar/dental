@@ -28,7 +28,7 @@ const ready: ReadinessInput = {
 };
 
 describe('mill readiness', () => {
-  it('passes a finished design and fails a thin, stale, undercut one; an unmeasured axis is not ready', () => {
+  it('passes a finished design and fails a thin, stale, undercut one; an unmeasured axis is not ready; a gum line is held to its own rules', () => {
     expect(isReady(millReadiness(ready))).toBe(true);
     expect(millReadiness(ready).map((i) => i.id)).toEqual(['margin', 'axis', 'solid', 'thickness', 'occlusion', 'mesial']);
 
@@ -44,6 +44,12 @@ describe('mill readiness', () => {
     const unmeasured = millReadiness({ ...ready, axis: null });
     expect(unmeasured.find((i) => i.id === 'axis')?.status).toBe('unknown');
     expect(isReady(unmeasured)).toBe(false);
+
+    // A natural tooth's gum line turns sharply at the papillae: the finish line's kink rule fails it, the gum line's
+    // closure and length rules pass it.
+    const scalloped = margin.map(([x, y], i) => (i % 30 === 0 ? ([x * 1.4, y * 1.4, 0] as const) : ([x, y, 0] as const)));
+    expect(millReadiness({ ...ready, margin: scalloped }).find((i) => i.id === 'margin')?.status).toBe('fail');
+    expect(millReadiness({ ...ready, margin: scalloped, marginLine: 'gum' }).find((i) => i.id === 'margin')?.status).toBe('pass');
 
     // A pontic has no margin or axis: those rows are left out, so it is ready without them.
     const pontic = millReadiness({ ...ready, margin: null, axis: null, needs: readinessNeeds('pontic') });

@@ -607,6 +607,7 @@ export function BridgeFinalize() {
       neighbours: isWing(doc.setup, tooth.fdi) ? { mesial: false, distal: false } : freeNeighbours(doc, tooth, view?.frame),
       // A wing's outline has its own row (wingReadinessRows): the prep margin's kink rule does not fit its corners.
       needs: isImplantTooth(doc, tooth.fdi) ? IMPLANT_NEEDS : { ...readinessNeeds(kind), ...(isWing(doc.setup, tooth.fdi) ? { margin: false } : {}) },
+      ...(tooth.margin?.line ? { marginLine: tooth.margin.line } : {}),
     })
       .concat(isImplantTooth(doc, tooth.fdi) ? implantReadiness(tooth, view?.implant, computing) : [])
       .map((i) => ({ ...i, id: `${tooth.fdi}-${i.id}`, ...(i.id === 'axis' && !axes ? { detail: 'Measuring…' } : {}) }));

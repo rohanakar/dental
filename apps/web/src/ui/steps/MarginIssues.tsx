@@ -1,4 +1,4 @@
-import { bridgeOf, type DesignDocument, type ToothDesign, unitKind } from '@dcad/shared';
+import { bridgeOf, type DesignDocument, type QaCheck, type ToothDesign, unitKind } from '@dcad/shared';
 import { useMemo } from 'react';
 import { useDesignStore } from '../../design/store';
 import { marginProblems, type MarginProblems } from '../../tools/marginCheck';
@@ -68,6 +68,23 @@ export function MarginWarning({ fdi }: { fdi: number }) {
   );
 }
 
+/** A failed gum-line check, said as what is wrong. */
+function doubtReason(c: QaCheck): string {
+  const v = c.value ?? 0;
+  switch (c.id) {
+    case 'margin.agree':
+      return `Two ways of tracing it differ by ${v.toFixed(2)} mm on average (a clear line: under ${c.threshold} mm).`;
+    case 'margin.round':
+      return `It is short for this tooth (${v.toFixed(2)}× its usual outline): it may cut across the tooth.`;
+    case 'margin.closed':
+      return 'It does not close round the tooth.';
+    case 'margin.length':
+      return `Its length, ${v.toFixed(1)} mm, is outside the plausible 8–60 mm.`;
+    default:
+      return c.message;
+  }
+}
+
 /**
  * Margin step: a gum line found automatically that its doubt checks flag (qa.ts gumLineGate), while it is unchanged:
  * which check failed, and how to fix it.
@@ -76,21 +93,17 @@ export function GumLineDoubt({ fdi }: { fdi: number }) {
   const margin = useDesignStore((s) => s.doc.teeth.find((t) => t.fdi === fdi)?.margin);
   const doubt = useToolStore((s) => s.gumLineChecks);
   if (margin?.line !== 'gum' || !doubt || doubt.fdi !== fdi || doubt.key !== marginKey(margin.points)) return null;
-  const failed = doubt.checks.filter((c) => !c.passed);
-  if (failed.length === 0) return null;
+  const reasons = doubt.checks.filter((c) => !c.passed).map(doubtReason);
+  if (reasons.length === 0) return null;
   return (
     <div className="warning margin-problems" role="status">
-      <strong>Check this gum line: it may be off in places.</strong>
+      <strong>This gum line may be off in places.</strong>
       <ul>
-        {failed.map((c) => (
-          <li key={c.id}>
-            {c.message}
-            {c.value !== undefined && `: ${c.value}${c.unit === 'mm' ? ' mm' : ''}`}
-            {c.threshold !== undefined && ` (${c.bound === 'min' ? 'at least' : 'at most'} ${c.threshold}${c.unit === 'mm' ? ' mm' : ''})`}
-          </li>
+        {reasons.map((reason) => (
+          <li key={reason}>{reason}</li>
         ))}
       </ul>
-      <span>Where it is off, use Redraw a section: click where the wrong part starts and where it ends.</span>
+      <span>Look along it; where it is off, use Redraw a section.</span>
     </div>
   );
 }

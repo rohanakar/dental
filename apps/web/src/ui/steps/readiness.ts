@@ -29,6 +29,11 @@ export interface ReadinessInput {
   neighbours: { mesial: boolean; distal: boolean };
   /** Steps this unit has (a pontic has no margin or axis); rows it does not need are left out. */
   needs?: { margin: boolean; axis: boolean };
+  /**
+   * The line the margin follows (MarginLine.line). A natural tooth's gum line is held to closure and length, not the
+   * finish line's kink rule: it turns sharply at the papillae (specs/2026-10-27-natural-margin.md).
+   */
+  marginLine?: 'finish' | 'gum';
 }
 
 /** The rows a unit needs, from its design steps: a pontic has no margin or insertion axis. */
@@ -66,8 +71,9 @@ export function millReadiness(input: ReadinessInput): ReadinessItem[] {
     if (points.length < 3) items.push({ id: 'margin', label: 'Margin closed', status: 'fail', detail: 'No margin drawn' });
     else {
       const lengthMm = loopLength(points);
-      const failed = marginGate({ points, lengthMm, prepClosed: axis?.prepClosed }).find((c) => !c.passed);
-      items.push({ id: 'margin', label: 'Margin closed', status: failed ? 'fail' : 'pass', detail: failed ? failed.message : `Closed loop, ${lengthMm.toFixed(1)} mm` });
+      const gum = input.marginLine === 'gum';
+      const failed = marginGate({ points, lengthMm, prepClosed: axis?.prepClosed }).find((c) => !c.passed && !(gum && c.id === 'margin.smooth'));
+      items.push({ id: 'margin', label: 'Margin closed', status: failed ? 'fail' : 'pass', detail: failed ? failed.message : `${gum ? 'Gum line, closed' : 'Closed loop'}, ${lengthMm.toFixed(1)} mm` });
     }
   }
 
@@ -102,7 +108,7 @@ export function millReadiness(input: ReadinessInput): ReadinessItem[] {
       id: 'thickness',
       label: 'Thick enough',
       status: gate.find((c) => c.id === 'crown.thickness')!.passed ? 'pass' : 'fail',
-      detail: `Thinnest ${mm(min)}, ${input.material} minimum ${mm(params.minThicknessMm)}`,
+      detail: `Thinnest ${mm(min)}, ${input.material} minimum ${mm(params.minThicknessMm)}${input.marginLine === 'gum' && min < params.minThicknessMm ? ': the tooth is not prepared, so there is no room for the crown' : ''}`,
     });
   }
 

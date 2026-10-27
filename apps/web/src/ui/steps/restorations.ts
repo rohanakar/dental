@@ -98,6 +98,7 @@ function readinessOf(
     material: materialLabel(doc, tooth.fdi),
     adaptationStale: adaptationStale(tooth),
     needs: isImplant ? IMPLANT_NEEDS : readinessNeeds(unitKind(doc.setup, tooth.fdi)),
+    ...(tooth.margin?.line ? { marginLine: tooth.margin.line } : {}),
   }).concat(isImplant ? implantReadiness(tooth, implant) : []);
 }
 

@@ -26,8 +26,8 @@ export const GUM_LINE_MIN_PERIMETER = 0.8;
 export function gumLineGate(input: { lengthMm: number; prepClosed?: boolean; agreementMm: number; perimeterRatio: number }): QaCheck[] {
   const checks = [
     check('margin.length', input.lengthMm >= MARGIN_LENGTH_MM[0] && input.lengthMm <= MARGIN_LENGTH_MM[1], 'Margin length within 8–60 mm', input.lengthMm, undefined, { unit: 'mm' }),
-    check('margin.agree', input.agreementMm <= GUM_LINE_MAX_DISAGREEMENT_MM, 'Two methods find the same gum line: mean distance between them', input.agreementMm, GUM_LINE_MAX_DISAGREEMENT_MM, { unit: 'mm', bound: 'max' }),
-    check('margin.round', input.perimeterRatio >= GUM_LINE_MIN_PERIMETER, 'The line goes round the whole tooth: its length over the tooth’s nominal outline', input.perimeterRatio, GUM_LINE_MIN_PERIMETER, { bound: 'min' }),
+    check('margin.agree', input.agreementMm <= GUM_LINE_MAX_DISAGREEMENT_MM, 'Clear gum line: two ways of tracing it agree (mean distance apart)', input.agreementMm, GUM_LINE_MAX_DISAGREEMENT_MM, { unit: 'mm', bound: 'max' }),
+    check('margin.round', input.perimeterRatio >= GUM_LINE_MIN_PERIMETER, 'Goes round the whole tooth: length over the tooth’s usual outline', input.perimeterRatio, GUM_LINE_MIN_PERIMETER, { bound: 'min' }),
   ];
   if (input.prepClosed !== undefined) checks.unshift(check('margin.closed', input.prepClosed, 'The margin is closed all the way round the tooth'));
   return checks;

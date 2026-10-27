@@ -304,8 +304,8 @@ async function gumLineProposal(ctx: ToothContext, frame: Frame, why: 'chosen' | 
     qa,
     rationale:
       why === 'chosen'
-        ? `The margin follows the gum line, where the tooth meets the gum, as chosen for this tooth (${length}).`
-        : `No finish line was found all the way round and no prep was seen at this tooth, so the margin follows the gum line, as on a natural tooth (${length}). If the tooth is prepared, choose Finish line in the Margin step.`,
+        ? `The margin follows the gum line (${length}).`
+        : `No finish line or prep found here, so the margin follows the gum line, as on a natural tooth (${length}). If the tooth is prepared, choose Finish line.`,
   };
 }
 

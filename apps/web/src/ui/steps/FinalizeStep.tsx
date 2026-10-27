@@ -25,8 +25,8 @@ import './NudgePad.css';
 const STATUS_ICON = { pass: CheckIcon, fail: FailIcon, unknown: UnknownIcon } satisfies Record<ReadinessStatus, unknown>;
 const STATUS_TEXT: Record<ReadinessStatus, string> = { pass: 'passed', fail: 'failed', unknown: 'not measured' };
 
-/** The clinical checks behind "ready to mill", each with its measured value. */
-function ReadinessList({ items }: { items: ReadinessItem[] }) {
+/** The clinical checks behind "ready to mill", each with its measured value; `note` says up front why, when it is plain. */
+function ReadinessList({ items, note }: { items: ReadinessItem[]; note?: string }) {
   const open = items.filter((i) => i.status !== 'pass').length;
   return (
     <section className="readiness" aria-labelledby="readiness-head">
@@ -34,6 +34,7 @@ function ReadinessList({ items }: { items: ReadinessItem[] }) {
         {open === 0 ? <CheckIcon /> : <AlertIcon />}
         {open === 0 ? 'Ready to mill' : `Not ready to mill: ${open} ${open === 1 ? 'check' : 'checks'} open`}
       </div>
+      {note && open > 0 && <p className="readiness-note">{note}</p>}
       <ul>
         {items.map((item) => {
           const Icon = STATUS_ICON[item.status];
@@ -139,6 +140,7 @@ function CrownFinalize() {
     adaptationStale: adaptationStale(tooth),
     neighbours: { mesial: Boolean(tooth.frame?.mesialContact), distal: Boolean(tooth.frame?.distalContact) },
     needs: implant ? IMPLANT_NEEDS : readinessNeeds(kind),
+    ...(tooth.margin?.line ? { marginLine: tooth.margin.line } : {}),
   }).concat(implant ? implantReadiness(tooth, implantView, crown?.computing) : []);
   // An inlay or onlay: the inlay gate's rows instead of the adaptation rows.
   const checks = withInlayRows(setup, tooth.fdi, rows, crown?.computing ? undefined : crown?.inlay);
@@ -154,7 +156,10 @@ function CrownFinalize() {
 
   return (
     <div className="step-body">
-      <ReadinessList items={items} />
+      <ReadinessList
+        items={items}
+        note={tooth.margin?.line === 'gum' ? 'This tooth is natural (its margin is the gum line): a crown needs the tooth prepared first, so it cannot be milled as it is.' : undefined}
+      />
       {/* Exported as shown: re-adapt first if a later edit switched the adaptation off. */}
       <ReadaptNotice />
       {confirming ? (

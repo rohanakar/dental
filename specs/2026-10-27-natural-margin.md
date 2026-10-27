@@ -236,3 +236,27 @@ its own checks on 19 of 47 real natural teeth.
   only usable, and flag as doubtful.
 - **From the research, not built:** the doubt heat map and fly-to, anchor insert and delete, scribble seeds on the
   same solver, a colour term for coloured scans.
+
+## Follow-up (2026-10-27): the warnings read plainly, and Finalize judges a gum line by its own rules
+
+**From the user's report.** The doubt warning read "Two methods find the same gum line: …" when they did not, and
+the same doubt showed twice. Finalize failed "Margin closed" on the 120° kink rule for a gum line, and listed six
+failures on a natural tooth without saying why.
+
+**Changes:**
+- **Plain wording:**
+  - The gum-line checks are worded as their condition ("Clear gum line: two ways of tracing it agree").
+  - The Margin step's box says what is wrong: "Two ways of tracing it differ by 0.69 mm on average (a clear line:
+    under 0.3 mm)".
+  - Find's message no longer repeats the doubt.
+  - The gum-line rationales are shorter.
+- **Finalize** (`ui/steps/readiness.ts`, `marginLine`):
+  - a gum line is held to closure and length, not the kink rule;
+  - a natural tooth's list starts with one line: the tooth is not prepared, so a crown has no room and cannot be
+    milled as it is;
+  - the thickness row says the same.
+
+  The watertight, thickness and adaptation failures on a natural tooth are expected, and are now explained.
+- **Test:** the readiness test gains an assertion. A scalloped line fails the finish line's margin row and passes
+  as a gum line. 120 tests, unchanged in count.
+- **Browser:** the Margin box and Finalize for natural 11 in the demo were checked as above.
