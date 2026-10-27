@@ -12,6 +12,7 @@ import { isWing } from '../../tools/wing';
 import { isCavity } from '../../tools/inlay';
 import { returnTo } from '../history';
 import { CheckIcon, FailIcon } from '../icons';
+import { ReadinessList, useCrownReadiness } from '../steps/ReadinessList';
 import './AutoDesign.css';
 
 type V3 = [number, number, number];
@@ -131,14 +132,23 @@ function nextAction(failed: StepRun | undefined, bridge: boolean): string {
   }
 }
 
+/** The draft's ready-to-mill rows (Finalize's, measured on the draft): what a technician judges it by. */
+function DraftReadiness() {
+  const readiness = useCrownReadiness();
+  return readiness ? <ReadinessList items={readiness.items} compact /> : null;
+}
+
 /**
- * The review of an open draft: one line for the verdict and what to do, the failing checks, and the full check list
- * folded away. A complete draft offers Accept as the main action; a draft that stopped offers Reject, with "Keep the
- * draft" (the passed steps, and the failed step's output to fix by hand) beside it.
+ * The review of an open draft: the verdict, the clinical rows of a crown draft, and the step checks folded away. A
+ * draft that stopped also says what to do and shows its failing checks. A complete draft offers Accept as the main
+ * action; a draft that stopped offers Reject, with "Keep the draft" (the passed steps, and the failed step's output to
+ * fix by hand) beside it.
  */
 function Review({ className = '' }: { className?: string }) {
   const { complete, steps, bridge } = useOrchestrator();
   const isBridge = Boolean(bridge);
+  // A single unit with a crown: the rows Finalize gates on (a bridge's are per unit, in Finalize).
+  const crowned = useDesignStore((s) => !isBridge && Boolean(selectActiveTooth(s)?.crown));
   // Each check once: a check measured again by a later step shows on that step only.
   const ran = latestChecks(steps.filter((s) => s.status === 'passed' || s.status === 'failed'));
   const failed = steps.find((s) => s.status === 'failed');
@@ -158,7 +168,7 @@ function Review({ className = '' }: { className?: string }) {
   return (
     <div className={`auto-banner ${className}`} role="status">
       <strong>{complete ? `Draft ready: all ${checks} checks passed` : `Draft stopped at ${rowLabel(failed, isBridge)}`}</strong>
-      <span className="small">{complete ? 'Look it over on screen. Accept keeps it as one undo step.' : nextAction(failed, isBridge)}</span>
+      {!complete && <span className="small">{nextAction(failed, isBridge)}</span>}
       {failing.length > 0 && (
         <ul className="auto-checks">
           {failing.map((c) => (
@@ -172,10 +182,11 @@ function Review({ className = '' }: { className?: string }) {
           ))}
         </ul>
       )}
+      {crowned && <DraftReadiness />}
       <div className="row">{complete ? [keep, discard] : passedAny || failed?.step !== 'frame' ? [discard, keep] : [discard]}</div>
       {ran.length > 0 && (
         <details className="auto-details">
-          <summary>Show the checks ({checks})</summary>
+          <summary>Show the step checks ({checks})</summary>
           <ol className="auto-steps">
             {ran.map((r) => (
               <StepRow key={r.key} run={r} review bridge={isBridge} />

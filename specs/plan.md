@@ -418,3 +418,16 @@ with Auto-design next.
 - **Scribbles:** Mark tooth or Mark gum re-solves a gum line.
 - **Demo:** the demo jaw has real gum, so one-click on its natural teeth completes.
 - 123 tests. See [2026-10-27-margin-review-ux.md](2026-10-27-margin-review-ux.md).
+
+**2026-10-27: frames from Case setup.**
+- Every crown-prep and implant tooth is framed as soon as its scan is in, on any step, in one undo step: preps for
+  crowns, a new scan-body detector for implants, and both jaws. The scan-body detector found 0 false scan bodies on
+  25 synthetic and 12 real jaws.
+- Teeth that can't be framed are named once.
+- See [2026-10-26-auto-frames-jaws-implants.md](2026-10-26-auto-frames-jaws-implants.md) and
+  [2026-10-26-frames-from-case-setup.md](2026-10-26-frames-from-case-setup.md).
+
+**2026-10-27: the draft review leads with the clinical rows.**
+- The review shows Finalize's ready-to-mill rows, with values, computed on the draft.
+- One-click re-arms after Reject, Undo or keeping a draft.
+- 124 tests. See [2026-10-26-draft-review-clinical.md](2026-10-26-draft-review-clinical.md).

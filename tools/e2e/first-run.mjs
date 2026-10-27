@@ -105,12 +105,16 @@ const verdict = await banner.locator('strong').textContent();
 const folded = await banner.locator('details.auto-details').evaluate((d) => !d.open);
 const visibleChecks = await banner.locator('.auto-checks li').evaluateAll((els) => els.filter((e) => e.checkVisibility()).length);
 expect(/^Draft ready: all \d+ checks passed$/.test(verdict ?? ''), 'the review is one verdict line', verdict ?? '');
-expect(folded && visibleChecks === 0, 'the checks are folded away', `${visibleChecks} visible`);
+expect(folded && visibleChecks === 0, 'the step checks are folded away', `${visibleChecks} visible`);
+// The review leads with Finalize's clinical rows, measured on the draft (specs/2026-10-26-draft-review-clinical.md).
+await page.waitForFunction(() => [...document.querySelectorAll('.readiness.compact li')].every((li) => !/Measuring/.test(li.textContent ?? '')), null, { timeout: 60000 }).catch(() => {});
+const clinical = await banner.locator('.readiness.compact li').evaluateAll((els) => els.map((e) => e.textContent?.replace(/\s+/g, ' ').trim() ?? ''));
+expect(clinical.length >= 5 && clinical.some((t) => /Thick enough/.test(t) && /mm/.test(t)), 'the review shows the clinical rows with their values', JSON.stringify(clinical));
 const draftPrimaries = await primaries();
 expect(draftPrimaries.length === 1 && draftPrimaries[0] === 'Accept', 'Accept is the only primary action while the draft is open', JSON.stringify(draftPrimaries));
 await shot('03-draft');
 await banner.locator('summary').click();
-expect((await banner.locator('.auto-checks li').count()) > 5, 'Show the checks opens the check list');
+expect((await banner.locator('.auto-checks li').count()) > 5, 'Show the step checks opens the check list');
 await banner.locator('summary').click();
 
 await banner.getByRole('button', { name: 'Accept', exact: true }).click();

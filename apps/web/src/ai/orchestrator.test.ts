@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { newDocument } from '../design/document';
 import { applyCommands } from '../design/reducer';
 import { useDesignStore } from '../design/store';
+import { useToolStore } from '../tools/toolStore';
 import type { Proposal, Proposer } from './proposers';
 import { bridgeGate } from './qa';
 
@@ -116,7 +117,8 @@ describe('auto-design orchestrator', () => {
     expect(useDesignStore.getState().transaction).not.toBeNull();
     expect(useDesignStore.getState().doc.teeth[0]!.axis).toEqual(axis);
     expect(useDesignStore.getState().past).toHaveLength(0);
-    accept();
+    // A run started by a click (one-click) says so: Reject, Undo or keeping it unfinished re-arms one-click.
+    expect(accept()).toEqual({ step: 'frame', fdi: 36, label: 'Auto-design', oneClick: true });
     const s = useDesignStore.getState();
     expect(s.transaction).toBeNull();
     expect(s.past).toHaveLength(1);
@@ -125,7 +127,7 @@ describe('auto-design orchestrator', () => {
     expect(events.map((e) => [e.step, e.action])).toEqual([['frame', 'accepted'], ['margin', 'accepted'], ['axis', 'accepted']]);
     for (const e of events) expect(ProposalEvent.safeParse(e).success).toBe(true);
     // The committed document knows its draft: undoing from it returns to where the run started.
-    expect(draftCommitted(s.doc)).toEqual({ step: 'frame', fdi: 36, label: 'Auto-design' });
+    expect(draftCommitted(s.doc)).toEqual({ step: 'frame', fdi: 36, label: 'Auto-design', oneClick: true });
     s.undo();
     expect(useDesignStore.getState().doc.teeth[0]!.frame).toBeUndefined();
     expect(draftCommitted(useDesignStore.getState().doc)).toBeUndefined();
@@ -141,7 +143,9 @@ describe('auto-design orchestrator', () => {
     expect(o.pendingReview).toBe(true);
     expect(o.complete).toBe(false);
     useDesignStore.getState().setActiveStep('axis'); // the draft opened elsewhere: Reject returns to the run's start
-    expect(reject()).toEqual({ step: 'frame', fdi: 36, label: 'Auto-design' });
+    useToolStore.getState().set({ autoArmed: false });
+    expect(reject()).toEqual({ step: 'frame', fdi: 36, label: 'Auto-design', oneClick: true });
+    expect(useToolStore.getState().autoArmed).toBe(true);
     expect(useDesignStore.getState().doc).toBe(before);
     expect(useDesignStore.getState().past).toHaveLength(0);
     expect(useEventLog.getState().queued.map((e) => e.action)).toEqual(['rejected', 'rejected', 'rejected']);

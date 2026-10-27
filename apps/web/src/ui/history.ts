@@ -1,5 +1,5 @@
 import { stepsFor, unitKind, type StepId } from '@dcad/shared';
-import { draftCommitted, type DraftOrigin } from '../ai/orchestrator';
+import { draftCommitted, type DraftOrigin, rearmOneClick } from '../ai/orchestrator';
 import { useDesignStore } from '../design/store';
 import { useToolStore } from '../tools/toolStore';
 import { missingBefore } from './stepGuide';
@@ -38,7 +38,7 @@ function historyFree(): boolean {
   return false;
 }
 
-/** Undo (keyboard and toolbar). Undoing an accepted auto-design draft returns to where its run started. */
+/** Undo (keyboard and toolbar). Undoing an accepted auto-design draft returns to where its run started (one-click re-armed). */
 export function undo(): void {
   if (!historyFree()) return;
   const design = useDesignStore.getState();
@@ -49,6 +49,7 @@ export function undo(): void {
   if (draft) {
     undoneFrom.set(draft, at);
     returnTo(draft);
+    rearmOneClick(draft);
   }
   notice(draft ? `Undone: ${name(draft)}.` : null);
 }

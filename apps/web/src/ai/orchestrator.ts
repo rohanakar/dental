@@ -93,6 +93,8 @@ export interface DraftOrigin {
   step: StepId;
   fdi: number;
   label: string;
+  /** Started by a click on the prep with one-click armed (only that click gives a run a seed): taking it back re-arms. */
+  oneClick: boolean;
 }
 
 let currentOrigin: DraftOrigin | null = null;
@@ -101,6 +103,11 @@ const committedDrafts = new WeakMap<DesignDocument, DraftOrigin>();
 
 /** The accepted draft whose commit made `doc`, if any. */
 export const draftCommitted = (doc: DesignDocument | undefined): DraftOrigin | undefined => (doc ? committedDrafts.get(doc) : undefined);
+
+/** A one-click draft taken back (Reject, Undo) or kept unfinished re-arms one-click: its click disarmed it. */
+export function rearmOneClick(origin: DraftOrigin | null | undefined): void {
+  if (origin?.oneClick) useToolStore.getState().set({ autoArmed: true, framePick: 'seed' });
+}
 
 /** Max time to wait for the derived crown to catch up with a step (display only). */
 const SETTLE_TIMEOUT_MS = 60_000;
@@ -231,7 +238,7 @@ async function execute(input: { plan: PlanItem[]; startIndex: number; label: str
   });
   currentRun = [];
   const { activeFdi: runFdi, activeStep } = useDesignStore.getState();
-  currentOrigin = { step: activeStep, fdi: runFdi, label: input.label };
+  currentOrigin = { step: activeStep, fdi: runFdi, label: input.label, oneClick: plan.some((p) => p.seed) };
   useDesignStore.getState().beginTransaction({ label: input.label, author: 'proposer' });
   let failed = false;
   for (const item of plan.slice(startIndex)) {
@@ -305,13 +312,18 @@ function acceptRuns(runs: readonly RunRecord[]): void {
 const sameOutput = (a: Pick<AcceptedRecord, 'fdi' | 'step' | 'proposerId'>, b: Pick<AcceptedRecord, 'fdi' | 'step' | 'proposerId'>) =>
   a.fdi === b.fdi && a.step === b.step && a.proposerId === b.proposerId;
 
-/** Keep the draft: one undo entry (author "proposer") and `accepted` events for the passed steps. */
-export function accept(): void {
+/**
+ * Keep the draft: one undo entry (author "proposer") and `accepted` events for the passed steps. A draft that stopped
+ * re-arms one-click. Returns where the run started.
+ */
+export function accept(): DraftOrigin | null {
   const design = useDesignStore.getState();
-  if (!design.transaction) return;
+  if (!design.transaction) return null;
   const { base } = design.transaction;
+  const { complete } = useOrchestrator.getState();
   const doc = design.commitTransaction();
-  if (doc !== base && currentOrigin) committedDrafts.set(doc, currentOrigin);
+  const origin = currentOrigin;
+  if (doc !== base && origin) committedDrafts.set(doc, origin);
   currentOrigin = null;
   // Every step this run proposed replaces what an earlier run proposed for it, a failed step included: its output is
   // in the document now, and is not the designer's correction of the earlier proposal.
@@ -320,9 +332,11 @@ export function accept(): void {
   acceptRuns(currentRun.filter((r) => r.passed));
   currentRun = [];
   useOrchestrator.setState({ ...IDLE });
+  if (!complete) rearmOneClick(origin);
+  return origin;
 }
 
-/** Discard the draft (rollback) and log `rejected` events for every step that ran. Returns where the run started. */
+/** Discard the draft (rollback), log `rejected` events for every step that ran, and re-arm one-click. Returns where the run started. */
 export function reject(): DraftOrigin | null {
   const design = useDesignStore.getState();
   if (!design.transaction) return null;
@@ -334,6 +348,7 @@ export function reject(): DraftOrigin | null {
   const origin = currentOrigin;
   currentOrigin = null;
   useOrchestrator.setState({ ...IDLE });
+  rearmOneClick(origin);
   return origin;
 }
 

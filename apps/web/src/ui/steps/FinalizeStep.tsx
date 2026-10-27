@@ -1,59 +1,19 @@
-import { unitKind } from '@dcad/shared';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useDraftOpen } from '../ai/AutoDesign';
 import { useIsExported } from '../../state/exported';
 import { backToCases, signUpFromOffline, startOwnCase, useSessionStore } from '../../state/session';
-import { adaptationStale } from '../../design/adaptation';
 import { useDesignStore, selectActiveTooth } from '../../design/store';
-import { axisTool } from '../../tools/axisTool';
 import { crownTool } from '../../tools/crownTool';
-import { useToolStore, type AxisReport } from '../../tools/toolStore';
-import { AlertIcon, CheckIcon, FailIcon, UnknownIcon } from '../icons';
+import { CheckIcon } from '../icons';
 import { NeedsFirst } from '../StepFooter';
 import { BridgeFinalize, useActiveBridge } from './BridgePanels';
 import { CrownStatusView } from './CrownStatusView';
 import { MapSelect, ReadaptNotice } from './CrownViewControls';
 import { ExportAll } from './ExportAll';
 import { FrameworkFinalize } from './FrameworkPanels';
-import { isReady, millReadiness, type ReadinessItem, type ReadinessStatus, readinessNeeds } from './readiness';
-import { IMPLANT_NEEDS, implantReadiness } from './implantReadiness';
-import { useIsImplant } from './ImplantPanel';
-import { useImplantStore } from '../../tools/implantTool';
-import { MATERIAL_LABEL } from './SetupStep';
-import { withInlayRows } from './InlayPanel';
+import { isReady } from './readiness';
+import { ReadinessList, useCrownReadiness } from './ReadinessList';
 import './NudgePad.css';
-
-const STATUS_ICON = { pass: CheckIcon, fail: FailIcon, unknown: UnknownIcon } satisfies Record<ReadinessStatus, unknown>;
-const STATUS_TEXT: Record<ReadinessStatus, string> = { pass: 'passed', fail: 'failed', unknown: 'not measured' };
-
-/** The clinical checks behind "ready to mill", each with its measured value; `note` says up front why, when it is plain. */
-function ReadinessList({ items, note }: { items: ReadinessItem[]; note?: string }) {
-  const open = items.filter((i) => i.status !== 'pass').length;
-  return (
-    <section className="readiness" aria-labelledby="readiness-head">
-      <div id="readiness-head" className={`readiness-head ${open === 0 ? 'ready' : 'not-ready'}`}>
-        {open === 0 ? <CheckIcon /> : <AlertIcon />}
-        {open === 0 ? 'Ready to mill' : `Not ready to mill: ${open} ${open === 1 ? 'check' : 'checks'} open`}
-      </div>
-      {note && open > 0 && <p className="readiness-note">{note}</p>}
-      <ul>
-        {items.map((item) => {
-          const Icon = STATUS_ICON[item.status];
-          return (
-            <li key={item.id} className={item.status}>
-              <Icon />
-              <span>
-                {item.label}
-                <span className="visually-hidden">: {STATUS_TEXT[item.status]}</span>
-              </span>
-              <span className="detail">{item.detail}</span>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
-  );
-}
 
 export function FinalizeStep() {
   const bridge = useActiveBridge();
@@ -101,53 +61,15 @@ function JourneyEnd() {
 
 function CrownFinalize() {
   const tooth = useDesignStore(selectActiveTooth);
-  const material = useDesignStore((s) => s.doc.setup.teeth.find((t) => t.fdi === s.activeFdi)?.material);
-  const setup = useDesignStore((s) => s.doc.setup);
-  const kind = useDesignStore((s) => unitKind(s.doc.setup, s.activeFdi));
-  const crown = useToolStore((s) => s.crown);
-  const [axis, setAxis] = useState<AxisReport | null>(null);
-  const [measuring, setMeasuring] = useState(true);
+  const readiness = useCrownReadiness();
   const [confirming, setConfirming] = useState(false);
   const [exported, setExported] = useState<{ file: string; at: string } | null>(null);
   // After an export the ending's own action (JourneyEnd, shown on the same condition) is the primary.
   const done = useIsExported(useDesignStore((s) => s.activeFdi));
-  const implant = useIsImplant();
-  const implantView = useImplantStore((s) => s.result);
-
-  // The axis map is cleared when its step is left, so measure the current axis here.
-  const axisInput = tooth?.axis;
-  const marginInput = tooth?.margin;
-  useEffect(() => {
-    let live = true;
-    setAxis(null);
-    setMeasuring(true);
-    void axisTool.measure().then((report) => {
-      if (!live) return;
-      setAxis(report);
-      setMeasuring(false);
-    });
-    return () => {
-      live = false;
-    };
-  }, [axisInput, marginInput]);
 
   if (!tooth) return null;
-  if (!tooth.crown) return <NeedsFirst>Propose a crown first.</NeedsFirst>;
-  const computed = Boolean(crown && !crown.computing && crown.validation);
-  const rows = millReadiness({
-    margin: tooth.margin?.points.map((m) => [m.p[0]!, m.p[1]!, m.p[2]!] as const),
-    axis,
-    crown,
-    params: tooth.params,
-    material: material ? MATERIAL_LABEL[material] : 'Material',
-    adaptationStale: adaptationStale(tooth),
-    neighbours: { mesial: Boolean(tooth.frame?.mesialContact), distal: Boolean(tooth.frame?.distalContact) },
-    needs: implant ? IMPLANT_NEEDS : readinessNeeds(kind),
-    ...(tooth.margin?.line ? { marginLine: tooth.margin.line } : {}),
-  }).concat(implant ? implantReadiness(tooth, implantView, crown?.computing) : []);
-  // An inlay or onlay: the inlay gate's rows instead of the adaptation rows.
-  const checks = withInlayRows(setup, tooth.fdi, rows, crown?.computing ? undefined : crown?.inlay);
-  const items = measuring ? checks.map((i) => (i.id === 'axis' ? { ...i, detail: 'Measuring…' } : i)) : checks;
+  if (!tooth.crown || !readiness) return <NeedsFirst>Propose a crown first.</NeedsFirst>;
+  const { items, computed } = readiness;
   const ready = isReady(items);
   const open = items.filter((i) => i.status !== 'pass');
 

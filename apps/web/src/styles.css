@@ -902,6 +902,30 @@ input[type='checkbox'] {
   color: var(--text-muted);
 }
 
+/* The draft review's rows: no head or frame (the verdict is the head), each row one run of small type. */
+.readiness.compact {
+  border: 0;
+  font-size: var(--fs-small);
+}
+
+.readiness.compact ul {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.readiness.compact li {
+  grid-template-columns: 12px 1fr;
+  gap: 0 6px;
+  padding: 0;
+}
+
+.readiness.compact li svg {
+  width: 12px;
+  height: 12px;
+}
+
 .confirm-box {
   display: flex;
   flex-direction: column;
