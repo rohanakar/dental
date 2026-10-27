@@ -431,3 +431,10 @@ with Auto-design next.
 - The review shows Finalize's ready-to-mill rows, with values, computed on the draft.
 - One-click re-arms after Reject, Undo or keeping a draft.
 - 124 tests. See [2026-10-26-draft-review-clinical.md](2026-10-26-draft-review-clinical.md).
+
+**2026-10-27: bridges out of the box.**
+- On Margin, Insertion axis and Crown proposal, every framed crown-prep tooth without a margin gets the automatic
+  margin, in one undo step. Those that fail are named, to trace by hand.
+- Auto-design bridge is the primary on Tooth frame once every unit is framed, and on Crown proposal while a margin
+  is missing.
+- 125 tests. See [2026-10-26-bridge-out-of-the-box.md](2026-10-26-bridge-out-of-the-box.md).

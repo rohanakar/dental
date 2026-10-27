@@ -566,16 +566,9 @@ if (!ONLY || ONLY === 'auto') {
   expect(auto.d35 < 1 && auto.d37 < 1 && auto.step === 'scans' && auto.frameDone === 'done', "auto frames on scan load: 35 and 37 framed on their preps and pontic 36 placed, while still on Scans", JSON.stringify(auto));
   await h.shot('09-auto-frames');
 
-  // A tooth added in Case setup after the scans are in, with no prep on the scan: named once as unframed.
-  await h.step('Case setup');
-  await page.getByRole('button', { name: 'Tooth 46', exact: true }).click();
-  await h.waitFor(() => /No frame for 46/.test(window.__dcad.tools.getState().message?.text ?? ''), null, 60000).catch(() => {});
-  const named = await h.state(() => window.__dcad.tools.getState().message?.text ?? '');
-  expect(/No frame for 46/.test(named), 'a tooth added after the scans, with no prep found, is named for a click on Tooth frame', named);
-  await page.getByRole('button', { name: 'Tooth 46', exact: true }).click();
+  // Disjoint from the setup: 37's frame put on the prep of 35 is named, and the bridge panel reports the order (before
+  // the margins: with them, the layout goes by the margin outlines).
   await h.step('Tooth frame');
-
-  // Disjoint from the setup: 37's frame put on the prep of 35 is named, and the bridge panel reports the order.
   await h.state(() => window.__dcad.tools.getState().set({ autoArmed: false }));
   await h.selectTooth(37);
   await page.keyboard.press('1');
@@ -592,6 +585,52 @@ if (!ONLY || ONLY === 'auto') {
   await h.waitFor(() => [...document.querySelectorAll('.bridge-panel .warning')].some((w) => /wrong order/.test(w.textContent)), null, 60000);
   const disjoint = await h.state(() => ({ message: window.__dcad.tools.getState().message?.text ?? '', panel: [...document.querySelectorAll('.bridge-panel .warning')].map((w) => w.textContent) }));
   expect(/prep of 35, not 37/.test(disjoint.message) && disjoint.panel.some((w) => /wrong order/.test(w)), "a frame on another case tooth's prep is named, and the bridge reports frames out of order", JSON.stringify(disjoint));
+  // Back on its own prep (37's margin is found there next).
+  await h.selectTooth(37);
+  await page.keyboard.press('1');
+  await h.settle();
+  await h.clickWorld(await h.synthetic('syntheticPrepSeed', { fdi: 37, along: ALONG }), { objectIds: ['lower'] });
+  await h.waitFor(
+    (along) => import('/src/geometry/synthetic.ts').then(({ syntheticPrepSeed }) => {
+      const f = window.__dcad.design.getState().doc.teeth.find((t) => t.fdi === 37).frame;
+      return Math.hypot(...f.origin.map((o, k) => o - syntheticPrepSeed({ fdi: 37, along })[k])) < 2;
+    }),
+    ALONG,
+    60000,
+  );
+
+  // Margins ready for review (specs/2026-10-26-bridge-out-of-the-box.md): entering Margin finds both abutments'
+  // margins with no clicks; Insertion axis is no longer blocked; Tooth frame has one main action.
+  await h.step('Margin');
+  await h.waitFor(() => [35, 37].every((f) => window.__dcad.design.getState().doc.teeth.find((t) => t.fdi === f)?.margin), null, 180000);
+  const margins = await h.state(() => [35, 37].map((f) => window.__dcad.design.getState().doc.teeth.find((t) => t.fdi === f).margin.points.length));
+  expect(margins.every((n) => n > 20), 'margins found for 35 and 37 on entering Margin, with no clicks', JSON.stringify(margins));
+  await h.step('Insertion axis');
+  await h.waitFor(() => !window.__dcad.tools.getState().busy, null, 60000);
+  const axisOpen = await page.getByRole('button', { name: /Least undercut/ }).isEnabled();
+  expect(axisOpen, 'Insertion axis is no longer blocked by missing margins', String(axisOpen));
+  // 37's frame was redone above, so pontic 36 is stale: Re-place pontics leads until it is placed again.
+  await h.step('Tooth frame');
+  await page.waitForTimeout(500);
+  const primaries = () => h.state(() => [...document.querySelectorAll('.step-panel .btn.primary')].filter((b) => b.checkVisibility()).map((b) => b.textContent?.trim()));
+  const stalePrimaries = await primaries();
+  await page.getByRole('button', { name: 'Re-place pontics' }).click();
+  await h.waitFor(() => window.__dcad.design.getState().doc.teeth.find((t) => t.fdi === 36)?.steps.frame !== 'stale', null, 60000);
+  await page.waitForTimeout(300);
+  const framePrimaries = await primaries();
+  expect(
+    JSON.stringify(stalePrimaries) === '["Re-place pontics"]' && framePrimaries.length === 1 && /Auto-design bridge/.test(framePrimaries[0] ?? ''),
+    'one main action on Tooth frame: Re-place pontics while 36 is stale, then Auto-design bridge with every unit framed',
+    JSON.stringify({ stalePrimaries, framePrimaries }),
+  );
+
+  // A tooth added in Case setup after the scans are in, with no prep on the scan: named once as unframed.
+  await h.step('Case setup');
+  await page.getByRole('button', { name: 'Tooth 46', exact: true }).click();
+  await h.waitFor(() => /No frame for 46/.test(window.__dcad.tools.getState().message?.text ?? ''), null, 60000).catch(() => {});
+  const named = await h.state(() => window.__dcad.tools.getState().message?.text ?? '');
+  expect(/No frame for 46/.test(named), 'a tooth added after the scans, with no prep found, is named for a click on Tooth frame', named);
+  await page.getByRole('button', { name: 'Tooth 46', exact: true }).click();
   await page.close();
 }
 

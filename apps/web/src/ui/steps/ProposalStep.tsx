@@ -111,11 +111,12 @@ function BridgeProposal() {
       {missing && !placed && <div className="warning">{missing}</div>}
       <MarginNotice />
       <div className="row">
-        <button className={`btn${placed ? '' : ' primary'}`} disabled={computing || Boolean(busy) || Boolean(missing)} onClick={() => void bridgeTool.propose()}>
+        {/* With a margin or frame missing, auto-design (it finds them) is the way through, not a disabled button. */}
+        <button className={`btn${placed || missing ? '' : ' primary'}`} disabled={computing || Boolean(busy) || Boolean(missing)} onClick={() => void bridgeTool.propose()}>
           {placed ? 'Re-propose bridge' : 'Propose bridge'}
         </button>
       </div>
-      <AutoDesign compact primary={false} />
+      <AutoDesign compact primary={Boolean(missing) && !placed} />
       {placed && (
         <>
           <BridgeResultPanel />

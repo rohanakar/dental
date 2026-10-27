@@ -1,5 +1,7 @@
-import { unitKind } from '@dcad/shared';
+import { bridgeOf, unitKind } from '@dcad/shared';
 import { useDesignStore, selectActiveTooth } from '../../design/store';
+import { findMargins } from '../../tools/autoMargins';
+import { AutoDesign } from '../ai/AutoDesign';
 import { marginKey } from '../../tools/marginLine';
 import { marginTool, OFFSET_STEP_MM } from '../../tools/marginTool';
 import { useToolStore } from '../../tools/toolStore';
@@ -128,6 +130,13 @@ export function MarginStep() {
   const anchors = useToolStore((s) => s.marginAnchors);
   const section = useToolStore((s) => s.sectionRedraw);
   const choice = useToolStore((s) => (tooth ? s.marginLine[tooth.fdi] : undefined));
+  // The active tooth's bridge, and its abutments without a margin (as a string: a stable selector value).
+  const inBridge = useDesignStore((s) => Boolean(bridgeOf(s.doc, s.activeFdi)));
+  const bridgeMissingKey = useDesignStore((s) => {
+    const bridge = bridgeOf(s.doc, s.activeFdi);
+    return bridge ? bridge.teeth.filter((f) => unitKind(s.doc.setup, f) === 'abutment' && !s.doc.teeth.find((t) => t.fdi === f)?.margin).join(',') : '';
+  });
+  const bridgeMissing = bridgeMissingKey ? bridgeMissingKey.split(',').map(Number) : [];
   const busy = useToolStore((s) => s.busy);
   const wing = useDesignStore((s) => isWing(s.doc.setup, s.activeFdi));
   const cavity = useDesignStore((s) => isCavity(s.doc.setup, s.activeFdi));
@@ -169,8 +178,15 @@ export function MarginStep() {
           <button className={margin ? 'btn' : 'btn primary'} disabled={Boolean(busy)} onClick={() => void marginTool.find()}>
             {findLabel}
           </button>
+          {/* A bridge: every abutment without a margin at once (specs/2026-10-26-bridge-out-of-the-box.md). */}
+          {bridgeMissing.length > 0 && (
+            <button className="btn" disabled={Boolean(busy)} onClick={() => void findMargins(bridgeMissing)} title={`Find the margins of ${bridgeMissing.join(', ')}`}>
+              Find all margins
+            </button>
+          )}
         </div>
       )}
+      {inBridge && !drafting && !section && <AutoDesign compact primary={false} />}
       {section && (
         <div className="row">
           <button className="btn ghost" onClick={() => marginTool.cancel()} title="Cancel (Esc)">

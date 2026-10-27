@@ -25,6 +25,7 @@ import { isWing } from './wing';
 import { DEMO_PREP_RADIUS_MM, ringPoints } from './demoPrep';
 import { onPrepsFound, prepRing } from './prepRing';
 import { autoFrames } from './autoFrames';
+import { autoMargins } from './autoMargins';
 
 export const FRAME_COLORS = AXIS_COLORS;
 const AXIS_COLOR = '#b07cff';
@@ -184,8 +185,10 @@ class DesignTools {
     if (ctx && step === 'margin') this.prepareSurface(ctx.jaw.sha256);
     this.drawOverlays(step);
     // Case setup named the teeth: frame each crown-prep and implant tooth from its prep or scan body as soon as its scan
-    // is in, on any step, for review (specs/2026-10-26-frames-from-case-setup.md).
+    // is in, on any step, for review (specs/2026-10-26-frames-from-case-setup.md). Then, on the steps that need one,
+    // each framed crown-prep tooth's margin (specs/2026-10-26-bridge-out-of-the-box.md).
     autoFrames();
+    autoMargins();
     if (step === 'axis') axisTool.sync();
     crownTool.sync(step);
     implantTool.sync(step, crownTool.current());

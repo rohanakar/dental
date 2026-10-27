@@ -30,6 +30,9 @@ const clickWorld = async (p) => { const s = await project(p); await page.mouse.c
 const step = (label) => page.getByRole('button', { name: label, exact: false }).first().click();
 
 await page.goto(APP_URL);
+// The click flow is under test: no frames or margins found for the user (specs/2026-10-26-bridge-out-of-the-box.md).
+await page.waitForFunction(() => Boolean(window.__dcad?.tools));
+await page.evaluate(() => window.__dcad.tools.getState().set({ autoFrames: false }));
 await page.getByRole('button', { name: /continue offline/i }).click();
 await page.getByRole('button', { name: /load demo scans/i }).first().click();
 const t0 = Date.now();

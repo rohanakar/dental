@@ -1,6 +1,6 @@
 # Bridges out of the box: margins found for every abutment, auto-design as the way through
 
-Status: **proposed** (2026-10-26).
+Status: **done** (2026-10-27).
 
 ## Goal
 
@@ -107,3 +107,74 @@ auto-design on Tooth frame, while a bridge is not.
   - Every script passes.
 - **Measure:** clicks from Scans to a proposed bridge, before (step by step: 16 margin clicks plus closes, or finding
   auto-design) and after (0 to 1).
+
+## Implementation summary
+
+**What was built:**
+- **Margins ready for review** (`apps/web/src/tools/autoMargins.ts`, new; called from `apps/web/src/tools/controller.ts`
+  after `autoFrames()` on every sync).
+  - On Margin, Insertion axis and Crown proposal, every framed crown-prep tooth of the case without a margin gets the
+    margin proposer's line (`marginProposer` in `apps/web/src/ai/proposers.ts`: the finish line, or the gum line on a
+    natural tooth). Pontics are left out.
+  - A margin that passes its checks is set. All the passing margins go out as one undo step. The others are named in
+    the status line with their failing check, or the reason they threw, to trace by hand. One tooth's failure does not
+    stop the rest.
+  - Each tooth is tried once per jaw scan and frame origin, so an undone margin is not put back and a new frame allows
+    a new try. Nothing is set into an open auto-design draft.
+- **Margin step** (`apps/web/src/ui/steps/MarginStep.tsx`): "Find all margins" in a bridge, for the abutments
+  without one (`findMargins`). The compact Auto-design panel is shown for a bridge, not as the primary.
+- **Insertion axis** (`apps/web/src/ui/steps/AxisStep.tsx`): the "no margin yet" warning has a "Find it/them" link.
+  "Least undercut" is primary only once every abutment has a margin.
+- **Tooth frame** (`apps/web/src/ui/steps/FrameStep.tsx`): Auto-design bridge is the primary once every unit has a
+  frame and no pontic is stale. Before that, Place or Re-place pontics in the bridge panel is the primary.
+- **Crown proposal** (`apps/web/src/ui/steps/ProposalStep.tsx`): with a margin or frame missing, the primary is
+  Auto-design bridge, not a disabled "Propose bridge".
+
+**Deviations:**
+- **No separate `toolStore.autoMargins` switch.** `autoFrames: false` turns both off. The click-flow scripts already
+  set it, and `offline-design.mjs` now does too. One switch covers "the click flow is under test".
+- **No "Find the margin" button added.** The Margin step already had one for the active tooth ("Find the margin" /
+  "Find again", `marginTool.find`).
+- **Auto-design on Insertion axis.** Not added: the margins are found on entering the step, and the "Find them"
+  link covers a margin that was undone. The bridge auto-design is not wired with `from`. It re-runs from the pontic
+  frames and keeps the abutment frames, so its draft re-proposes the margins too. That is harmless, and the draft
+  review shows them.
+- **The disjoint-frame check in `bridge.mjs` moved ahead of the margins.** With margins in place, the pontic layout
+  goes by the margin outlines (`layoutPontics`), so a frame moved onto the wrong prep no longer flips the order. The
+  outline is the better evidence, so this is correct behaviour. The script now checks the wrong order before the
+  margins, then puts 37 back on its own prep.
+- **Bug found in the browser:** the first version included pontic 36, which has no prep. Its throw ("No margin ridge
+  found around the prep") aborted the whole batch, so neither abutment got a margin. Fixed with the pontic filter
+  and a per-tooth catch. The unit test covers both.
+
+**Verification:**
+- `pnpm typecheck` clean. `pnpm --filter @dcad/web build` built.
+- `pnpm test`:
+  - web 93 passed and 1 skipped, of 94;
+  - suite 125 with the skipped API integration tests (124 + 1).
+- **Test added:** `apps/web/src/tools/autoMargins.test.ts`, "sets the passing margins as one undo step, names the
+  rest, and does not put back an undone margin". The stub proposer passes 35, fails 37's gate and throws on pontic 36.
+  It checks:
+  - the selection leaves out the pontic;
+  - only 35 is set, in one undo entry, with 36 and 37 named;
+  - nothing happens on Tooth frame;
+  - the automatic pass runs on Margin;
+  - an undone margin is not put back.
+- **`bridge.mjs`, auto part:**
+  - frames on load;
+  - the disjoint frame named and the bridge reporting the wrong order;
+  - margins for 35 and 37 on entering Margin with no clicks (125 and 156 points);
+  - "Least undercut" enabled;
+  - on Tooth frame, the only primary is "Re-place pontics" while 36 is stale, then "Auto-design bridge";
+  - the add-46 notice.
+- **All 13 browser scripts pass.** On the way, `framework.mjs` failed on main ed982d7 itself: the demo crown with a
+  hand-traced margin was not printable. Fixed in `2026-10-27-margin-click-snap.md`.
+- **Clicks from Scans to the margins of a 35–[36]–37 bridge:** 0, down from tracing each abutment by hand (about 16
+  point clicks plus closes). The step-by-step path to a proposed bridge is now "Least undercut, common" plus "Propose
+  bridge". Auto-design bridge is one click from Tooth frame.
+
+**Follow-ups:**
+- Re-place stale pontics automatically when the user redoes an abutment frame that auto frames had set.
+- Wire `from` into the bridge auto-design, so a run started on Margin keeps the reviewed margins.
+- An automatic common axis on entering Insertion axis, with the same "ready for review" pattern (out of scope here).
+

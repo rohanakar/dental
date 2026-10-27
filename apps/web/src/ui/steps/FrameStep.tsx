@@ -31,6 +31,13 @@ export function FrameStep() {
   const fdi = useDesignStore((s) => s.activeFdi);
   const pontic = useDesignStore((s) => unitKind(s.doc.setup, s.activeFdi) === 'pontic');
   const bridge = useActiveBridge();
+  // Every unit framed and no pontic left stale by a moved abutment (Place pontics is the main action until then).
+  const bridgeFramed = useDesignStore((s) =>
+    Boolean(bridge?.teeth.every((f) => {
+      const t = s.doc.teeth.find((x) => x.fdi === f);
+      return t?.frame && t.steps.frame !== 'stale';
+    })),
+  );
   const ready = useSceneStore((s) => s.objects.some((o) => o.role === jawOf(fdi) && o.phase === 'ready'));
   const framePick = useToolStore((s) => s.framePick);
   const warnings = useToolStore((s) => s.frameWarnings);
@@ -80,8 +87,9 @@ export function FrameStep() {
         <input type="checkbox" checked={autoArmed} onChange={(e) => set({ autoArmed: e.target.checked, framePick: 'seed' })} />
         {bridge ? 'One-click bridge (auto-design after the last abutment click)' : 'One-click crown (auto-design after the click)'}
       </label>
-      {/* In a bridge the step's main action is in the bridge panel (place the pontics). */}
-      {frame && <AutoDesign compact primary={!bridge} />}
+      {/* In a bridge the step's main action is in the bridge panel (place the pontics) until every unit has its frame;
+          then it is auto-design (specs/2026-10-26-bridge-out-of-the-box.md). */}
+      {frame && <AutoDesign compact primary={!bridge || bridgeFramed} />}
       {frame ? (
         <>
           <FrameAxes />

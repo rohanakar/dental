@@ -1,6 +1,7 @@
 import { unitKind } from '@dcad/shared';
 import { useDesignStore, selectActiveTooth } from '../../design/store';
 import { axisTool } from '../../tools/axisTool';
+import { findMargins } from '../../tools/autoMargins';
 import { useToolStore } from '../../tools/toolStore';
 import { NeedsFirst } from '../StepFooter';
 import { BridgeAxisReport, useActiveBridge } from './BridgePanels';
@@ -31,9 +32,16 @@ export function AxisStep() {
           ? `The bridge seats along one axis, common to ${common.join(' and ')}. Coloured areas are hidden from it and get blocked out.`
           : 'The direction the crown seats along. Coloured areas are hidden from it and get blocked out.'}
       </p>
-      {missing.length > 0 && <div className="warning">Draw the margin on {missing.join(', ')} too: the common axis is searched over every abutment.</div>}
+      {missing.length > 0 && (
+        <div className="warning">
+          The common axis is searched over every abutment: {missing.join(', ')} {missing.length === 1 ? 'has' : 'have'} no margin yet.{' '}
+          <button type="button" className="link-btn" disabled={Boolean(busy)} onClick={() => void findMargins(missing)}>
+            Find {missing.length === 1 ? 'it' : 'them'}
+          </button>
+        </div>
+      )}
       <div className="row wrap">
-        <button className={`btn${axis ? '' : ' primary'}`} disabled={Boolean(busy) || missing.length > 0} onClick={() => void axisTool.search()}>
+        <button className={`btn${axis || missing.length > 0 ? '' : ' primary'}`} disabled={Boolean(busy) || missing.length > 0} onClick={() => void axisTool.search()}>
           {common.length > 1 ? 'Least undercut, common' : 'Least undercut'}
         </button>
         <button className="btn" disabled={Boolean(busy)} onClick={() => axisTool.fromView()} title="Look down onto the prep the way the crown should go on, then click">
