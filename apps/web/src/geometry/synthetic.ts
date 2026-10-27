@@ -38,6 +38,19 @@ export interface ArchOptions {
    */
   anteriorLeanDeg?: number;
   colors?: boolean;
+  /**
+   * Gum over the tooth's base, as on a real scan (specs/2026-10-27-natural-margin-research.md): the gingiva covers the
+   * bottom `coverMm` of every tooth and rises `papillaMm` higher between teeth (the papillae), so the tooth/gum line is
+   * scalloped. Default: none (the tooth meets the bare gum band, as before).
+   */
+  gingiva?: { coverMm: number; papillaMm: number };
+  /** Per-vertex labels: the FDI number of the tooth a vertex lies on, 0 on the gum (ground truth for segmentation). */
+  labels?: boolean;
+}
+
+/** A synthetic arch, with per-vertex labels when asked for. */
+export interface SyntheticArch extends IndexedMesh {
+  labels?: Uint8Array;
 }
 
 const RX = 24;
@@ -251,7 +264,7 @@ function cavityShapes(layout: ArchLayout, options: ArchOptions): Record<'left' |
   return out;
 }
 
-export function syntheticArch(options: ArchOptions = {}): IndexedMesh {
+export function syntheticArch(options: ArchOptions = {}): SyntheticArch {
   const along = options.along ?? 400;
   const across = options.across ?? 120;
   const jaw = options.jaw ?? 'lower';
@@ -263,6 +276,10 @@ export function syntheticArch(options: ArchOptions = {}): IndexedMesh {
   const nv = (along + 1) * (across + 1);
   const positions = new Float32Array(nv * 3);
   const colors = options.colors ? new Uint8Array(nv * 3) : undefined;
+  const labels = options.labels ? new Uint8Array(nv) : undefined;
+  const gingiva = options.gingiva;
+  // Tooth junctions along the arch (distance from the midline): the papillae peak there.
+  const junctions = [0, ...starts.slice(1), starts.at(-1)! + TOOTH_WIDTHS.at(-1)! * scale];
 
   for (let i = 0; i <= along; i++) {
     const theta = thetas[i]!;
@@ -274,9 +291,11 @@ export function syntheticArch(options: ArchOptions = {}): IndexedMesh {
     for (let k = 0; k < starts.length; k++) {
       if (dist >= starts[k]! && dist < starts[k]! + TOOTH_WIDTHS[k]! * scale) type = k;
     }
+    const toJunction = Math.min(...junctions.map((x) => Math.abs(dist - x)));
     for (let j = 0; j <= across; j++) {
       const s = -1 + (2 * j) / across; // -1 lingual, +1 buccal
       const gum = gumHeight(s);
+      const cover = gingiva ? gingiva.coverMm + gingiva.papillaMm * Math.exp(-((toJunction / 1.6) ** 2)) * Math.max(0, 1 - s * s) : 0;
       let tooth = 0;
       const state = type >= 0 ? states[side][type]! : MISSING;
       if (state !== MISSING) {
@@ -287,14 +306,15 @@ export function syntheticArch(options: ArchOptions = {}): IndexedMesh {
         const cavity = cavities[side][type];
         if (cavity) tooth = carveTooth(cavity, m * half, s * HALF_WIDTH, Math.max(0, tooth));
       }
-      const z = gum + Math.max(0, tooth);
+      const z = gum + Math.max(cover, tooth);
       const v = i * (across + 1) + j;
+      if (labels && type >= 0 && tooth > cover) labels[v] = (side === 'left' ? (jaw === 'upper' ? 20 : 30) : jaw === 'upper' ? 10 : 40) + type + 1;
       const [x, y] = bandPoint(theta, anteriorLean(s, z, type, options.anteriorLeanDeg ?? 0));
       positions[v * 3] = x;
       positions[v * 3 + 1] = y;
       positions[v * 3 + 2] = jaw === 'lower' ? z : 2 * 7 + OCCLUSAL_GAP - z;
       if (colors) {
-        const t = Math.min(1, Math.max(0, tooth / 1.0));
+        const t = Math.min(1, Math.max(0, (tooth - cover) / 1.0));
         colors[v * 3] = Math.round(205 + (238 - 205) * t);
         colors[v * 3 + 1] = Math.round(118 + (232 - 118) * t);
         colors[v * 3 + 2] = Math.round(124 + (214 - 124) * t);
@@ -321,7 +341,7 @@ export function syntheticArch(options: ArchOptions = {}): IndexedMesh {
     }
   }
 
-  return { positions, indices, colors };
+  return { positions, indices, colors, ...(labels ? { labels } : {}) };
 }
 
 /**
