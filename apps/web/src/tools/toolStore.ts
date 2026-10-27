@@ -34,6 +34,21 @@ export interface ToolState {
   marginLine: Record<number, MarginLineKind>;
   /** "Redraw a section" in progress: waiting for its first click, then for its second. */
   sectionRedraw: { first: MarginAnchor | null } | null;
+  /**
+   * Where the active margin is doubtful (geometry/marginDoubt.ts), for its points (`key`): a level per point, the off
+   * stretches worst first, and which of them the camera last flew to (−1: none yet).
+   */
+  marginDoubt: { fdi: number; key: string; levels: Uint8Array; parts: Array<{ at: V3; offsetMm: number; lengthMm: number }>; current: number } | null;
+  /** Show the cross-section under the cursor in the Margin step. */
+  sectionView: boolean;
+  /**
+   * The cross-section under the cursor (geometry/crossSection.ts): the scan's cut as 2D segments (s outward, h up,
+   * mm), and where the margin crosses that plane.
+   */
+  section: { segments: Float32Array; marks: Array<[number, number]>; halfMm: number } | null;
+  /** Gum-line marks (scribbles) per tooth: points painted on the tooth and on the gum, and the brush in use. */
+  scribbles: { fdi: number; tooth: V3[]; gum: V3[] } | null;
+  scribbleBrush: 'tooth' | 'gum' | null;
   /** The doubt checks of the last automatic gum line, shown while that line is unchanged (`key`: its points). */
   gumLineChecks: { fdi: number; key: string; checks: QaCheck[] } | null;
   /** Surface analysis (adjacency + curvature) status for the prep jaw. */
@@ -131,6 +146,11 @@ const initial = {
   marginLine: {} as Record<number, MarginLineKind>,
   sectionRedraw: null as { first: MarginAnchor | null } | null,
   gumLineChecks: null as { fdi: number; key: string; checks: QaCheck[] } | null,
+  marginDoubt: null as ToolState['marginDoubt'],
+  sectionView: true,
+  section: null as ToolState['section'],
+  scribbles: null as ToolState['scribbles'],
+  scribbleBrush: null as ToolState['scribbleBrush'],
   surface: 'idle' as const,
   axisReport: null,
   legend: null,

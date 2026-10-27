@@ -41,9 +41,10 @@ export interface ArchOptions {
   /**
    * Gum over the tooth's base, as on a real scan (specs/2026-10-27-natural-margin-research.md): the gingiva covers the
    * bottom `coverMm` of every tooth and rises `papillaMm` higher between teeth (the papillae), so the tooth/gum line is
-   * scalloped. Default: none (the tooth meets the bare gum band, as before).
+   * scalloped. Default: none (the tooth meets the bare gum band, as before). `prepPapillaMm`: the papilla at a junction
+   * beside a prepared tooth, kept below its finish line (default: `papillaMm`).
    */
-  gingiva?: { coverMm: number; papillaMm: number };
+  gingiva?: { coverMm: number; papillaMm: number; prepPapillaMm?: number };
   /** Per-vertex labels: the FDI number of the tooth a vertex lies on, 0 on the gum (ground truth for segmentation). */
   labels?: boolean;
 }
@@ -68,6 +69,13 @@ export const SYNTHETIC_PREP_FDI = 36;
 
 /** Grid resolution of the editor's demo scans (lower jaw ~1M triangles, with the prep of SYNTHETIC_PREP_FDI). */
 export const DEMO_SCAN = { lower: { along: 1000, across: 500 }, upper: { along: 600, across: 250 } } as const;
+
+/**
+ * The demo scans' gum (specs/2026-10-27-margin-review-ux.md): over the tooth bases and up between the teeth, so a
+ * natural tooth has a real gum line. Beside the prep the papillae stay low: its finish line, about 1.5 mm above the
+ * gum, stays exposed.
+ */
+export const DEMO_GINGIVA = { coverMm: 0.4, papillaMm: 1.4, prepPapillaMm: 0.4 } as const;
 
 /** Where an FDI tooth sits in the synthetic layout. */
 export interface SyntheticTooth {
@@ -291,11 +299,18 @@ export function syntheticArch(options: ArchOptions = {}): SyntheticArch {
     for (let k = 0; k < starts.length; k++) {
       if (dist >= starts[k]! && dist < starts[k]! + TOOTH_WIDTHS[k]! * scale) type = k;
     }
-    const toJunction = Math.min(...junctions.map((x) => Math.abs(dist - x)));
+    // The nearest junction and its papilla: lower beside a prep (junction k lies between types k − 1 and k; junction 0
+    // is the midline, between the two central incisors).
+    let nearest = 0;
+    for (let k = 1; k < junctions.length; k++) if (Math.abs(dist - junctions[k]!) < Math.abs(dist - junctions[nearest]!)) nearest = k;
+    const toJunction = Math.abs(dist - junctions[nearest]!);
+    const prepAt = (t: number, sd: 'left' | 'right') => t >= 0 && t < TOOTH_WIDTHS.length && states[sd][t] === PREP;
+    const besidePrep = nearest === 0 ? prepAt(0, 'left') || prepAt(0, 'right') : prepAt(nearest - 1, side) || prepAt(nearest, side);
+    const papilla = gingiva ? (besidePrep ? (gingiva.prepPapillaMm ?? gingiva.papillaMm) : gingiva.papillaMm) : 0;
     for (let j = 0; j <= across; j++) {
       const s = -1 + (2 * j) / across; // -1 lingual, +1 buccal
       const gum = gumHeight(s);
-      const cover = gingiva ? gingiva.coverMm + gingiva.papillaMm * Math.exp(-((toJunction / 1.6) ** 2)) * Math.max(0, 1 - s * s) : 0;
+      const cover = gingiva ? gingiva.coverMm + papilla * Math.exp(-((toJunction / 1.6) ** 2)) * Math.max(0, 1 - s * s) : 0;
       let tooth = 0;
       const state = type >= 0 ? states[side][type]! : MISSING;
       if (state !== MISSING) {

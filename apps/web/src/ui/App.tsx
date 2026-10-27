@@ -1,9 +1,10 @@
+import { stepsFor, unitKind } from '@dcad/shared';
 import { useEffect } from 'react';
 import { useDesignStore } from '../design/store';
 import { sceneController } from '../state/sceneController';
 import { useSceneStore } from '../state/sceneStore';
 import { useSessionStore } from '../state/session';
-import { marginTool } from '../tools/marginTool';
+import { marginTool, OFFSET_STEP_MM } from '../tools/marginTool';
 import { handleNudgeKey } from '../tools/nudge';
 import { useToolStore } from '../tools/toolStore';
 import { AssistantPanel } from './ai/AssistantPanel';
@@ -55,7 +56,9 @@ function useKeyboardShortcuts() {
         return;
       }
       if (design.activeStep === 'margin') {
-        const drafting = useToolStore.getState().marginAnchors.length > 0;
+        const tools = useToolStore.getState();
+        const drafting = tools.marginAnchors.length > 0;
+        const closed = !drafting && !tools.sectionRedraw && Boolean(design.doc.teeth.find((t) => t.fdi === design.activeFdi)?.margin);
         if (e.key === 'Backspace' && drafting) {
           e.preventDefault();
           marginTool.undoAnchor();
@@ -67,6 +70,27 @@ function useKeyboardShortcuts() {
         }
         if (e.key === 'Escape') {
           marginTool.cancel();
+          return;
+        }
+        // A closed margin (specs/2026-10-27-margin-review-ux.md): Enter moves on, N / Shift+N go to the doubtful
+        // parts, [ and ] lower and raise the whole line, Delete removes the point under the cursor.
+        if (closed && e.key === 'Enter') {
+          const steps = stepsFor(unitKind(design.doc.setup, design.activeFdi));
+          const next = steps[steps.indexOf('margin') + 1];
+          if (next) design.setActiveStep(next);
+          return;
+        }
+        if (closed && (e.key === 'n' || e.key === 'N')) {
+          marginTool.nextDoubt(e.shiftKey ? -1 : 1);
+          return;
+        }
+        if (closed && (e.key === '[' || e.key === ']')) {
+          void marginTool.offset(e.key === ']' ? OFFSET_STEP_MM : -OFFSET_STEP_MM);
+          return;
+        }
+        if (closed && (e.key === 'Delete' || e.key === 'Backspace')) {
+          e.preventDefault();
+          void marginTool.deleteHovered();
           return;
         }
       }

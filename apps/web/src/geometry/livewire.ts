@@ -155,6 +155,22 @@ const vdist = (positions: Float32Array, a: number, b: number) =>
  * each segment the cheapest live-wire path. The closing vertex is not
  * repeated. Throws if two consecutive anchors are not connected.
  */
+/** The open live-wire path through anchor vertices in order (first to last), as vertex ids. */
+export function traceOpenPath(positions: Float32Array, graph: SurfaceGraph, weight: EdgeWeight, anchorVertices: readonly number[]): number[] {
+  const out: number[] = [];
+  for (let i = 0; i + 1 < anchorVertices.length; i++) {
+    const a = anchorVertices[i]!;
+    const b = anchorVertices[i + 1]!;
+    if (a === b) continue;
+    const radius = Math.max(12, 1.5 * vdist(positions, a, b) + 2);
+    const path = pathFromTree(dijkstraTree(positions, graph, weight, a, radius, b).pred, b);
+    if (!path) throw new Error(`Points ${i + 1} and ${i + 2} are not connected on the surface`);
+    for (let k = out.length ? 1 : 0; k < path.length; k++) out.push(path[k]!);
+  }
+  if (out.length === 0 && anchorVertices.length) out.push(anchorVertices[0]!);
+  return out;
+}
+
 export function traceClosedLoop(
   positions: Float32Array,
   graph: SurfaceGraph,

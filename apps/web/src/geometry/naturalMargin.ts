@@ -28,6 +28,11 @@ export interface NaturalMarginInput {
   /** The tooth frame; its origin is on the crown's occlusal surface (the click). */
   frame: { origin: V3; occlusal: V3; mesial: V3; buccal: V3 };
   fdi: number;
+  /**
+   * Marks painted by the user (specs/2026-10-27-margin-review-ux.md): points on the tooth and on the gum. The patch
+   * vertices within MARK_RADIUS_MM of each are fixed at 1 (tooth) or 0 (gum) before the field is solved.
+   */
+  marks?: { tooth: V3[]; gum: V3[] };
 }
 
 export interface NaturalMarginResult {
@@ -61,6 +66,8 @@ const PATCH_ABOVE_MM = 6;
 /** Crown-top seeds: within this share of the tooth's half-size of the axis, and this share of its height below the top. */
 const TOOTH_SEED_RADIUS = 0.4;
 const TOOTH_SEED_DEPTH = 0.35;
+/** A painted mark fixes the patch vertices within this distance (mm). */
+const MARK_RADIUS_MM = 0.4;
 /** Re-centring stops once the solved region's centre is this close to the axis. */
 const RECENTRE_MIN_MM = 0.25;
 /** The level line is smoothed over this window and put back on the scan (vertex snapping leaves a staircase). */
@@ -208,6 +215,17 @@ function solveField(input: NaturalMarginInput, a: Axes, size: { md: number; bl: 
       fixed[i] = 1;
       u[i] = 1;
     } else if (rim[i]) fixed[i] = 1;
+  }
+  // The user's marks: tooth (1) and gum (0), the last word where they overlap the automatic seeds.
+  for (const [marks, value] of [[input.marks?.tooth ?? [], 1], [input.marks?.gum ?? [], 0]] as const) {
+    for (const mark of marks) {
+      for (let i = 0; i < n; i++) {
+        const v = verts[i]! * 3;
+        if ((positions[v]! - mark[0]) ** 2 + (positions[v + 1]! - mark[1]) ** 2 + (positions[v + 2]! - mark[2]) ** 2 > MARK_RADIUS_MM ** 2) continue;
+        fixed[i] = 1;
+        u[i] = value;
+      }
+    }
   }
 
   // Conductance per CSR slot: low across concave creases, over edge length.

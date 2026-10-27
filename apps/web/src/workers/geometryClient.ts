@@ -19,6 +19,7 @@ import type {
   FocusFacesRequest,
   FrameEstimate,
   FrameRequest,
+  MarginDoubtView,
   NaturalMarginRequest,
   NaturalMarginView,
   ImplantEntryView,
@@ -106,6 +107,17 @@ export const analysis = {
     latest.run('crown', () => (request.implant ? geometryWorker().designImplantCrown(request) : geometryWorker().designCrown(request))),
   /** Automatic margin (never superseded: used by the auto-design orchestrator). */
   autoMargin: (request: AutoMarginRequest): Promise<AutoMarginResult> => geometryWorker().autoMargin(request),
+  /** The open live-wire path through waypoints, for a local margin edit (never superseded: each edit waits for it). */
+  traceOpen: (sha: string, waypoints: V3[], line: MarginLineKind = 'finish'): Promise<Float32Array> => geometryWorker().traceOpen(sha, waypoints, line),
+  /** The scan's profile under the cursor, across the margin (latest wins: the cursor moves on). */
+  crossSection: (sha: string, centre: V3, up: V3, across: V3, halfMm: number): Promise<Float32Array> =>
+    latest.run('section', () => geometryWorker().crossSection(sha, centre, up, across, halfMm)),
+  /** Where a margin is doubtful (latest wins: only the current line matters). */
+  marginDoubt: (sha: string, points: Float32Array, up: V3, line: MarginLineKind): Promise<MarginDoubtView> =>
+    latest.run('doubt', () => geometryWorker().marginDoubt(sha, points, up, line)),
+  /** Points moved up (or down) the tooth along the scan: the margin's offset. */
+  offsetPoints: (sha: string, points: Float32Array, frame: { origin: V3; up: V3 }, mm: number): Promise<Float32Array> =>
+    geometryWorker().offsetPoints(sha, points, frame, mm),
   /** A natural tooth's gum line (never superseded: used by the margin proposer and the Margin step's Find). */
   naturalMargin: (request: NaturalMarginRequest): Promise<NaturalMarginView> => geometryWorker().naturalMargin(request),
   /** Automatic Maryland wing outline (classical.wing-outline; never superseded). */

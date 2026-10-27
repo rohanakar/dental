@@ -12,6 +12,7 @@ import {
   smoothClosedPolyline,
   snapToVertex,
   traceClosedLoop,
+  traceOpenPath,
   type EdgeWeight,
   type MarginLineKind,
 } from '../geometry/livewire';
@@ -26,11 +27,14 @@ import { bvhRayCaster, type RayCaster } from '../geometry/raycast';
 import { analyzeSurface, smoothVertexNormals, type SurfaceAnalysis } from '../geometry/surface';
 import { refineMargin } from '../geometry/marginRefine';
 import { anchorsAlong, naturalMargin } from '../geometry/naturalMargin';
+import { marginDoubt } from '../geometry/marginDoubt';
+import { offsetOnSurface } from '../geometry/marginEdit';
+import { buildTriangleGrid, crossSection } from '../geometry/crossSection';
 import { designCrown } from '../geometry/crown';
 import type { PreopScan } from '../geometry/inlay';
 import { designInlayUnit } from '../geometry/inlayUnit';
 import { initMeshBoolean } from '../geometry/meshBoolean';
-import { DEMO_SCAN, syntheticArch } from '../geometry/synthetic';
+import { DEMO_GINGIVA, DEMO_SCAN, syntheticArch } from '../geometry/synthetic';
 import { estimateToothFrame } from '../geometry/toothFrame';
 import type {
   AutoMarginRequest,
@@ -52,6 +56,7 @@ import type {
   FrameEstimate,
   FrameRequest,
   MarginTrace,
+  MarginDoubtView,
   NaturalMarginRequest,
   NaturalMarginView,
   SurfaceInfo,
@@ -166,7 +171,7 @@ const api = {
    * be uploaded to a case like any other scan.
    */
   async demoScan(jaw: 'lower' | 'upper'): Promise<{ payload: ScanPayload; source: Uint8Array }> {
-    const mesh = syntheticArch({ jaw, ...DEMO_SCAN[jaw], colors: true });
+    const mesh = syntheticArch({ jaw, ...DEMO_SCAN[jaw], colors: true, gingiva: DEMO_GINGIVA });
     const bytes = writePly(mesh);
     // Copy before processing: parsed arrays may be views into `bytes`, and a buffer can only be transferred once.
     const source = bytes.slice();
@@ -251,11 +256,63 @@ const api = {
     return Comlink.transfer(result, [trace.points.buffer as ArrayBuffer]);
   },
 
+  /**
+   * The open live-wire path through waypoints (packed xyz), with the line kind's weight: a margin edit re-traces only
+   * between the moved point's neighbours (specs/2026-10-27-margin-review-ux.md).
+   */
+  traceOpen(sha256: string, waypoints: V3[], line: MarginLineKind = 'finish'): Float32Array {
+    const scan = registry.get(sha256);
+    const ray = rayOf(scan);
+    const vertices = waypoints.map((p) => snapToVertex(scan.positions, scan.indices, ray, p));
+    if (vertices.some((v) => v === null)) throw new Error('A point is off the scan');
+    const path = traceOpenPath(scan.positions, surfaceOf(scan).graph, weightOf(scan, line), vertices as number[]);
+    const out = new Float32Array(path.length * 3);
+    path.forEach((v, i) => out.set(scan.positions.subarray(v * 3, v * 3 + 3), i * 3));
+    return Comlink.transfer(out, [out.buffer as ArrayBuffer]);
+  },
+
+  /** The scan's profile through `centre` across the margin (geometry/crossSection.ts): 2D segments, packed s, h. */
+  crossSection(sha256: string, centre: V3, up: V3, across: V3, halfMm: number): Float32Array {
+    const scan = registry.get(sha256);
+    const grid = registry.cached(scan, 'triangleGrid', () => buildTriangleGrid(scan.positions, scan.indices));
+    const out = crossSection(scan.positions, scan.indices, grid, centre, up, across, halfMm);
+    return Comlink.transfer(out, [out.buffer as ArrayBuffer]);
+  },
+
+  /** Where a margin is doubtful (geometry/marginDoubt.ts), from the scan alone. */
+  marginDoubt(sha256: string, points: Float32Array, up: V3, line: MarginLineKind): MarginDoubtView {
+    const scan = registry.get(sha256);
+    const pts = Array.from({ length: points.length / 3 }, (_, i): V3 => [points[i * 3]!, points[i * 3 + 1]!, points[i * 3 + 2]!]);
+    const r = marginDoubt({ positions: scan.positions, indices: scan.indices, normals: scan.normals, ray: rayOf(scan), up, points: pts, line });
+    return Comlink.transfer(r, [r.levels.buffer as ArrayBuffer]);
+  },
+
+  /** Every point moved `mm` up the tooth along the scan (geometry/marginEdit.ts offsetOnSurface): one offset for the whole margin. */
+  offsetPoints(sha256: string, points: Float32Array, frame: { origin: V3; up: V3 }, mm: number): Float32Array {
+    const scan = registry.get(sha256);
+    const ray = rayOf(scan);
+    const pts = Array.from({ length: points.length / 3 }, (_, i): V3 => [points[i * 3]!, points[i * 3 + 1]!, points[i * 3 + 2]!]);
+    const project = (p: V3): V3 => ray.closestPoint(p, Math.max(1.5, 3 * Math.abs(mm)))?.point ?? p;
+    const normalAt = (p: V3): V3 => {
+      const hit = ray.closestPoint(p, 1);
+      if (!hit || hit.faceIndex < 0) return frame.up;
+      let n: V3 = [0, 0, 0];
+      for (let k = 0; k < 3; k++) {
+        const v = scan.indices[hit.faceIndex * 3 + k]!;
+        n = [n[0] + scan.normals[v * 3]!, n[1] + scan.normals[v * 3 + 1]!, n[2] + scan.normals[v * 3 + 2]!];
+      }
+      const len = Math.hypot(...n) || 1;
+      return [n[0] / len, n[1] / len, n[2] / len];
+    };
+    const out = new Float32Array(offsetOnSurface(pts, { project, normalAt }, frame, mm).flat());
+    return Comlink.transfer(out, [out.buffer as ArrayBuffer]);
+  },
+
   /** A natural tooth's gum line (geometry/naturalMargin.ts), with anchors along it for editing. */
   naturalMargin(request: NaturalMarginRequest): NaturalMarginView {
     const scan = registry.get(request.jawSha);
     const { graph, curvature } = surfaceOf(scan);
-    const r = naturalMargin({ positions: scan.positions, indices: scan.indices, graph, curvature, ray: rayOf(scan), frame: request.frame, fdi: request.fdi });
+    const r = naturalMargin({ positions: scan.positions, indices: scan.indices, graph, curvature, ray: rayOf(scan), frame: request.frame, fdi: request.fdi, ...(request.marks ? { marks: request.marks } : {}) });
     const points = new Float32Array(r.points.flat());
     const { points: _p, ...measures } = r;
     const result: NaturalMarginView = { ...measures, points, anchors: anchorsAlong(r.points) };

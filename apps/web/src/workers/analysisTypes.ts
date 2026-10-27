@@ -181,11 +181,19 @@ export interface AutoMarginResult extends MarginTrace {
   ms: number;
 }
 
+/** Where a margin is doubtful (geometry/marginDoubt.ts): a level per point and the off stretches, worst first. */
+export interface MarginDoubtView {
+  levels: Uint8Array;
+  parts: Array<{ at: V3; offsetMm: number; lengthMm: number }>;
+}
+
 /** A natural tooth's gum line (geometry/naturalMargin.ts, specs/2026-10-27-natural-margin.md). */
 export interface NaturalMarginRequest {
   jawSha: string;
   frame: { origin: V3; occlusal: V3; mesial: V3; buccal: V3 };
   fdi: number;
+  /** The user's marks on the tooth and on the gum (scribble correction). */
+  marks?: { tooth: V3[]; gum: V3[] };
 }
 
 export interface NaturalMarginView {

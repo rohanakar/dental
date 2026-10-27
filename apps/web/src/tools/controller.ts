@@ -16,6 +16,7 @@ import { focusTool } from './focusTool';
 import { frameworkTool } from './frameworkTool';
 import { frameInteraction } from './frameTool';
 import { marginProblems } from './marginCheck';
+import { marginKey, marginLineOf } from './marginLine';
 import { MARGIN_COLOR, marginTool } from './marginTool';
 import { implantTool, isImplantTooth } from './implantTool';
 import { MARGIN_VIEW_DISTANCE_MM, marginView, PREP_MARGIN } from './marginView';
@@ -31,6 +32,20 @@ const AXIS_COLOR = '#b07cff';
 const HIDE_ANTAGONIST: readonly StepId[] = ['frame', 'margin', 'axis'];
 /** Steps after which the accepted margin stays visible. */
 const SHOW_MARGIN: readonly StepId[] = ['margin', 'axis'];
+
+/** The margin's colour by doubt (geometry/marginDoubt.ts levels): on the crease, weak, off. */
+const DOUBT_RGB: ReadonlyArray<[number, number, number]> = [
+  [0.13, 0.71, 0.45],
+  [0.96, 0.65, 0.14],
+  [0.9, 0.24, 0.27],
+];
+
+/** The doubt levels of a tooth's margin, when they are known for these very points (and the line it follows). */
+function doubtOf(fdi: number, points: ReadonlyArray<{ p: readonly number[] }>): Uint8Array | null {
+  const doubt = useToolStore.getState().marginDoubt;
+  if (!doubt || doubt.fdi !== fdi || doubt.key !== `${marginKey(points)}:${marginLineOf(fdi)}` || doubt.levels.length !== points.length) return null;
+  return doubt.levels;
+}
 /** Steps that show the restorations: a click on a bridge unit makes it the active tooth. */
 const PICK_UNIT: readonly StepId[] = ['params', 'proposal', 'adapt', 'finalize'];
 
@@ -67,6 +82,10 @@ class DesignTools {
     crownTool.onResult(() => implantTool.sync(useDesignStore.getState().activeStep, crownTool.current()));
     // The preps found on a scan arrive from the worker after the Tooth frame step is drawn: ring the prep then.
     onPrepsFound(() => this.sync());
+    // The margin's doubt arrives from the worker after the line is drawn: colour it then.
+    useToolStore.subscribe((s, prev) => {
+      if (s.marginDoubt !== prev.marginDoubt) this.sync();
+    });
   }
 
   attachViewer(viewer: Viewer): void {
@@ -301,7 +320,15 @@ class DesignTools {
 
     const margin = tooth?.margin;
     if (margin && SHOW_MARGIN.includes(step)) {
-      o.setPolyline('margin:line', margin.points.map((m) => m.p), { color: MARGIN_COLOR, widthPx: 3, closed: true });
+      // In the Margin step the line is coloured by doubt once that is known for its points (marginTool.ensureDoubt).
+      if (step === 'margin') marginTool.ensureDoubt();
+      const doubt = step === 'margin' && tooth ? doubtOf(tooth.fdi, margin.points) : null;
+      o.setPolyline('margin:line', margin.points.map((m) => m.p), {
+        color: MARGIN_COLOR,
+        widthPx: 3,
+        closed: true,
+        ...(doubt ? { vertexColors: Array.from(doubt, (level) => DOUBT_RGB[level] ?? DOUBT_RGB[0]!).flat() } : {}),
+      });
       if (step === 'margin') o.setMarkers('margin:anchors', margin.anchors.map((a) => a.p), { color: MARGIN_COLOR, sizePx: 11 });
       else o.remove('margin:anchors');
     } else {

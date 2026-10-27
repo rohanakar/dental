@@ -1,6 +1,7 @@
 import { unitKind } from '@dcad/shared';
 import { useDesignStore, selectActiveTooth } from '../../design/store';
-import { marginTool } from '../../tools/marginTool';
+import { marginKey } from '../../tools/marginLine';
+import { marginTool, OFFSET_STEP_MM } from '../../tools/marginTool';
 import { useToolStore } from '../../tools/toolStore';
 import { NeedsFirst } from '../StepFooter';
 import { isWing } from '../../tools/wing';
@@ -20,6 +21,7 @@ function cavityMarginHint(drafting: boolean, anchors: number, drawn: boolean): s
 }
 import { ImplantPositionPanel, useIsImplant } from './ImplantPanel';
 import { GumLineDoubt, MarginWarning } from './MarginIssues';
+import { MarginSection } from './MarginSection';
 
 function polylineLength(points: ReadonlyArray<{ p: readonly number[] }>): number {
   let sum = 0;
@@ -51,6 +53,71 @@ function MarginLineChoice({ fdi, line }: { fdi: number; line: 'finish' | 'gum' }
         </button>
       </div>
       <span className="muted small">{line === 'gum' ? 'Natural tooth: where the tooth meets the gum.' : 'Prepared tooth: the edge the dentist cut.'}</span>
+    </div>
+  );
+}
+
+/**
+ * How sure the line is (geometry/marginDoubt.ts): the colours on the line, the number of doubtful parts and a way to
+ * fly to each (specs/2026-10-27-margin-review-ux.md).
+ */
+function MarginConfidence({ fdi }: { fdi: number }) {
+  const points = useDesignStore((s) => s.doc.teeth.find((t) => t.fdi === fdi)?.margin?.points);
+  const doubt = useToolStore((s) => s.marginDoubt);
+  if (!points) return null;
+  const known = doubt && doubt.fdi === fdi && doubt.key.startsWith(`${marginKey(points)}:`);
+  if (!known) {
+    return (
+      <div className="row muted small">
+        <span className="spinner" /> Checking the line…
+      </div>
+    );
+  }
+  const n = doubt.parts.length;
+  return (
+    <div className="margin-confidence">
+      <span className="margin-legend" aria-label="Line colours">
+        <i className="dot on" /> on the edge <i className="dot weak" /> faint <i className="dot off" /> off
+      </span>
+      {n === 0 ? (
+        <span>No doubtful parts.</span>
+      ) : (
+        <div className="row">
+          <span>
+            {n} doubtful {n === 1 ? 'part' : 'parts'}
+            {doubt.current >= 0 ? ` (showing ${doubt.current + 1})` : ''}
+          </span>
+          <button className="btn" onClick={() => marginTool.nextDoubt()} title="Fly to the next doubtful part (N; Shift+N goes back)">
+            Next doubtful part
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A gum line's scribble correction (specs/2026-10-27-margin-review-ux.md): paint on the tooth or on the gum where the
+ * line is wrong, and the gum line is found again around the marks.
+ */
+function GumLineMarks({ fdi }: { fdi: number }) {
+  const brush = useToolStore((s) => s.scribbleBrush);
+  const marks = useToolStore((s) => (s.scribbles?.fdi === fdi ? s.scribbles.tooth.length + s.scribbles.gum.length : 0));
+  const busy = useToolStore((s) => s.busy);
+  const pick = (next: 'tooth' | 'gum') => marginTool.setBrush(brush === next ? null : next);
+  return (
+    <div className="row" role="group" aria-label="Mark the tooth or the gum">
+      <button className="btn" aria-pressed={brush === 'tooth'} disabled={Boolean(busy)} onClick={() => pick('tooth')} title="Paint on the tooth where the line cuts across it">
+        Mark tooth
+      </button>
+      <button className="btn" aria-pressed={brush === 'gum'} disabled={Boolean(busy)} onClick={() => pick('gum')} title="Paint on the gum where the line runs onto it">
+        Mark gum
+      </button>
+      {marks > 0 && (
+        <button className="btn ghost" onClick={() => marginTool.clearMarks()}>
+          Clear marks
+        </button>
+      )}
     </div>
   );
 }
@@ -94,7 +161,7 @@ export function MarginStep() {
             ? `Keep clicking along the margin. The path follows the ${line === 'gum' ? 'gum line' : 'margin ridge'} between clicks.`
             : 'Click the first point (or press Enter) to close the margin.'
           : margin
-            ? 'Drag a point to adjust the margin, redraw a section, or click on the tooth to start drawing it again.'
+            ? 'Drag a point to move the line, click on the line to add a point, or redraw a section. Clicking elsewhere on the tooth starts drawing it again.'
             : `Find the ${line === 'gum' ? 'gum line' : 'margin'} automatically, or click on it to place the first point and work around the tooth.`}
       </p>
       {crownLine && !drafting && !section && (
@@ -134,6 +201,7 @@ export function MarginStep() {
         <>
           <MarginWarning fdi={tooth.fdi} />
           <GumLineDoubt fdi={tooth.fdi} />
+          <MarginConfidence fdi={tooth.fdi} />
           <dl className="params">
             <dt>Length</dt>
             <dd>{polylineLength(margin.points).toFixed(1)} mm</dd>
@@ -146,8 +214,19 @@ export function MarginStep() {
               Smooth
             </button>
           </div>
+          <div className="row" role="group" aria-label="Move the whole line">
+            <button className="btn" disabled={Boolean(busy)} onClick={() => void marginTool.offset(-OFFSET_STEP_MM)} title="Lower the whole line 0.1 mm toward the gum ([)">
+              Lower
+            </button>
+            <button className="btn" disabled={Boolean(busy)} onClick={() => void marginTool.offset(OFFSET_STEP_MM)} title="Raise the whole line 0.1 mm toward the occlusal (])">
+              Raise
+            </button>
+          </div>
+          {line === 'gum' && crownLine && <GumLineMarks fdi={tooth.fdi} />}
+          <p className="muted small">N next doubtful part · [ ] lower, raise · Delete removes the point under the cursor · Enter: next step</p>
         </>
       )}
+      {crownLine && !section && <MarginSection />}
       {drafting && <p className="muted small">Backspace removes the last point · Esc cancels</p>}
     </div>
   );

@@ -408,3 +408,13 @@ with Auto-design next.
 - One "… first" message.
 - The pontic-base check shows its real target and tolerance.
 - 120 tests. See [2026-10-26-critique-leftovers.md](2026-10-26-critique-leftovers.md).
+
+**2026-10-27: margin review UX.**
+- **Confidence colouring:** the margin is green, amber or red by a scan-only test, and N flies to each doubtful part.
+  On real gum lines it finds 87% of a pushed stretch at 92% precision.
+- **Local edits:** drag, click-to-insert and Delete re-trace only between neighbours.
+- **Offset:** [ and ] lower and raise the whole line along the scan.
+- **Keyboard and section:** Enter moves on, and a cross-section under the cursor shows the scan's profile.
+- **Scribbles:** Mark tooth or Mark gum re-solves a gum line.
+- **Demo:** the demo jaw has real gum, so one-click on its natural teeth completes.
+- 123 tests. See [2026-10-27-margin-review-ux.md](2026-10-27-margin-review-ux.md).

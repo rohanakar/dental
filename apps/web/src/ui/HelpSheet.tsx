@@ -16,7 +16,11 @@ const SHORTCUTS: Array<[keys: string, what: string]> = [
   ['O', 'Orthographic or perspective camera'],
   ['Ctrl/⌘ + Z', 'Undo'],
   ['Shift + Ctrl/⌘ + Z', 'Redo'],
-  ['Backspace, Enter, Esc', 'Margin: remove the last point, close, cancel'],
+  ['Backspace, Enter, Esc', 'Margin, while drawing: remove the last point, close, cancel'],
+  ['N, Shift + N', 'Margin: fly to the next or previous doubtful part'],
+  ['[ and ]', 'Margin: lower or raise the whole line 0.1 mm'],
+  ['Delete', 'Margin: remove the point under the cursor'],
+  ['Enter', 'Margin: on to the next step (when the line is closed)'],
   ['Arrows, Page Up/Down', 'Crown: move 0.1 mm (Shift: 0.5 mm)'],
   ['?', 'This sheet'],
 ];

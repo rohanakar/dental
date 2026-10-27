@@ -31,6 +31,8 @@ export interface PolylineOptions {
   depthTest?: boolean;
   dashed?: boolean;
   opacity?: number;
+  /** One rgb colour (0–1) per point, packed; replaces `color` along the line (e.g. the margin's confidence). */
+  vertexColors?: ArrayLike<number>;
 }
 
 export interface MarkerOptions {
@@ -119,8 +121,11 @@ export class OverlayLayer {
     }
     const geometry = new LineGeometry();
     geometry.setPositions(flat);
+    const colors = opts.vertexColors ? Array.from(opts.vertexColors) : null;
+    if (colors) geometry.setColors(opts.closed && colors.length >= 3 ? [...colors, colors[0]!, colors[1]!, colors[2]!] : colors);
     const material = new LineMaterial({
-      color: new Color(opts.color).getHex(),
+      color: colors ? 0xffffff : new Color(opts.color).getHex(),
+      vertexColors: Boolean(colors),
       linewidth: (opts.widthPx ?? 3) * this.pixelRatio,
       worldUnits: false,
       dashed: Boolean(opts.dashed),
