@@ -14,6 +14,7 @@ import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import { bridgeGate } from '../../ai/qa';
 import { adaptationStale } from '../../design/adaptation';
 import { useDesignStore } from '../../design/store';
+import { useIsExported } from '../../state/exported';
 import { axisTool } from '../../tools/axisTool';
 import { bridgeTool, type BridgeResult, unitStatus, useBridgeStore } from '../../tools/bridgeTool';
 import { ALIGN_MIN_DEG, alignAbutments, bridgeFramesRequest, placePontics } from '../../tools/frameTool';
@@ -23,6 +24,7 @@ import type { BridgeConnectorView, BridgeFramesResult } from '../../workers/anal
 import { analysis } from '../../workers/geometryClient';
 import { isStale } from '../../workers/latestWins';
 import { AlertIcon, CheckIcon, FailIcon, UnknownIcon } from '../icons';
+import { NeedsFirst } from '../StepFooter';
 import { CrownStatusView } from './CrownStatusView';
 import { ExportAll } from './ExportAll';
 import { MapSelect } from './CrownViewControls';
@@ -563,6 +565,8 @@ export function BridgeFinalize() {
   const [axes, setAxes] = useState<Record<number, AxisReport | null> | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [exported, setExported] = useState<{ file: string; at: string } | null>(null);
+  // After an export the ending's own action is the primary (FinalizeStep's JourneyEnd, shown on the same condition).
+  const done = useIsExported(useDesignStore((s) => s.activeFdi));
 
   const abutments = (bridge?.teeth ?? []).filter((f) => unitKind(doc.setup, f) === 'abutment');
   const axisKey = identityKey(abutments.flatMap((f) => [toothOf(doc, f)?.axis, toothOf(doc, f)?.margin]));
@@ -590,7 +594,7 @@ export function BridgeFinalize() {
 
   if (!bridge) return null;
   const units = bridge.teeth.map((f) => toothOf(doc, f)).filter((t): t is ToothDesign => Boolean(t));
-  if (!units.some((t) => t.crown)) return <div className="step-body warning">Propose the bridge first.</div>;
+  if (!units.some((t) => t.crown)) return <NeedsFirst>Propose the bridge first.</NeedsFirst>;
   const material = doc.setup.teeth.find((t) => t.fdi === bridge.teeth[0])?.material;
   const materialLabel = material ? MATERIAL_LABEL[material] : 'Material';
 
@@ -703,7 +707,7 @@ export function BridgeFinalize() {
         </div>
       ) : (
         <div className="row">
-          <button className={`btn${ready ? ' primary' : ''}`} disabled={!exportable} onClick={ready ? exportStl : () => setConfirming(true)}>
+          <button className={`btn${ready && !done ? ' primary' : ''}`} disabled={!exportable} onClick={ready ? exportStl : () => setConfirming(true)}>
             {ready ? 'Export STL' : 'Export STL anyway…'}
           </button>
           <button className="btn" disabled={!exportable} onClick={() => bridgeTool.export('info')}>

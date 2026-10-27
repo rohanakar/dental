@@ -4,6 +4,7 @@ import { bridgeTool, useBridgeStore } from '../../tools/bridgeTool';
 import { crownTool } from '../../tools/crownTool';
 import { useToolStore } from '../../tools/toolStore';
 import { AutoDesign } from '../ai/AutoDesign';
+import { NeedsFirst } from '../StepFooter';
 import { BridgeResultPanel, useActiveBridge } from './BridgePanels';
 import { CrownStatusView } from './CrownStatusView';
 import { FocusControls, MapSelect } from './CrownViewControls';
@@ -52,7 +53,7 @@ export function ProposalStep() {
   const fixed = useFollowsPreop();
   if (!tooth) return null;
   if (bridge) return <BridgeProposal />;
-  if (!tooth.axis) return <div className="step-body warning">Set the insertion axis first.</div>;
+  if (!tooth.axis) return <NeedsFirst>Set the insertion axis first.</NeedsFirst>;
   const hasCrown = Boolean(tooth.crown);
 
   return (

@@ -103,6 +103,8 @@ describe('QA gates', () => {
     };
     const bridge = { connectors: checks.connectors.map((c) => ({ between: c.between, failures: [] as ConnectorFailure[] })), union: { checks } };
     expect(passed(bridgeGate(bridge))).toBe(true);
+    // The pontic base shows its real target as the minimum, with the measuring tolerance its −0.0002 mm passes within.
+    expect(bridgeGate(bridge).find((c) => c.id === 'bridge.ponticBase.36')).toMatchObject({ threshold: 0, bound: 'min', tolerance: 0.02 });
     const withConnector = (c: ConnectorCheck) => ({ ...bridge, union: { checks: { ...checks, connectors: [c, checks.connectors[1]!] } } });
     expect(failedIds(bridgeGate(withConnector({ ...connector([35, 36]), measured: { ...measured, minAreaMm2: 8.2 } })))).toEqual(['bridge.connector.35-36.area']);
     expect(failedIds(bridgeGate(withConnector({ ...connector([35, 36]), measured: { ...measured, heightMm: 2.6 } })))).toEqual(['bridge.connector.35-36.height']);

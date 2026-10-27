@@ -5,6 +5,7 @@ import { useDesignStore, selectActiveTooth } from '../../design/store';
 import { crownTool } from '../../tools/crownTool';
 import { userEdit } from '../../tools/nudge';
 import { useToolStore } from '../../tools/toolStore';
+import { NeedsFirst } from '../StepFooter';
 import type { AdaptReportView } from '../../workers/analysisTypes';
 import { BridgeConnectors, BridgeResultPanel, connectedTo, useActiveBridge } from './BridgePanels';
 import { CrownStatusView } from './CrownStatusView';
@@ -72,7 +73,7 @@ function AdaptPanel() {
   });
 
   if (!tooth) return null;
-  if (!crown) return <div className="step-body warning">{bridge ? 'Propose the bridge first.' : 'Propose a crown first.'}</div>;
+  if (!crown) return <NeedsFirst>{bridge ? 'Propose the bridge first.' : 'Propose a crown first.'}</NeedsFirst>;
   if (isWing(doc.setup, tooth.fdi)) return <WingAdapt />;
   if (isCavity(doc.setup, tooth.fdi)) return <InlayAdapt />;
   const frame = tooth.frame;

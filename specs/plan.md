@@ -402,3 +402,9 @@ with Auto-design next.
 - Finalize judges a gum line by its closure and length, not the kink rule.
 - On a natural tooth it says first that the tooth must be prepared before a crown can be milled.
 - See [2026-10-27-natural-margin.md](2026-10-27-natural-margin.md).
+
+**2026-10-27: critique leftovers merged.**
+- One primary button per screen: the footer's Next yields to the panel's own action.
+- One "… first" message.
+- The pontic-base check shows its real target and tolerance.
+- 120 tests. See [2026-10-26-critique-leftovers.md](2026-10-26-critique-leftovers.md).

@@ -7,6 +7,7 @@ import { demoPrep } from '../../tools/demoPrep';
 import { useToolStore } from '../../tools/toolStore';
 import { AutoDesign } from '../ai/AutoDesign';
 import { CloseIcon } from '../icons';
+import { NeedsFirst } from '../StepFooter';
 import { BridgeFramePanel, connectedTo, useActiveBridge } from './BridgePanels';
 
 const dist = (a: readonly number[], b: readonly number[]) => Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!);
@@ -38,7 +39,7 @@ export function FrameStep() {
   const frame = tooth?.frame;
 
   if (!tooth) return null;
-  if (!ready) return <div className="step-body warning">Load the {jawOf(fdi)} scan first.</div>;
+  if (!ready) return <NeedsFirst>Load the {jawOf(fdi)} scan first.</NeedsFirst>;
 
   // A pontic has no prep to click: its frame comes from the arch between the abutments, or a click on the ridge.
   if (pontic && bridge) {

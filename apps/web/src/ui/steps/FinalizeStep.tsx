@@ -9,6 +9,7 @@ import { axisTool } from '../../tools/axisTool';
 import { crownTool } from '../../tools/crownTool';
 import { useToolStore, type AxisReport } from '../../tools/toolStore';
 import { AlertIcon, CheckIcon, FailIcon, UnknownIcon } from '../icons';
+import { NeedsFirst } from '../StepFooter';
 import { BridgeFinalize, useActiveBridge } from './BridgePanels';
 import { CrownStatusView } from './CrownStatusView';
 import { MapSelect, ReadaptNotice } from './CrownViewControls';
@@ -89,7 +90,7 @@ function JourneyEnd() {
             </button>
           </>
         ) : (
-          <button className="btn" onClick={backToCases}>
+          <button className="btn primary" onClick={backToCases}>
             Back to cases
           </button>
         )}
@@ -108,6 +109,8 @@ function CrownFinalize() {
   const [measuring, setMeasuring] = useState(true);
   const [confirming, setConfirming] = useState(false);
   const [exported, setExported] = useState<{ file: string; at: string } | null>(null);
+  // After an export the ending's own action (JourneyEnd, shown on the same condition) is the primary.
+  const done = useIsExported(useDesignStore((s) => s.activeFdi));
   const implant = useIsImplant();
   const implantView = useImplantStore((s) => s.result);
 
@@ -129,7 +132,7 @@ function CrownFinalize() {
   }, [axisInput, marginInput]);
 
   if (!tooth) return null;
-  if (!tooth.crown) return <div className="step-body warning">Propose a crown first.</div>;
+  if (!tooth.crown) return <NeedsFirst>Propose a crown first.</NeedsFirst>;
   const computed = Boolean(crown && !crown.computing && crown.validation);
   const rows = millReadiness({
     margin: tooth.margin?.points.map((m) => [m.p[0]!, m.p[1]!, m.p[2]!] as const),
@@ -185,7 +188,7 @@ function CrownFinalize() {
         </div>
       ) : (
         <div className="row">
-          <button className={`btn${ready ? ' primary' : ''}`} disabled={!computed} onClick={ready ? exportStl : () => setConfirming(true)}>
+          <button className={`btn${ready && !done ? ' primary' : ''}`} disabled={!computed} onClick={ready ? exportStl : () => setConfirming(true)}>
             {ready ? 'Export STL' : 'Export STL anyway…'}
           </button>
           <button className="btn" disabled={!computed} onClick={() => crownTool.export('info')}>

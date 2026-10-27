@@ -2,6 +2,7 @@ import { unitKind } from '@dcad/shared';
 import { useDesignStore, selectActiveTooth } from '../../design/store';
 import { axisTool } from '../../tools/axisTool';
 import { useToolStore } from '../../tools/toolStore';
+import { NeedsFirst } from '../StepFooter';
 import { BridgeAxisReport, useActiveBridge } from './BridgePanels';
 import { ImplantAxisPanel, useIsImplant } from './ImplantPanel';
 
@@ -20,7 +21,7 @@ export function AxisStep() {
   // A bridge seats as one piece: one axis over every abutment, searched over all their preps.
   const common = bridge ? bridge.teeth.filter((f) => unitKind(setup, f) === 'abutment') : [];
   const missing = common.filter((f) => !teeth.find((t) => t.fdi === f)?.margin);
-  if (!tooth.margin) return <div className="step-body warning">Draw the margin first.</div>;
+  if (!tooth.margin) return <NeedsFirst>Draw the margin first.</NeedsFirst>;
   const axis = tooth.axis;
 
   return (
@@ -32,7 +33,7 @@ export function AxisStep() {
       </p>
       {missing.length > 0 && <div className="warning">Draw the margin on {missing.join(', ')} too: the common axis is searched over every abutment.</div>}
       <div className="row wrap">
-        <button className="btn primary" disabled={Boolean(busy) || missing.length > 0} onClick={() => void axisTool.search()}>
+        <button className={`btn${axis ? '' : ' primary'}`} disabled={Boolean(busy) || missing.length > 0} onClick={() => void axisTool.search()}>
           {common.length > 1 ? 'Least undercut, common' : 'Least undercut'}
         </button>
         <button className="btn" disabled={Boolean(busy)} onClick={() => axisTool.fromView()} title="Look down onto the prep the way the crown should go on, then click">

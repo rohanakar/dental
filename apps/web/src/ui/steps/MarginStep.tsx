@@ -2,6 +2,7 @@ import { unitKind } from '@dcad/shared';
 import { useDesignStore, selectActiveTooth } from '../../design/store';
 import { marginTool } from '../../tools/marginTool';
 import { useToolStore } from '../../tools/toolStore';
+import { NeedsFirst } from '../StepFooter';
 import { isWing } from '../../tools/wing';
 import { isCavity } from '../../tools/inlay';
 
@@ -68,7 +69,7 @@ export function MarginStep() {
   if (!tooth) return null;
   if (implant) return <ImplantPositionPanel />;
   if (pontic) return <div className="step-body muted">Pontic {tooth.fdi} replaces a missing tooth: it has no prep, so no margin.</div>;
-  if (!tooth.frame) return <div className="step-body warning">Set the tooth frame first.</div>;
+  if (!tooth.frame) return <NeedsFirst>Set the tooth frame first.</NeedsFirst>;
   const margin = tooth.margin;
   const drafting = anchors.length > 0;
   // A crown on a natural or prepared tooth: the choice of line, Find, and Redraw a section.

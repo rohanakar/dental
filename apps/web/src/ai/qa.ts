@@ -243,7 +243,7 @@ export interface BridgeGateInput {
  * - per retainer: the seating (the cement gap; on an implant crown the bonding gap on its Ti-base) is unchanged on
  *   the union, within SEATING_TOLERANCE_MM and on the same number of samples;
  * - per pontic: the smallest base gap to the ridge is within ponticRidgeGapMm − PONTIC_BASE_TOLERANCE_MM …
- *   + PONTIC_BASE_MAX_EXCESS_MM;
+ *   + PONTIC_BASE_MAX_EXCESS_MM (shown as the minimum ponticRidgeGapMm with the tolerance named);
  * - per implant crown (`bridge.channel.35.*`): its screw channel exits occlusally (lingually on anterior teeth) with
  *   at least the minimum wall, and was cut;
  * - per Maryland wing: the wing checks measured with the union (outline and surface undercut, thickness, space);
@@ -304,7 +304,8 @@ export function bridgeGate(result: BridgeGateInput): QaCheck[] {
   for (const p of checks?.ponticBase ?? []) {
     const limit = p.targetMm - PONTIC_BASE_TOLERANCE_MM;
     const ok = p.samples > 0 && p.minGapMm >= limit && p.minGapMm <= p.targetMm + PONTIC_BASE_MAX_EXCESS_MM && p.meanGapMm >= limit;
-    qa.push(check(`bridge.ponticBase.${p.fdi}`, ok, `Pontic ${p.fdi}: smallest gap from the base to the ridge`, p.minGapMm, round(limit), { unit: 'mm', bound: 'min' }));
+    const message = `Pontic ${p.fdi}: smallest gap from the base to the ridge, at most ${PONTIC_BASE_MAX_EXCESS_MM} mm above the minimum`;
+    qa.push(check(`bridge.ponticBase.${p.fdi}`, ok, message, p.minGapMm, p.targetMm, { unit: 'mm', bound: 'min', tolerance: PONTIC_BASE_TOLERANCE_MM }));
   }
   for (const { fdi, implant } of implants) {
     const cut = { ok: Boolean(implant.cut) && implant.cutOk !== false };

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Viewer } from '../engine/Viewer';
 import { sceneController } from '../state/sceneController';
 import { useSceneStore } from '../state/sceneStore';
+import { useDesignStore } from '../design/store';
 import { exposeForDebug } from '../debug';
 import { designTools } from '../tools/controller';
 import { ColorLegend } from './ColorLegend';
@@ -17,6 +18,8 @@ export function Viewport() {
   const host = useRef<HTMLDivElement>(null);
   const [over, setOver] = useState(false);
   const isEmpty = useSceneStore((s) => s.objects.length === 0);
+  // Loading scans is the action of Scans only: elsewhere the step's own primary leads (Next on Case setup, "Go to Scans").
+  const onScans = useDesignStore((s) => s.activeStep === 'scans');
   const viewerRef = useRef<Viewer | null>(null);
   const theme = useTheme((s) => s.theme);
 
@@ -62,7 +65,7 @@ export function Viewport() {
       {isEmpty && (
         <div className="empty">
           <div>Drop upper and lower jaw scans (STL or PLY) here</div>
-          <button className="btn primary" onClick={() => void sceneController.loadDemo()}>
+          <button className={`btn${onScans ? ' primary' : ''}`} onClick={() => void sceneController.loadDemo()}>
             Load demo scans
           </button>
         </div>
