@@ -445,3 +445,12 @@ with Auto-design next.
 - The kink had folded the demo crown's margin band since the demo jaw got its gum.
 - 125 tests. See [2026-10-27-margin-click-snap.md](2026-10-27-margin-click-snap.md).
 
+**2026-10-29: a first look on real preps (the exocad sample cases).**
+- 75 lab margins found in the 60 cases. 24 are posterior preps on arch scans; there are 4 posterior bridges, 12
+  posterior dies, and 27 anterior margins.
+- On the posterior preps: the prep finder found 9/24, the automatic margin was right on 3/24, and 8 clicks on the
+  lab's line were right on 22/24.
+- Overall, the gate passed 39 of 52 wrong lines and the doubt warning flagged 47 of 52.
+- Crowns on the lab's margins: 18/18 watertight, 16/18 printable; the cement gap missed its 0.01 mm limit on all
+  (0.014–0.046 mm).
+- No code changed; 125 tests. See [2026-10-29-exocad-sample-cases.md](2026-10-29-exocad-sample-cases.md).
