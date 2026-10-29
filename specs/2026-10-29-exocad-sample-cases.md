@@ -140,7 +140,8 @@ dcad's.
    - The gate passed 39 of 52 wrong lines, so one-click would carry a margin up to 3.5 mm off into a crown.
    - The doubt warning flagged 47 of 52 wrong lines and none of the 6 right ones.
    - First, more right lines are needed to measure its false alarms: the technician lines are a ready source.
-2. **The automatic finish line on real preps.**
+2. **The automatic finish line on real preps.** Done in `2026-10-29-margin-on-real-preps.md` (posterior: 3 → 17 of 19
+   tuning, 2 → 11 of 17 held out).
    - 3 of 24 right.
    - Prefer the lowest strong convex edge (the outer edge of the shoulder or chamfer) over the sharpest one, which is
      often the line angle at the top of the walls.

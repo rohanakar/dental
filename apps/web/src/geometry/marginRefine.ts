@@ -1,4 +1,5 @@
-import { proposeMarginAnchors, type AutoMarginProfile, type ProfileCandidate } from './autoMargin';
+import { proposeMarginAnchors, QUIET_TURN_DEG, type AutoMarginProfile, type ProfileCandidate } from './autoMargin';
+import { buildTriangleGrid, type TriangleGrid } from './crossSection';
 import { marginFromAnchors, type EdgeWeight } from './livewire';
 import { MARGIN_LENGTH_MM, MARGIN_MAX_TURN_DEG, MARGIN_MAX_WANDER, sharpestTurnDeg } from './marginShape';
 import type { V3 } from './pca';
@@ -28,6 +29,8 @@ export interface RefineInput {
   graph: SurfaceGraph;
   weight: EdgeWeight;
   frame: { origin: V3; occlusal: V3; mesial: V3 };
+  /** Triangles bucketed for the profiles' sections (built once here when omitted). */
+  grid?: TriangleGrid;
 }
 
 export interface RefineCandidate {
@@ -206,20 +209,29 @@ const better = (a: RefineCandidate, b: RefineCandidate): number => Number(b.pass
 
 export function refineMargin(input: RefineInput): RefineResult | null {
   const candidates: RefineCandidate[] = [];
-  for (const count of [16, 24, 32, 48]) {
-    const proposal = proposeMarginAnchors({ positions: input.positions, indices: input.indices, ray: input.ray, frame: input.frame, count, withCandidates: true });
-    const found = proposal.anchors.length;
-    const ring = ringConsistentAnchors(proposal.anchors, proposal.profiles);
-    const dp = ringDpAnchors(proposal.profiles);
-    for (const smooth of [false, true]) {
-      const smoothRing = candidate(`${count} profiles, ring DP${smooth ? ', smoothed' : ''}`, input, dp, found, count, smooth);
-      if (smoothRing) candidates.push(smoothRing);
-      if (count === 16) {
-        const plain = candidate(`${count} profiles${smooth ? ', smoothed' : ''}`, input, proposal.anchors, found, count, smooth);
-        if (plain) candidates.push(plain);
+  const grid = input.grid ?? buildTriangleGrid(input.positions, input.indices);
+  // The scan's cross-sections; on a rough scan (their turns swamped by noise) the height profiles as well, which cope
+  // better there (specs/2026-10-29-margin-on-real-preps.md). Every candidate competes on the same terms.
+  let rough = false;
+  for (const sampler of ['section', 'height'] as const) {
+    if (sampler === 'height' && !rough) break;
+    for (const count of [16, 24, 32, 48]) {
+      const proposal = proposeMarginAnchors({ positions: input.positions, indices: input.indices, ray: input.ray, grid, frame: input.frame, count, withCandidates: true, sampler });
+      if (sampler === 'section' && count === 16) rough = (proposal.roughnessDeg ?? 0) > QUIET_TURN_DEG;
+      const tag = sampler === 'height' ? ', height profiles' : '';
+      const found = proposal.anchors.length;
+      const ring = ringConsistentAnchors(proposal.anchors, proposal.profiles);
+      const dp = ringDpAnchors(proposal.profiles);
+      for (const smooth of [false, true]) {
+        const smoothRing = candidate(`${count} profiles${tag}, ring DP${smooth ? ', smoothed' : ''}`, input, dp, found, count, smooth);
+        if (smoothRing) candidates.push(smoothRing);
+        if (count === 16) {
+          const plain = candidate(`${count} profiles${tag}${smooth ? ', smoothed' : ''}`, input, proposal.anchors, found, count, smooth);
+          if (plain) candidates.push(plain);
+        }
+        const kept = candidate(`${count} profiles${tag}, ring-consistent anchors${smooth ? ', smoothed' : ''}`, input, ring, found, count, smooth);
+        if (kept) candidates.push(kept);
       }
-      const kept = candidate(`${count} profiles, ring-consistent anchors${smooth ? ', smoothed' : ''}`, input, ring, found, count, smooth);
-      if (kept) candidates.push(kept);
     }
   }
   if (candidates.length === 0) return null;

@@ -454,3 +454,13 @@ with Auto-design next.
 - Crowns on the lab's margins: 18/18 watertight, 16/18 printable; the cement gap missed its 0.01 mm limit on all
   (0.014–0.046 mm).
 - No code changed; 125 tests. See [2026-10-29-exocad-sample-cases.md](2026-10-29-exocad-sample-cases.md).
+
+**2026-10-29: the automatic margin on real preps.**
+- Radial profiles are now the scan's own cross-sections, walked outward from the prep top. A height map couldn't see
+  the near-vertical, often undercut walls of real preps.
+- Convexity is the turn of the contour; rough profiles are smoothed until quiet; the old height profiles still run on
+  rough scans.
+- On the posterior exocad preps the automatic margin is right on 17/19 tuning and 11/17 held-out preps (was 3 and 2),
+  at a median 0.02 mm. The synthetic evaluation is unchanged at 16/17.
+- The doubt warning flags 8/8 of the remaining wrong lines; putting it into the gate is the next step.
+- 126 tests. See [2026-10-29-margin-on-real-preps.md](2026-10-29-margin-on-real-preps.md).
