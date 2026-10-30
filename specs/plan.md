@@ -514,3 +514,6 @@ with Auto-design next.
   and the axis keeps the margins visible. The cement-gap check is signed, and the rim clears a wall it would cut.
   044's frames, axis, retainer fit and seating now pass. A connector to its 3.3 mm pontic still fails. 129 tests;
   golden 15/15. See [2026-10-30-bridge-frames-on-segment-scans.md](2026-10-30-bridge-frames-on-segment-scans.md).
+- The margin algorithm as a page to read, at `/algorithm`. Thirteen chapters in the order things happened, ten
+  puzzles, and six interactive figures on synthetic teeth. It is static and self-contained, with self-hosted fonts and
+  a Caddy redirect. See [2026-10-30-margin-algorithm-page.md](2026-10-30-margin-algorithm-page.md).

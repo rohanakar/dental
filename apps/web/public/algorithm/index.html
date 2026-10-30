@@ -1,0 +1,1820 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Finding the Finish Line · dcad</title>
+<meta name="description" content="How dcad learned to find a crown's margin on a 3D dental scan: from a hand-steered shortest path to cuts through the scan, told through the failures that shaped it, with interactive figures and puzzles.">
+<meta name="theme-color" content="#e6ebee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e151a" media="(prefers-color-scheme: dark)">
+<meta property="og:title" content="Finding the Finish Line">
+<meta property="og:description" content="How dcad finds the margin of a dental crown on a 3D scan, and how the algorithm grew up. Interactive.">
+<link rel="preload" href="./fonts/plex-cond-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="./fonts/source-serif-normal.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face { font-family: 'Plex Cond'; font-weight: 500; font-style: normal; font-display: swap; src: url(./fonts/plex-cond-500-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Plex Cond'; font-weight: 600; font-style: normal; font-display: swap; src: url(./fonts/plex-cond-600-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Plex Cond'; font-weight: 700; font-style: normal; font-display: swap; src: url(./fonts/plex-cond-700-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Plex Mono'; font-weight: 400; font-style: normal; font-display: swap; src: url(./fonts/plex-mono-400-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Plex Mono'; font-weight: 500; font-style: normal; font-display: swap; src: url(./fonts/plex-mono-500-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Source Serif'; font-weight: 300 700; font-style: normal; font-display: swap; src: url(./fonts/source-serif-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Source Serif'; font-weight: 400; font-style: italic; font-display: swap; src: url(./fonts/source-serif-italic.woff2) format('woff2'); }
+
+:root {
+  color-scheme: light;
+  --stone: #e6ebee;
+  --paper: #f5f7f8;
+  --sunk: #dde3e7;
+  --ink: #13212b;
+  --ink-2: #364551;
+  --muted: #62717c;
+  --rule: #c5cfd6;
+  --pencil: #c8203b;
+  --pencil-weak: #f6d7dc;
+  --graphite: #2c3944;
+  --scan: #2a7884;
+  --scan-weak: #d2e7ea;
+  --wax: #a8690c;
+  --wax-weak: #f3e3c4;
+  --ok: #2c7a45;
+  --shadow: 0 1px 0 rgba(19, 33, 43, 0.06), 0 8px 24px -12px rgba(19, 33, 43, 0.25);
+  --display: 'Plex Cond', 'IBM Plex Sans Condensed', 'Arial Narrow', 'Roboto Condensed', system-ui, sans-serif;
+  --serif: 'Source Serif', 'Source Serif 4', Charter, 'Iowan Old Style', Georgia, serif;
+  --mono: 'Plex Mono', 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --measure: 40rem;
+  --gutter: clamp(16px, 4vw, 40px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --stone: #0e151a;
+    --paper: #141d24;
+    --sunk: #0a1014;
+    --ink: #e2e9ed;
+    --ink-2: #b4c1ca;
+    --muted: #8495a0;
+    --rule: #283640;
+    --pencil: #ff5a72;
+    --pencil-weak: #3b1a22;
+    --graphite: #c6d1d8;
+    --scan: #5cc0cc;
+    --scan-weak: #133238;
+    --wax: #e3aa45;
+    --wax-weak: #352710;
+    --ok: #63c486;
+    --shadow: 0 1px 0 rgba(0, 0, 0, 0.4), 0 10px 30px -14px rgba(0, 0, 0, 0.8);
+  }
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --stone: #0e151a;
+  --paper: #141d24;
+  --sunk: #0a1014;
+  --ink: #e2e9ed;
+  --ink-2: #b4c1ca;
+  --muted: #8495a0;
+  --rule: #283640;
+  --pencil: #ff5a72;
+  --pencil-weak: #3b1a22;
+  --graphite: #c6d1d8;
+  --scan: #5cc0cc;
+  --scan-weak: #133238;
+  --wax: #e3aa45;
+  --wax-weak: #352710;
+  --ok: #63c486;
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.4), 0 10px 30px -14px rgba(0, 0, 0, 0.8);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-padding-top: 72px; }
+body {
+  margin: 0;
+  background: var(--stone);
+  color: var(--ink);
+  font: 400 1.075rem/1.65 var(--serif);
+  font-optical-sizing: auto;
+  text-rendering: optimizeLegibility;
+}
+[hidden] { display: none !important; }
+img, canvas, svg { max-width: 100%; }
+a { color: var(--pencil); text-underline-offset: 0.18em; text-decoration-thickness: 1px; }
+a:hover { text-decoration-thickness: 2px; }
+:focus-visible { outline: 2px solid var(--pencil); outline-offset: 2px; border-radius: 3px; }
+::selection { background: var(--pencil-weak); }
+
+/* ---------- top bar ---------- */
+.bar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 12px;
+  padding: calc(env(safe-area-inset-top, 0px) + 10px) var(--gutter) 10px;
+  background: color-mix(in srgb, var(--stone) 88%, transparent);
+  backdrop-filter: saturate(1.4) blur(10px);
+  -webkit-backdrop-filter: saturate(1.4) blur(10px);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--display);
+}
+.bar .mark { font-weight: 700; letter-spacing: 0.02em; color: var(--ink); text-decoration: none; font-size: 1.02rem; }
+.bar .mark b { color: var(--pencil); font-weight: 700; }
+.bar .where { color: var(--muted); font-size: 0.92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.bar .sp { flex: 1; }
+.bar button {
+  font: 500 0.9rem var(--display); color: var(--ink-2);
+  background: transparent; border: 1px solid var(--rule); border-radius: 999px;
+  padding: 6px 12px; cursor: pointer; min-height: 34px;
+}
+.bar button:hover { border-color: var(--ink-2); }
+.progress { position: absolute; left: 0; bottom: -1px; height: 2px; width: 0; background: var(--pencil); transition: width 0.12s linear; }
+
+/* ---------- layout ---------- */
+.shell { display: grid; grid-template-columns: minmax(0, 1fr); padding-inline: var(--gutter); }
+.rail { display: none; }
+article { width: 100%; max-width: 46rem; margin-inline: auto; padding-block: 8px 80px; }
+@media (min-width: 1180px) {
+  .shell { grid-template-columns: 15rem minmax(0, 46rem); justify-content: center; column-gap: 56px; }
+  article { margin-inline: 0; }
+  .rail { display: block; position: sticky; top: 76px; align-self: start; padding-top: 40px; max-height: calc(100vh - 90px); overflow: auto; }
+  .chapters-btn { display: none; }
+}
+.rail ol { list-style: none; margin: 0; padding: 0; counter-reset: ch; }
+.rail li a {
+  display: grid; grid-template-columns: 2.2em 1fr; gap: 2px; align-items: baseline;
+  padding: 6px 8px; border-radius: 6px; text-decoration: none; color: var(--muted);
+  font: 500 0.92rem/1.3 var(--display);
+}
+.rail li a .n { font-family: var(--mono); font-size: 0.76rem; color: var(--muted); }
+.rail li a:hover { color: var(--ink); background: var(--sunk); }
+.rail li a.on { color: var(--ink); background: var(--paper); box-shadow: inset 2px 0 0 var(--pencil); }
+.rail li a.on .n { color: var(--pencil); }
+.rail .rail-foot { margin-top: 18px; padding: 10px 8px; font: 400 0.82rem/1.45 var(--mono); color: var(--muted); border-top: 1px solid var(--rule); }
+
+/* Chapters sheet (phones and tablets) */
+.sheet { position: fixed; inset: 0; z-index: 40; background: rgba(8, 14, 18, 0.45); display: flex; align-items: flex-end; }
+.sheet .panel {
+  width: 100%; max-height: 80vh; overflow: auto; background: var(--paper); border-radius: 16px 16px 0 0;
+  padding: 18px var(--gutter) calc(env(safe-area-inset-bottom, 0px) + 18px);
+}
+.sheet .panel h2 { margin: 0 0 8px; font-size: 1.2rem; }
+.sheet ol { list-style: none; margin: 0; padding: 0; }
+.sheet a { display: grid; grid-template-columns: 2.4em 1fr; padding: 10px 4px; border-bottom: 1px solid var(--rule); color: var(--ink); text-decoration: none; font: 500 1rem/1.3 var(--display); }
+.sheet a .n { font-family: var(--mono); color: var(--pencil); font-size: 0.85rem; }
+
+/* ---------- type ---------- */
+h1, h2, h3, h4 { font-family: var(--display); color: var(--ink); text-wrap: balance; line-height: 1.08; margin: 0; }
+h1 { font-weight: 700; font-size: clamp(2.4rem, 7vw, 4.1rem); letter-spacing: -0.01em; }
+h2 { font-weight: 600; font-size: clamp(1.7rem, 4.4vw, 2.35rem); letter-spacing: -0.005em; }
+h3 { font-weight: 600; font-size: 1.28rem; margin-top: 2em; }
+p { margin: 0 0 1.05em; }
+article > p, .prose p, .prose li { max-width: var(--measure); }
+em { font-style: italic; }
+strong { font-weight: 600; }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+code { background: var(--sunk); padding: 0.08em 0.36em; border-radius: 4px; overflow-wrap: anywhere; }
+.label { font: 500 0.74rem/1 var(--mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); }
+ul.plain, ol.plain { padding-left: 1.2em; margin: 0 0 1.1em; }
+ul.plain li, ol.plain li { margin: 0.25em 0; }
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* ---------- opening ---------- */
+.open { padding-block: clamp(28px, 6vw, 64px) 8px; }
+.open .label { color: var(--pencil); }
+.open h1 { margin-top: 14px; }
+.open h1 .soft { color: var(--muted); font-weight: 500; }
+.open .dek { font-size: clamp(1.15rem, 2.6vw, 1.32rem); line-height: 1.5; color: var(--ink-2); margin-top: 18px; max-width: 36rem; }
+.how {
+  margin: 26px 0 8px; display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  font: 400 0.95rem/1.45 var(--serif); color: var(--ink-2);
+}
+.how div { border-top: 2px solid var(--ink); padding-top: 8px; }
+.how b { font: 600 0.98rem var(--display); color: var(--ink); display: block; margin-bottom: 2px; }
+
+/* ---------- chapters ---------- */
+.chapter { padding-top: clamp(48px, 9vw, 96px); }
+.chapter-head { display: grid; gap: 10px; margin-bottom: 22px; }
+.chapter-head .meta { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; }
+.chapter-head .num { font: 500 0.82rem var(--mono); color: var(--pencil); letter-spacing: 0.06em; }
+.chapter-head .date { font: 400 0.82rem var(--mono); color: var(--muted); }
+.chapter-head .problem { font: italic 400 1.12rem/1.5 var(--serif); color: var(--ink-2); max-width: 36rem; }
+
+/* ---------- puzzle ---------- */
+.puzzle {
+  margin: 26px 0; padding: 18px 18px 16px; border-radius: 12px;
+  background: var(--paper); border: 1px dashed color-mix(in srgb, var(--pencil) 55%, var(--rule));
+}
+.puzzle .q-label { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.puzzle .q-label svg { width: 18px; height: 18px; flex: none; }
+.puzzle .q { font: 600 1.14rem/1.4 var(--display); color: var(--ink); margin: 0 0 10px; }
+.puzzle textarea {
+  width: 100%; min-height: 64px; resize: vertical; border-radius: 8px; border: 1px solid var(--rule);
+  background: var(--stone); color: var(--ink); padding: 10px 12px; font: 400 1rem/1.45 var(--serif);
+}
+.puzzle .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.btn {
+  font: 600 0.92rem var(--display); letter-spacing: 0.01em; cursor: pointer;
+  border: 1px solid var(--rule); background: var(--stone); color: var(--ink);
+  border-radius: 999px; padding: 8px 14px; min-height: 40px;
+}
+.btn:hover { border-color: var(--ink-2); }
+.btn.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.btn.primary:hover { background: var(--pencil); border-color: var(--pencil); }
+.btn[aria-pressed='true'] { background: var(--pencil); color: #fff; border-color: var(--pencil); }
+.puzzle .hint, .puzzle .answer { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--rule); }
+.puzzle .hint p, .puzzle .answer p { margin-bottom: 0.6em; }
+.puzzle .answer::before { content: 'What dcad does'; display: block; font: 500 0.72rem var(--mono); letter-spacing: 0.09em; text-transform: uppercase; color: var(--pencil); margin-bottom: 6px; }
+.puzzle .hint::before { content: 'Hint'; display: block; font: 500 0.72rem var(--mono); letter-spacing: 0.09em; text-transform: uppercase; color: var(--wax); margin-bottom: 6px; }
+
+/* ---------- figures ---------- */
+figure { margin: 28px 0; }
+.fig { background: var(--paper); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
+.fig .stage { position: relative; background: var(--paper); }
+.fig canvas { display: block; width: 100%; touch-action: manipulation; }
+.fig canvas.drag-x { touch-action: pan-y; cursor: grab; }
+.fig canvas.drag-x:active { cursor: grabbing; }
+.fig canvas.tap { cursor: crosshair; }
+.fig .controls {
+  display: grid; gap: 12px 18px; padding: 14px 16px 16px; border-top: 1px solid var(--rule);
+  grid-template-columns: repeat(auto-fit, minmax(11.5rem, 1fr)); align-items: end;
+}
+.ctl { display: grid; gap: 6px; min-width: 0; }
+.ctl label, .ctl .lab { font: 500 0.78rem var(--mono); color: var(--muted); display: flex; justify-content: space-between; gap: 8px; letter-spacing: 0.02em; }
+.ctl label output, .ctl .lab output { color: var(--ink); font-variant-numeric: tabular-nums; }
+.ctl .row { display: flex; flex-wrap: wrap; gap: 6px; }
+input[type='range'] { width: 100%; accent-color: var(--pencil); height: 28px; margin: 0; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; padding: 2px; background: var(--stone); flex-wrap: wrap; }
+.seg button { font: 600 0.84rem var(--display); border: 0; background: transparent; color: var(--muted); padding: 6px 12px; border-radius: 999px; cursor: pointer; min-height: 34px; }
+.seg button[aria-pressed='true'] { background: var(--ink); color: var(--paper); }
+figcaption { padding: 12px 16px 16px; font: 400 0.92rem/1.5 var(--serif); color: var(--ink-2); border-top: 1px solid var(--rule); }
+figcaption b { font-family: var(--display); font-weight: 600; color: var(--ink); }
+.readout { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 10px 16px; font: 400 0.8rem/1.4 var(--mono); color: var(--muted); border-top: 1px solid var(--rule); background: color-mix(in srgb, var(--stone) 50%, var(--paper)); }
+.readout b { color: var(--ink); font-weight: 500; }
+.readout .good { color: var(--ok); }
+.readout .bad { color: var(--pencil); }
+.overlay-tip {
+  position: absolute; left: 12px; top: 10px; pointer-events: none;
+  font: 500 0.74rem var(--mono); color: var(--muted); letter-spacing: 0.04em;
+  background: color-mix(in srgb, var(--paper) 80%, transparent); padding: 3px 7px; border-radius: 5px;
+}
+.key { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 10px 16px 0; font: 400 0.78rem var(--mono); color: var(--muted); }
+.key i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+
+/* ---------- side notes ---------- */
+.note {
+  margin: 24px 0; padding: 14px 16px; border-radius: 10px; background: var(--sunk);
+  font-size: 0.98rem; line-height: 1.55; color: var(--ink-2);
+}
+.note > .label { display: block; margin-bottom: 6px; }
+.note.dropped > .label { color: var(--wax); }
+.note.measure > .label { color: var(--scan); }
+.note p:last-child { margin-bottom: 0; }
+.formula { font-family: var(--mono); font-size: 0.92rem; background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; overflow-x: auto; white-space: pre; line-height: 1.6; margin: 18px 0; color: var(--ink); }
+.formula .c { color: var(--muted); }
+.formula .k { color: var(--pencil); }
+
+/* ---------- scoreboard ---------- */
+.score { display: grid; gap: 4px; padding: 16px; }
+.score .row { display: grid; grid-template-columns: minmax(7rem, 11rem) 1fr 3.6rem; gap: 10px; align-items: center; cursor: pointer; padding: 6px 4px; border-radius: 6px; }
+.score .row:hover, .score .row.on { background: var(--sunk); }
+.score .name { font: 500 0.86rem/1.25 var(--display); color: var(--ink-2); }
+.score .track { position: relative; height: 14px; background: var(--sunk); border-radius: 3px; overflow: hidden; }
+.score .fill { position: absolute; inset: 0 auto 0 0; background: var(--graphite); border-radius: 3px; transition: width 0.5s cubic-bezier(.2,.7,.2,1); }
+.score .row.on .fill { background: var(--pencil); }
+.score .val { font: 500 0.82rem var(--mono); text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }
+.score-detail { padding: 0 16px 16px; font-size: 0.96rem; color: var(--ink-2); min-height: 4.5em; }
+
+/* ---------- timeline of ideas ---------- */
+.ledger { list-style: none; margin: 24px 0; padding: 0; border-left: 2px solid var(--rule); }
+.ledger li { position: relative; padding: 0 0 18px 20px; }
+.ledger li::before { content: ''; position: absolute; left: -7px; top: 0.45em; width: 12px; height: 12px; border-radius: 50%; background: var(--stone); border: 2px solid var(--graphite); }
+.ledger li.key::before { border-color: var(--pencil); background: var(--pencil); }
+.ledger .when { font: 500 0.78rem var(--mono); color: var(--muted); }
+.ledger .what { font: 600 1.02rem/1.35 var(--display); color: var(--ink); }
+.ledger .why { font-size: 0.97rem; color: var(--ink-2); }
+
+.recap { counter-reset: q; list-style: none; padding: 0; margin: 20px 0; display: grid; gap: 10px; }
+.recap li { counter-increment: q; display: grid; grid-template-columns: 2.4rem 1fr; gap: 8px; padding: 12px 14px; background: var(--paper); border-radius: 10px; }
+.recap li::before { content: counter(q, decimal-leading-zero); font: 500 0.86rem var(--mono); color: var(--pencil); padding-top: 3px; }
+.recap b { font-family: var(--display); font-weight: 600; }
+
+footer.end { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--rule); font: 400 0.86rem/1.5 var(--mono); color: var(--muted); }
+
+@media (max-width: 560px) {
+  body { font-size: 1.02rem; }
+  .fig .controls { grid-template-columns: 1fr; }
+  .score .row { grid-template-columns: 1fr 3.2rem; }
+  .score .name { grid-column: 1 / -1; }
+  .bar .where { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}
+
+</style>
+</head>
+<body>
+<div class="bar">
+  <a class="mark" href="#top">dcad <b>/</b> algorithm</a>
+  <span class="where">Finding the finish line</span>
+  <span class="sp"></span>
+  <button id="chapters" class="chapters-btn" type="button" aria-controls="sheet">Chapters</button>
+  <button id="theme" type="button" aria-label="Switch theme">Dark</button>
+  <span class="progress" aria-hidden="true"></span>
+</div>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="panel" role="dialog" aria-label="Chapters">
+    <h2>Chapters</h2>
+    <ol>
+      <li><a href="#line"><span class="n">01</span>The line a crown is built on</a></li>
+      <li><a href="#livewire"><span class="n">02</span>Let the hand lead</a></li>
+      <li><a href="#snap"><span class="n">03</span>A pixel off</a></li>
+      <li><a href="#auto"><span class="n">04</span>Let the machine click</a></li>
+      <li><a href="#refiner"><span class="n">05</span>Don't trust one trace</a></li>
+      <li><a href="#gum"><span class="n">06</span>A detour to the gum line</a></li>
+      <li><a href="#real"><span class="n">07</span>Meeting real preps</a></li>
+      <li><a href="#sections"><span class="n">08</span>Cut the scan</a></li>
+      <li><a href="#doubt"><span class="n">09</span>Let the scan vote</a></li>
+      <li><a href="#finder"><span class="n">10</span>The same cut finds the prep</a></li>
+      <li><a href="#score"><span class="n">11</span>The scoreboard</a></li>
+      <li><a href="#open"><span class="n">12</span>Still open</a></li>
+      <li><a href="#invent"><span class="n">13</span>Invent it yourself</a></li>
+    </ol>
+  </div>
+</div>
+
+<div class="shell">
+  <nav class="rail" aria-label="Chapters">
+    <ol>
+      <li><a href="#line"><span class="n">01</span>The line a crown is built on</a></li>
+      <li><a href="#livewire"><span class="n">02</span>Let the hand lead</a></li>
+      <li><a href="#snap"><span class="n">03</span>A pixel off</a></li>
+      <li><a href="#auto"><span class="n">04</span>Let the machine click</a></li>
+      <li><a href="#refiner"><span class="n">05</span>Don't trust one trace</a></li>
+      <li><a href="#gum"><span class="n">06</span>A detour to the gum line</a></li>
+      <li><a href="#real"><span class="n">07</span>Meeting real preps</a></li>
+      <li><a href="#sections"><span class="n">08</span>Cut the scan</a></li>
+      <li><a href="#doubt"><span class="n">09</span>Let the scan vote</a></li>
+      <li><a href="#finder"><span class="n">10</span>The same cut finds the prep</a></li>
+      <li><a href="#score"><span class="n">11</span>The scoreboard</a></li>
+      <li><a href="#open"><span class="n">12</span>Still open</a></li>
+      <li><a href="#invent"><span class="n">13</span>Invent it yourself</a></li>
+    </ol>
+    <p class="rail-foot" id="puzzle-count">0 puzzles opened</p>
+  </nav>
+
+  <article id="top">
+    <header class="open" id="opening">
+      <span class="label">dcad · how one algorithm grew up</span>
+      <h1>Finding the finish line</h1>
+      <p class="dek">A crown is built on one closed line around a prepared tooth. This is how dcad learned to find that line on a
+        3D scan. It started as a shortest path a hand could steer. It became a cut through the scan that reads the tooth's
+        shape the way a technician's fingertip does. Each step came from a failure, and the failures are where the ideas
+        are.</p>
+      <div class="how">
+        <div><b>Read straight through</b>The chapters follow the order things actually happened, October 2026.</div>
+        <div><b>Stop at each puzzle</b>Write your guess before you open the answer. Most of this algorithm can be reinvented.</div>
+        <div><b>Play with every figure</b>All figures run on synthetic teeth made in this page. Drag, tap, slide.</div>
+      </div>
+
+      <figure class="fig" id="fig-die">
+        <div class="stage"><canvas id="die" class="drag-x" aria-label="A prepared tooth to turn, with its margin in red"></canvas><span class="overlay-tip">drag to turn</span></div>
+        <div class="controls">
+          <div class="ctl"><label for="cut">Cut at <output for="cut">20°</output></label><input id="cut" type="range" min="0" max="359" value="20"></div>
+          <div class="ctl"><span class="lab">Cutting plane</span><div class="seg" id="cutshow"><button type="button" data-v="on" aria-pressed="true">Show</button><button type="button" data-v="off" aria-pressed="false">Hide</button></div></div>
+        </div>
+        <figcaption><b>A prepared molar (synthetic).</b> The red line is the margin, where the crown will end. Grey is the
+          prep, rose is the gum. The teal half-plane cuts the tooth through its axis. Flattened, the cut is a profile, and
+          most of this story is about reading such profiles.</figcaption>
+      </figure>
+    </header>
+
+    <!-- 01 -->
+    <section class="chapter" id="line">
+      <div class="chapter-head">
+        <div class="meta"><span class="num">01</span><span class="date">the problem</span></div>
+        <h2>The line a crown is built on</h2>
+        <p class="problem">Where exactly does the tooth end and the crown begin?</p>
+      </div>
+      <p>To fit a crown, a dentist grinds the tooth down into a <em>prep</em>: a tapered stump with a ledge around its base.
+        The ledge is the <em>finish line</em>. The crown's edge, the <em>margin</em>, must sit exactly on it. Too short and
+        the tooth decays under the gap. Too long and the edge overhangs and irritates the gum. Labs work to about
+        a tenth of a millimetre, and dcad's own checks to a few hundredths.</p>
+      <p>On a plaster model a technician finds the line by feel and marks it with a red pencil. dcad gets a scan instead: a
+        mesh of up to a million triangles, in millimetres, with no labels. Nothing in the file says <em>prep</em>,
+        <em>wall</em> or <em>gum</em>. Everything has to be read from the shape.</p>
+
+      <div class="puzzle" data-id="p1">
+        <div class="q-label"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><path d="M7.6 7.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M10 14.6v.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg><span class="label">Before you read on</span></div>
+        <p class="q">Run a fingertip down the cut in the figure above, from the top of the prep to the gum. What does it feel at the margin that it feels nowhere else?</p>
+        <textarea id="g-p1" aria-label="Your guess" placeholder="Your guess (kept in this browser only)"></textarea>
+        <div class="actions"><button class="btn" type="button" data-act="hint" aria-expanded="false">Hint</button><button class="btn primary" type="button" data-act="reveal" aria-expanded="false">Show what dcad does</button></div>
+        <div class="hint" hidden><p>Not the steepest part, not the highest part. Think about which way the surface <em>bends</em>, and in what order.</p></div>
+        <div class="answer" hidden><p>A sequence. A long steep wall, then a small concave inner angle (the floor of the chamfer), then a
+          sharp <strong>convex</strong> corner, the lip, then the surface drops away again toward the gum. The finish line is
+          that convex corner. Every version of the algorithm below is a better way of finding "the convex corner after the
+          wall", and of not being fooled by the other convex corners on a tooth.</p></div>
+      </div>
+      <p>Hold on to that sequence: <em>wall, inner angle, lip, drop</em>. It returns in chapter 10 almost word for word.</p>
+    </section>
+
+    <!-- 02 -->
+    <section class="chapter" id="livewire">
+      <div class="chapter-head">
+        <div class="meta"><span class="num">02</span><span class="date">Day 2 · 11 Oct 2026</span></div>
+        <h2>Let the hand lead</h2>
+        <p class="problem">A technician will click a few points. How do you join them along the finish line, not straight across the tooth?</p>
+      </div>
+      <p>The first tool was manual on purpose. The user clicks a handful of points around the prep, and the software draws
+        the line between them. Join the clicks with straight segments and you cut across the tooth. Join them with the
+        shortest path <em>on the surface</em> (a geodesic) and you still drift off the ledge between clicks.</p>
+
+      <div class="puzzle" data-id="p2">
+        <div class="q-label"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><path d="M7.6 7.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M10 14.6v.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg><span class="label">Before you read on</span></div>
+        <p class="q">You will run a shortest-path search over the mesh's edges. What should one edge <em>cost</em>, so that the cheapest path between two clicks hugs the finish line?</p>
+        <textarea id="g-p2" aria-label="Your guess" placeholder="Your guess"></textarea>
+        <div class="actions"><button class="btn" type="button" data-act="hint" aria-expanded="false">Hint</button><button class="btn primary" type="button" data-act="reveal" aria-expanded="false">Show what dcad does</button></div>
+        <div class="hint" hidden><p>Chapter 1 says the finish line is a convex ridge. Make walking along convex edges nearly free. And what should walking through a groove cost?</p></div>
+        <div class="answer" hidden>
+          <p>Length times a factor of the edge's <strong>signed curvature</strong> κ̄ (the mean of its two vertices', convex
+            positive, measured on smoothed normals). With κ₀ = 1 mm⁻¹:</p>
+          <div class="formula">κ̄ &gt; 0 :  cost = length · max(0.02, 1 / (1 + (κ̄/κ₀)²))   <span class="c">// a ridge costs as little as 1/50</span>
+κ̄ ≤ 0 :  cost = length · (1 + min(2, −κ̄/κ₀))       <span class="c">// a groove up to 3×</span></div>
+          <p>Then plain Dijkstra from each click, bounded to 12 mm. The whole predecessor tree goes to the screen, so the
+            preview line to the cursor is a lookup, not a search. This is the classic <em>live-wire</em> or "intelligent
+            scissors" from image editing, moved onto a curved surface.</p>
+        </div>
+      </div>
+
+      <figure class="fig" id="fig-lw">
+        <div class="stage"><canvas id="lw" class="tap" aria-label="Curvature map of a prep seen from above; tap to place clicks"></canvas><span class="overlay-tip">tap to click points, then close</span></div>
+        <div class="key"><span><i style="background:var(--graphite)"></i>convex (ridges)</span><span><i style="background:var(--scan)"></i>concave (creases)</span><span><i style="background:var(--pencil)"></i>the traced line</span></div>
+        <div class="controls">
+          <div class="ctl"><span class="lab">Your clicks</span><div class="row"><button class="btn" type="button" id="lw-close">Close the loop</button><button class="btn" type="button" id="lw-clear">Clear</button><button class="btn" type="button" id="lw-ex">Example</button></div></div>
+          <div class="ctl"><span class="lab">Snap clicks to the ridge (0.3 mm)</span><div class="seg" id="lw-snap"><button type="button" data-v="on" aria-pressed="true">On</button><button type="button" data-v="off" aria-pressed="false">Off</button></div></div>
+          <div class="ctl"><label for="lw-noise">Scan noise <output for="lw-noise">0.35</output></label><input id="lw-noise" type="range" min="0" max="1.2" step="0.05" value="0.35"></div>
+          <div class="ctl"><span class="lab">Line to follow</span><div class="seg" id="lw-line"><button type="button" data-v="finish" aria-pressed="true">Finish line (convex)</button><button type="button" data-v="gum" aria-pressed="false">Gum line (concave)</button></div></div>
+        </div>
+        <div class="readout" id="lw-read"></div>
+        <figcaption><b>Live-wire on a curvature map.</b> A synthetic prep seen from above, 16 × 11 mm. The strong dark ring is
+          the finish line, the fainter ring inside it is the occlusal line angle, and the teal ring outside is the gum crease.
+          Tap three or more points near the finish line and close the loop: the red path follows the ridge and even bridges
+          the weak patch at the lower left. Switch to the gum line and the same clicks follow the crease instead: one flipped
+          sign.</figcaption>
+      </figure>
+
+      <div class="note measure"><span class="label">Measured, synthetic prep</span>
+        <p>Four clicks: the curvature-weighted path is 0.077 mm from the true line on average. A plain geodesic between
+          the same clicks is 0.305 mm off. Eight clicks on a million-triangle arch: 0.055 mm mean, 0.129 mm max.</p></div>
+      <div class="note dropped"><span class="label">Fixed on the way</span>
+        <p>The first synthetic test tooth had no convex margin at all. Its only convex edge was the line angle at the top of
+          the walls, so the tracer was learning the wrong lesson. The test prep was rebuilt with a chamfer and a convex lip.
+          The spec put the target in one line: <em>snap to the ridge, not the chamfer floor</em>.</p></div>
+    </section>
+
+    <!-- 03 -->
+    <section class="chapter" id="snap">
+      <div class="chapter-head">
+        <div class="meta"><span class="num">03</span><span class="date">27 Oct 2026</span></div>
+        <h2>A pixel off</h2>
+        <p class="problem">One click landed 0.137 mm off the line, and the crown could not be printed.</p>
+      </div>
+      <p>The live-wire goes exactly where it is told: <em>through</em> every click. On the demo tooth, seven scripted clicks
+        sat within 0.063 mm of the ridge and one sat 0.137 mm down the chamfer. The trace dipped 0.24 mm to reach it and came
+        back, turning 44°, 56° and 171° within 0.2 mm. The crown's edge band followed that spike, folded over itself, and
+        the crown was no longer a valid solid.</p>
+      <p>Why only now? The demo jaw had just been given realistic gum, which sharpened the curvature around the margin enough
+        to turn a small dip into a fold. A human click is no more precise than a screen pixel, so this was a product bug, not
+        bad luck.</p>
+
+      <div class="puzzle" data-id="p3">
+        <div class="q-label"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><path d="M7.6 7.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M10 14.6v.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg><span class="label">Before you read on</span></div>
+        <p class="q">You will move each click onto the ridge before tracing. But a click that is already on the ridge must not slide along it. What rule does both?</p>
+        <textarea id="g-p3" aria-label="Your guess" placeholder="Your guess"></textarea>
+        <div class="actions"><button class="btn" type="button" data-act="hint" aria-expanded="false">Hint</button><button class="btn primary" type="button" data-act="reveal" aria-expanded="false">Show what dcad does</button></div>
+        <div class="hint" hidden><p>A ridge is broad on a mesh: neighbouring vertices along it are nearly as strong as each other. Compare the click to the best nearby, not to zero.</p></div>
+        <div class="answer" hidden><p>Look within 0.3 mm along the surface for the vertex with the strongest curvature of the line's
+          sign. Move the click there only if the clicked vertex scores under <strong>four-fifths</strong> of it. On the
+          ridge, the click already scores close to the best, so it stays. A first version snapped whenever anything stronger
+          was near, and crept along the ridge. Drags are deliberately not snapped: a drag is a placement.</p></div>
+      </div>
+      <p>Try it in the figure above. The example clicks sit about 0.15 mm off the ridge. With the snap off, the line kinks at
+        each one; with it on, the dotted stubs show each click moving onto the ridge. The unit test that guards this: a click
+        0.15 mm down the chamfer ends 0.072 mm from the ridge instead of 0.199 mm, and the sharpest turn drops from 40.6° to
+        30.5°.</p>
+    </section>
+
+    <!-- 04 -->
+    <section class="chapter" id="auto">
+      <div class="chapter-head">
+        <div class="meta"><span class="num">04</span><span class="date">Day 6 · Oct 2026</span></div>
+        <h2>Let the machine click</h2>
+        <p class="problem">One-click crown design needs a margin with no clicks at all.</p>
+      </div>
+      <p>The tracer was good. What a one-click design lacks is the clicks. So the first automatic margin did only that:
+        it placed the clicks and let the live-wire do the rest.</p>
+
+      <div class="puzzle" data-id="p4">
+        <div class="q-label"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><path d="M7.6 7.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M10 14.6v.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg><span class="label">Before you read on</span></div>
+        <p class="q">You know the tooth's centre and its up direction. How would you find 16 points on the finish line, all the way round?</p>
+        <textarea id="g-p4" aria-label="Your guess" placeholder="Your guess"></textarea>
+        <div class="actions"><button class="btn" type="button" data-act="hint" aria-expanded="false">Hint</button><button class="btn primary" type="button" data-act="reveal" aria-expanded="false">Show what dcad does</button></div>
+        <div class="hint" hidden><p>Walk outward from the centre in 16 directions, like spokes. Along each spoke, what do you look for first?</p></div>
+        <div class="answer" hidden><p>Sixteen radial <strong>height profiles</strong>: along each spoke, cast rays straight down from
+          above every 0.05 mm and record the height of the first surface hit. On each profile take the first strong convex
+          break after the height has dropped at least 1.5 mm (the wall), stop if the surface rises again (a neighbouring
+          tooth), and hand the 16 points to the live-wire as clicks.</p></div>
+      </div>
+
+      <p>Then a <em>gate</em> decides whether the line may be used without a human: it must close, be 8–60 mm long, and have
+        no turn sharper than 120°. On the synthetic arch the automatic margin landed 0.048 mm from the truth on average,
+        slightly <em>better</em> than the hand-scripted clicks at 0.055 mm. That happy result would not survive contact with
+        real teeth, but it took three weeks and real scans to find out.</p>
+
+      <div class="note dropped"><span class="label">Tried and dropped</span>
+        <ul class="plain">
+          <li><b>Scoring corners by vertex curvature.</b> The curvature was <em>negative</em> exactly on the convex margin
+            edge: scanners leave sliver triangles there, and their normals swing the wrong way. The profile's own change of
+            slope replaced it.</li>
+          <li><b>Taking the first convex peak.</b> A diagonal spoke between two teeth picked the gum in the gap. The peak
+            must now reach half of the profile's strongest.</li>
+          <li><b>Measuring kinks between 0.2 mm segments.</b> It rejected a 0.057 mm-accurate line, because snapping to
+            vertices makes 0.2 mm wiggles that look like kinks. Turns are measured over 0.6 mm chords instead. A doubled-back
+            1 mm spike still fails.</li>
+        </ul></div>
+    </section>
+
+    <!-- 05 -->
+    <section class="chapter" id="refiner">
+      <div class="chapter-head">
+        <div class="meta"><span class="num">05</span><span class="date">26 Oct 2026</span></div>
+        <h2>Don't trust one trace</h2>
+        <p class="problem">The automatic margin passed its own checks while sitting 1.7 mm off the finish line.</p>
+      </div>
+      <p>A user wrote that one-click design "always seems to fail at margins". On a synthetic benchmark of 17 prepped teeth with
+        scanner-like noise, the plain automatic margin was right on 6. Worse, some wrong lines <em>passed</em> the gate:
+        smooth, closed, the right length, and 1.71 mm up the wall.</p>
+
+      <div class="puzzle" data-id="p5">
+        <div class="q-label"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><path d="M7.6 7.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M10 14.6v.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg><span class="label">Before you read on</span></div>
+        <p class="q">Shape checks can't see a wrong-but-smooth line. The line is traced through 16 anchors. What one ratio, free to compute, betrays a trace that took detours between them?</p>
+        <textarea id="g-p5" aria-label="Your guess" placeholder="Your guess"></textarea>
+        <div class="actions"><button class="btn" type="button" data-act="hint" aria-expanded="false">Hint</button><button class="btn primary" type="button" data-act="reveal" aria-expanded="false">Show what dcad does</button></div>
+        <div class="hint" hidden><p>If the anchors were all on the true line, how long would the trace be, compared with the polygon through the anchors?</p></div>
+        <div class="answer" hidden><p><strong>Wander</strong>: the traced length divided by the perimeter of the anchor polygon. A
+          detour adds length; a good trace is barely longer than its anchor ring. dcad's limit is 1.15, and the gate gained
+          a "no detours" check. On natural teeth it reads 1.37–1.64, which is how the refiner rejects a tooth that was never
+          prepared.</p></div>
+      </div>
+
+      <p>The <em>refiner</em> stopped trusting a single trace. Each profile now reports every strong convex corner, not just
+        the first. Profiles come in four counts (16, 24, 32, 48). Anchors are chosen three ways: the first corners, corners
+        consistent round the ring, and a <strong>ring dynamic program</strong> that picks one corner per profile so that the
+        height and radius change slowly around the tooth. Each anchor set is traced twice, about 14 traces in 0.2–0.7 s,
+        and the best is kept: passes the gate, then least wander, then the gentlest turn.</p>
+
+      <figure class="fig" id="fig-ring">
+        <div class="stage"><canvas id="ring" aria-label="Candidate corners on 32 profiles round a prep, and the line chosen through them"></canvas></div>
+        <div class="key"><span><i style="background:var(--graphite)"></i>finish-line corners</span><span><i style="background:var(--wax)"></i>corners up the wall (hollow: the line angle above them)</span><span><i style="background:var(--muted)"></i>gum scraps</span><span><i style="background:var(--pencil)"></i>chosen line (dashed ring: in doubt)</span></div>
+        <div class="controls">
+          <div class="ctl"><span class="lab">Choose by</span><div class="seg" id="ring-mode"><button type="button" data-v="first" aria-pressed="false">First corner</button><button type="button" data-v="strong" aria-pressed="false">Strongest</button><button type="button" data-v="dp" aria-pressed="true">Ring DP</button></div></div>
+          <div class="ctl"><label for="ring-lambda">Jump cost, × dcad's <output for="ring-lambda">1.0×</output></label><input id="ring-lambda" type="range" min="0" max="3" step="0.1" value="1"></div>
+          <div class="ctl"><label for="ring-run">Wall corners run over <output for="ring-run">6 of 32</output></label><input id="ring-run" type="range" min="0" max="32" step="1" value="6"></div>
+          <div class="ctl"><label for="ring-sharp">Wall-corner sharpness <output for="ring-sharp">1.6</output></label><input id="ring-sharp" type="range" min="0.4" max="3" step="0.1" value="1.6"></div>
+          <div class="ctl"><span class="lab">Another prep</span><div class="row"><button class="btn" type="button" id="ring-new">Shuffle</button></div></div>
+        </div>
+        <div class="readout" id="ring-read"></div>
+        <figcaption><b>One choice per spoke, or one choice for the ring.</b> 32 spokes round a synthetic prep, seen from above
+          and unrolled. Each has one to three candidate corners: the finish line, sometimes a corner up the wall (in runs, the
+          way false edges come on real scans), sometimes a scrap of gum. <em>First corner</em> takes the wall corners
+          wherever they exist. <em>Strongest</em> follows whichever is sharper. The <em>ring DP</em> scores each corner by
+          −0.5 × its convexity (capped at 3) and each step between neighbours by 5·|Δdrop| + 2·|Δradius|, so a run of false
+          corners pays to enter and to leave, and even a long run does not pay off. Now make the run go all the way round,
+          and sharp: a corner that hugs the wall the whole way costs the DP no jumps at all, and it is sharper, so the DP
+          takes it. Real preps did exactly that (chapter 9).</figcaption>
+      </figure>
+
+      <div class="note dropped"><span class="label">Tried and dropped: a language model in the loop</span>
+        <p>A model was given margin tools (move an anchor, re-run, smooth) and a budget of ten calls. The ground rule was
+          <em>geometry is computed, never generated</em>: the model only chose which tool to call. It added nothing the refiner
+          didn't already do. It was right on the cases the refiner got right, still 0.66 mm off on the one it missed, and took
+          minutes. Handed a passing report, it finished at once: "from numbers alone it cannot tell a gum ledge from the
+          finish line". It was removed from one-click design.</p></div>
+      <div class="note measure"><span class="label">Measured, synthetic benchmark</span>
+        <p>Prepped teeth right (within 0.15 mm mean and passing the gate): plain 6 of 17, refiner <b>16 of 17</b>. Natural
+          teeth rejected: 3 of 3 for both.</p></div>
+    </section>
+
+    <!-- 06 -->
+    <section class="chapter" id="gum">
+      <div class="chapter-head">
+        <div class="meta"><span class="num">06</span><span class="date">27 Oct 2026</span></div>
+        <h2>A detour to the gum line</h2>
+        <p class="problem">On a tooth that was never prepared, the line that matters is where tooth meets gum, and the finish-line finder made stairs of it.</p>
+      </div>
+      <p>Some restorations sit on natural teeth, and there the useful line is the <em>gum line</em>: a concave crease, the
+        opposite sign of a finish line. The finish-line finder followed it in 39–54 mm staircases. Measured on real natural
+        teeth from a public research dataset (Teeth3DS+, local evaluation only), it was right on 0 of 24 held-out teeth, with
+        a median error of 1.50 mm.</p>
+      <p>A research round ran a proposer, a scout, a critic and four experiments in parallel. The winner did not follow the
+        crease at all. It let the crease <em>stop a flow</em>: a <strong>random walker</strong>. Fix a potential of 1 on the
+        crown's top and 0 on the rim of a patch around it, give every mesh edge a conductance that collapses on concave
+        creases, solve for the steady state, and draw the 0.5 level line.</p>
+      <div class="formula">conductance(edge) = exp(−β · concavity / κ_ref) / length     <span class="c">// κ_ref: the patch's 90th percentile</span></div>
+
+      <div class="puzzle" data-id="p6">
+        <div class="q-label"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><path d="M7.6 7.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M10 14.6v.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg><span class="label">Before you read on</span></div>
+        <p class="q">Slide β below. Correct teeth jump from 0 to 20 of 23 and then stop improving. What does a plateau like that tell you about the method?</p>
+        <textarea id="g-p6" aria-label="Your guess" placeholder="Your guess"></textarea>
+        <div class="actions"><button class="btn" type="button" data-act="hint" aria-expanded="false">Hint</button><button class="btn primary" type="button" data-act="reveal" aria-expanded="false">Show what dcad does</button></div>
+        <div class="hint" hidden><p>Where does the potential drop from 1 to 0 when every edge conducts the same? And when the crease conducts e<sup>−8</sup> as well as the rest?</p></div>
+        <div class="answer" hidden><p>That the <em>crease</em>, not the seeds, places the line. With uniform conductance the drop
+          spreads evenly and the 0.5 line sits wherever the seeds put it. Once the crease conducts about e<sup>−8</sup> as
+          well as everything else, the whole drop piles up there, and beyond that no further contrast moves it. "A plateau,
+          not a tuned point": β = 8 was not fitted to the data, it is simply past the knee.</p></div>
+      </div>
+
+      <figure class="fig" id="fig-beta">
+        <div class="stage"><canvas id="beta" aria-label="Correct gum lines against beta"></canvas></div>
+        <div class="controls"><div class="ctl"><label for="beta-r">β, crease contrast <output for="beta-r">8</output></label><input id="beta-r" type="range" min="0" max="4" step="1" value="3"></div></div>
+        <figcaption><b>The plateau.</b> Real natural teeth (23, development set) with a correct gum line, against β. Measured at
+          β = 0, 2, 4, 8 and 16.</figcaption>
+      </figure>
+
+      <div class="note measure"><span class="label">Two lessons that shaped everything after</span>
+        <p><b>Synthetic and real rankings invert.</b> The method that was best on synthetic teeth (24 of 32) was right on 7 of
+          24 held-out real teeth. The walker, 16 of 32 on synthetic, was 22 of 24. From then on synthetic data was a
+          regression harness, not a way to choose methods.</p>
+        <p><b>The click was an oracle.</b> The benchmark clicked at the label's centre. Moving the click 1.5 mm dropped the
+          walker from 20 to 9 of 23. A probe that walks down the tooth from inside and re-centres on opposite walls fixed it:
+          83 of 96 jittered clicks right on held-out teeth.</p></div>
+    </section>
+
+    <!-- 07 -->
+    <section class="chapter" id="real">
+      <div class="chapter-head">
+        <div class="meta"><span class="num">07</span><span class="date">29 Oct 2026</span></div>
+        <h2>Meeting real preps</h2>
+        <p class="problem">Measured on real lab preps for the first time, the automatic margin was right on 3 of 24.</p>
+      </div>
+      <p>Everything so far had been measured on synthetic prepared teeth. Then came 60 demo cases that ship with a commercial
+        dental CAD: real lab preps, scanned on lab scanners, with the lab's own margin lines stored in the files. A line
+        counted as right when its mean distance to the lab's line was at most 0.10 mm, with 90% of it within 0.2 mm, covering
+        90% of the lab's line.</p>
+      <div class="table-wrap" style="overflow-x:auto">
+        <table class="tabular" style="border-collapse:collapse;width:100%;font:400 .92rem/1.4 var(--mono);min-width:30rem">
+          <thead><tr style="text-align:left;color:var(--muted)"><th style="padding:8px 6px;border-bottom:1px solid var(--rule)"></th><th style="padding:8px 6px;border-bottom:1px solid var(--rule)">Posterior, arch</th><th style="padding:8px 6px;border-bottom:1px solid var(--rule)">Anterior, arch</th></tr></thead>
+          <tbody>
+            <tr><td style="padding:8px 6px;border-bottom:1px solid var(--rule)">Automatic margin right</td><td style="padding:8px 6px;border-bottom:1px solid var(--rule);color:var(--pencil)">3 / 24</td><td style="padding:8px 6px;border-bottom:1px solid var(--rule);color:var(--pencil)">1 / 18</td></tr>
+            <tr><td style="padding:8px 6px;border-bottom:1px solid var(--rule)">8 clicks on the lab's line, live-wire</td><td style="padding:8px 6px;border-bottom:1px solid var(--rule)">22 / 24</td><td style="padding:8px 6px;border-bottom:1px solid var(--rule)">11 / 18</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="puzzle" data-id="p7">
+        <div class="q-label"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><path d="M7.6 7.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M10 14.6v.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg><span class="label">Before you read on</span></div>
+        <p class="q">Same tracer, same scans. Clicks on the lab's line give 22 of 24 right, automatic anchors give 3. Where is the bug, and what do you expect the wrong lines to look like?</p>
+        <textarea id="g-p7" aria-label="Your guess" placeholder="Your guess"></textarea>
+        <div class="actions"><button class="btn" type="button" data-act="hint" aria-expanded="false">Hint</button><button class="btn primary" type="button" data-act="reveal" aria-expanded="false">Show what dcad does</button></div>
+        <div class="hint" hidden><p>Look back at the die in the first figure. How many convex corners does a cut cross, from the top down?</p></div>
+        <div class="answer" hidden><p>The tracer is fine; the <strong>anchors</strong> are wrong. Most wrong lines follow the lab's
+          line and then climb 1.5–3.5 mm up the prep for a stretch. Several ride the edge where the walls meet the top of the
+          prep the whole way round. The lesson in one sentence from the spec: <em>the finish line is not the sharpest edge on
+          a real prep; the line angle at the top of its walls often is.</em></p></div>
+      </div>
+      <p>Two more numbers from that day set up the next three chapters. The gate passed 39 of 52 wrong lines: shape alone
+        can't tell a line angle from a finish line. And a <em>doubt</em> warning, built for review colouring and not part of
+        the gate, flagged 47 of the 52 wrong lines and none of the 6 right ones. The scan knew more than the gate asked it.</p>
+    </section>
+
+    <!-- 08 -->
+    <section class="chapter" id="sections">
+      <div class="chapter-head">
+        <div class="meta"><span class="num">08</span><span class="date">29 Oct 2026</span></div>
+        <h2>Cut the scan, don't look down on it</h2>
+        <p class="problem">Plotting each profile next to the lab's point showed where the height map went blind.</p>
+      </div>
+      <p>The profiles were plotted one by one with the lab's point on them. Two things stood out. Real axial walls are 2–5 mm
+        tall, near vertical, often slightly <em>overhanging</em>. Rays from above have nowhere to land on such a wall: the
+        height profile jumps from the line angle straight to the bottom. And on what remains, noise reads as corners,
+        because the convexity score, a change of slope dh/dr, blows up wherever the surface is steep. The pick landed just
+        past the 1.5 mm minimum drop, halfway down the wall.</p>
+      <p>Where was the lab's point? "Always the first convex corner after the axial wall": the outer lip of the chamfer or
+        shoulder.</p>
+
+      <div class="puzzle" data-id="p8">
+        <div class="q-label"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><path d="M7.6 7.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M10 14.6v.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg><span class="label">Before you read on</span></div>
+        <p class="q">Give a definition of "corner" that treats a vertical wall exactly like a flat floor, and say how you would sample a profile that can see under an overhang.</p>
+        <textarea id="g-p8" aria-label="Your guess" placeholder="Your guess"></textarea>
+        <div class="actions"><button class="btn" type="button" data-act="hint" aria-expanded="false">Hint</button><button class="btn primary" type="button" data-act="reveal" aria-expanded="false">Show what dcad does</button></div>
+        <div class="hint" hidden><p>A slope depends on which way is up. What property of a curve doesn't? And instead of asking the scan "how high are you here?", ask it "where do you cross this plane?"</p></div>
+        <div class="answer" hidden>
+          <p><strong>Cut the mesh</strong> with a half-plane through the tooth's axis and walk the real cross-section outward from
+            the top, crossing triangle by triangle. Crossings are keyed by mesh edge or vertex, so the chain is exact, and only
+            triangles in grid cells near the plane are visited. The walk stops at the scan's border, past the search radius,
+            if it wraps back past the axis, or on a 0.5 mm rise onto a neighbour.</p>
+          <p>Measure corners as the contour's <strong>turn</strong>: resample every 0.05 mm, take the angle between the chords
+            0.15 mm before and after each point, divide by 30°. A turn doesn't care which way the wall faces. The pick is the
+            first convex corner at least 1.5 mm below the top, and every corner goes to the refiner as a candidate.</p>
+        </div>
+      </div>
+
+      <figure class="fig" id="fig-sec">
+        <div class="stage"><canvas id="sec" aria-label="One cut through a prep, with the turn of its contour"></canvas></div>
+        <div class="controls">
+          <div class="ctl"><span class="lab">Read the profile as</span><div class="seg" id="sec-sampler"><button type="button" data-v="heights" aria-pressed="false">Heights from above</button><button type="button" data-v="section" aria-pressed="true">True section</button></div></div>
+          <div class="ctl"><label for="sec-lean">Wall lean <output for="sec-lean">6°</output></label><input id="sec-lean" type="range" min="-10" max="14" step="1" value="6"></div>
+          <div class="ctl"><label for="sec-noise">Scan noise <output for="sec-noise">0.004 mm</output></label><input id="sec-noise" type="range" min="0" max="0.06" step="0.002" value="0.004"></div>
+          <div class="ctl"><label for="sec-gum">Gum height <output for="sec-gum">0.6 mm</output></label><input id="sec-gum" type="range" min="0" max="2" step="0.1" value="0.6"></div>
+          <div class="ctl"><span class="lab">Smoothing</span><div class="seg" id="sec-sm"><button type="button" data-v="auto" aria-pressed="true">Adaptive</button><button type="button" data-v="manual" aria-pressed="false">Manual</button></div></div>
+          <div class="ctl"><label for="sec-sigma">Manual σ <output for="sec-sigma">0.10 mm</output></label><input id="sec-sigma" type="range" min="0" max="0.4" step="0.01" value="0.1"></div>
+        </div>
+        <div class="readout" id="sec-read"></div>
+        <figcaption><b>One cut, two ways to read it.</b> The thin line is the scanned contour, the circle is the true margin.
+          <em>Heights from above</em> keeps only the topmost surface at each radius (amber), so tilt the wall past vertical
+          (negative lean) and watch the margin vanish under the overhang. <em>True section</em> walks the contour itself (teal)
+          and reads its turn below: the lip is the first convex corner after the wall. Turn up the noise and switch the
+          smoothing between adaptive and manual.</figcaption>
+      </figure>
+
+      <h3>How much to smooth?</h3>
+      <p>Noise is the remaining enemy: a rough scan turns everywhere. dcad smooths each profile with a Gaussian, but not by a
+        fixed amount. It measures the profile's <em>roughness</em>, the median turn before smoothing, and picks the
+        <strong>least</strong> smoothing (σ from 0 to 0.4 mm) that brings the median turn to 6° or less. A quiet scan is left
+        alone, so its corners stay sharp; a rough one is calmed just enough. On scans rougher than 6°, the old height
+        profiles are run too and all candidates compete. That fallback rescued the three roughest synthetic cases and costs
+        nothing on real scans.</p>
+      <div class="note measure"><span class="label">The surprise</span>
+        <p>Real lab scans turned out to be <em>quieter</em> than the synthetic "noisy" ones: 1.3–6° of roughness (median 1.9°)
+          against 9–70°. Real profiles were never smoothed at all. The hard part of real data was shape, not noise.</p></div>
+      <div class="note measure"><span class="label">Evidence, before a line of the new picker was written</span>
+        <p>Per profile, a convex corner on the true contour lies within 0.2 mm of the lab's point on 90% of tuning profiles
+          and 98% held out; the height map reaches 51% and 68%. The rule "first convex corner at least 1.5 mm below the top"
+          picks right on 87% / 89%, against the old pick's 41% / 49%. Lines right: tuning 3 → <b>17 of 19</b>, held out
+          2 → <b>11 of 17</b>, front teeth (never tuned on) 1 → <b>12 of 27</b>. A margin takes 0.10–0.32 s.</p></div>
+    </section>
+
+    <!-- 09 -->
+    <section class="chapter" id="doubt">
+      <div class="chapter-head">
+        <div class="meta"><span class="num">09</span><span class="date">29 Oct 2026, round two</span></div>
+        <h2>Let the scan vote</h2>
+        <p class="problem">Each profile was now nearly always right. The lines still went wrong, by choosing among them.</p>
+      </div>
+      <p>Per profile, the first pick was at its ceiling: 87.8% within 0.2 mm. "Most remaining misses are a line choice, not a
+        profile choice." The refiner traced about twenty candidate lines and ranked them by shape, and a line that follows
+        the line angle for a stretch has a perfectly good shape. Worse, the ring DP preferred sharp corners, and line angles
+        are the sharpest thing on a prep.</p>
+
+      <div class="puzzle" data-id="p9">
+        <div class="q-label"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><path d="M7.6 7.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M10 14.6v.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg><span class="label">Before you read on</span></div>
+        <p class="q">You have twenty candidate lines, all smooth. Without any reference line, how could the scan itself say which one sits on a crease and which one only runs beside a stronger one?</p>
+        <textarea id="g-p9" aria-label="Your guess" placeholder="Your guess"></textarea>
+        <div class="actions"><button class="btn" type="button" data-act="hint" aria-expanded="false">Hint</button><button class="btn primary" type="button" data-act="reveal" aria-expanded="false">Show what dcad does</button></div>
+        <div class="hint" hidden><p>Walk across the line, not along it. If you stand on a line and look 1.5 mm to each side, what would you see if you were standing beside the real edge instead of on it?</p></div>
+        <div class="answer" hidden>
+          <p>The <strong>doubt</strong> check. Every 0.5 mm along the line, march across it on the scan for ±1.5 mm and read
+            the cross-profile's curvature over ±0.15 mm. A point is <em>on</em> its crease when the crease is strong enough
+            there; it is <em>off</em> when a clearly stronger crease of the same sign lies nearby (for finish lines: more than
+            0.35 mm away and 1.6× stronger). Runs of off points are the doubtful stretches.</p>
+          <p>On a quiet scan, candidate lines are now ranked by passing the gate, then the <em>fewest off stretches</em>, then
+            wander and turn. The check is lazy: the first passing line with no off stretch wins, so a good case pays for
+            only one check. And a new gate check, <code>margin.doubt</code>, stops one-click on any off stretch, so a
+            doubtful line goes to a human instead of into a crown.</p>
+        </div>
+      </div>
+
+      <p>The ring figure in chapter 5 marks doubt the same way, per spoke: a chosen corner is in doubt (a dashed ring) when
+        a crease at least 1.6× stronger lies 0.35–1.5 mm from it. Make the wall corners run all the way round, sharp, until
+        the ring DP takes them. Every spoke lights up as doubtful, because the line angle runs just above the chosen corner,
+        and the gate stops one-click. On the finish line nothing is flagged.</p>
+      <div class="note dropped"><span class="label">Considered and not done</span>
+        <ul class="plain">
+          <li>A structural per-profile rule (skip a corner with a shallow surface before it and a wall after it, as a line
+            angle has): 89.1% against 87.8%, not worth its cost on noisy synthetic scans.</li>
+          <li>Relative-strength thresholds: they traded front teeth against back teeth.</li>
+          <li>Changing the DP's taste for sharp corners: the line-level numbers gave no reason to.</li>
+        </ul>
+        <p>The rules for this round: the round-one held-out set had been looked at, so it no longer counted as held out.
+          Every change needed a geometric reason, and no back-tooth case that was right was allowed to turn wrong.</p></div>
+      <div class="note measure"><span class="label">Measured</span>
+        <p>Back teeth: 28 → <b>30 of 36</b> right; the gate now passes 2 of 6 wrong lines and stops 1 of 30 right ones. Front
+          teeth: 12 → 14 of 27, and a frame fix the next day (part of the "margin" failure on front teeth was the tooth's
+          up direction pointing into the tooth) took them to <b>19 of 27</b>. No case turned wrong. Each newly right case
+          "picked a doubt-free line over a shape-preferred one beside the line angle".</p></div>
+    </section>
+
+    <!-- 10 -->
+    <section class="chapter" id="finder">
+      <div class="chapter-head">
+        <div class="meta"><span class="num">10</span><span class="date">30 Oct 2026</span></div>
+        <h2>The same cut finds the prep</h2>
+        <p class="problem">Before any margin, something has to say which tooth on the scan is prepared at all.</p>
+      </div>
+      <p>dcad's <em>prep finder</em> looks over the whole jaw for prepared teeth, so frames and margins can start without a
+        click. It used height profiles too, with the same blind spot on vertical walls: on real preps only 3 of 26 reached its
+        threshold, and natural cusps sometimes did.</p>
+      <p>The fix was chapter 1's fingertip, written as a rule on the true sections, shared with the margin's code:</p>
+      <div class="formula"><span class="k">wall</span>        ≥ 1 mm of drop steeper than 50°
+<span class="k">inner angle</span> a concave turn of at least 8°
+<span class="k">lip</span>         a convex turn of at least 12°, within 1.5 mm
+<span class="k">drop</span>        then at least 0.4 mm more
+<span class="c">a prep: at least 65% of 24 sections around a peak show it</span></div>
+      <p>The cut figure in chapter 8 marks this signature on its contour: the teal dot where the wall ends, the amber ring at
+        the inner angle, the red dot at the lip.</p>
+
+      <div class="puzzle" data-id="p10">
+        <div class="q-label"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><path d="M7.6 7.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M10 14.6v.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg><span class="label">Before you read on</span></div>
+        <p class="q">The threshold of 0.65 finds 18 of 26 real back-tooth preps. Lower it a little and you would find more of the misses: low, wide molars with almost no wall. Why not lower it?</p>
+        <textarea id="g-p10" aria-label="Your guess" placeholder="Your guess"></textarea>
+        <div class="actions"><button class="btn" type="button" data-act="hint" aria-expanded="false">Hint</button><button class="btn primary" type="button" data-act="reveal" aria-expanded="false">Show what dcad does</button></div>
+        <div class="hint" hidden><p>What happens downstream when the finder rings a tooth that was never prepared, compared with missing one that was?</p></div>
+        <div class="answer" hidden><p>The highest natural peak scores 0.58. A wall-free variant caught the low molars only by
+          accepting corners of 20° or less, and then it ringed 2–3 natural peaks. A missed prep costs the user one click; a
+          false one designs a crown on a healthy tooth. "A wrong ring is worse than none." And neighbouring settings (a 40°
+          wall, a 4–8° turn, a lip within 2 mm) gave the same counts: a plateau again, not a fitted point. False preps on 28
+          natural jaws went from 15 to <b>0</b>.</p></div>
+      </div>
+    </section>
+
+    <!-- 11 -->
+    <section class="chapter" id="score">
+      <div class="chapter-head">
+        <div class="meta"><span class="num">11</span><span class="date">the record</span></div>
+        <h2>The scoreboard</h2>
+        <p class="problem">Every number on this page, in one place. Tap a row.</p>
+      </div>
+      <figure class="fig">
+        <div class="controls" style="border-top:0;border-bottom:1px solid var(--rule)"><div class="ctl"><span class="lab">Show</span><div class="seg" id="score-phase"><button type="button" data-v="a" aria-pressed="false">Before each step</button><button type="button" data-v="b" aria-pressed="true">After</button></div></div></div>
+        <div class="score" id="scoreboard" role="list"></div>
+        <div class="score-detail" id="score-detail" aria-live="polite"></div>
+        <figcaption><b>Lines right, by stage.</b> Back teeth are the 36 real posterior preps, front teeth the 27 anterior,
+          natural the 24 held-out real teeth for the gum line. Synthetic preps are the 17-case benchmark. "Right" is defined
+          in each chapter.</figcaption>
+      </figure>
+      <ol class="ledger">
+        <li class="key"><div class="when">Day 2</div><div class="what">Live-wire: clicks joined along convex curvature</div><div class="why">0.077 mm from 4 clicks, against 0.305 for a plain geodesic.</div></li>
+        <li><div class="when">Day 6</div><div class="what">Automatic anchors from height profiles</div><div class="why">0.048 mm on synthetic; unmeasured on real teeth.</div></li>
+        <li class="key"><div class="when">26 Oct</div><div class="what">The refiner: many traces, a ring DP, wander</div><div class="why">Synthetic preps 6 → 16 of 17.</div></li>
+        <li><div class="when">27 Oct</div><div class="what">Gum line by random walker; clicks snap to the ridge</div><div class="why">Natural teeth 0 → 22 of 24 held out; no more folded crowns from a pixel-off click.</div></li>
+        <li><div class="when">29 Oct</div><div class="what">First real preps</div><div class="why">3 of 24. The line angle is sharper than the finish line.</div></li>
+        <li class="key"><div class="when">29 Oct</div><div class="what">True cross-sections, turn of the contour, adaptive smoothing</div><div class="why">Back teeth 5 → 28 of 36.</div></li>
+        <li class="key"><div class="when">29 Oct</div><div class="what">Doubt picks the line and gates one-click</div><div class="why">28 → 30 of 36; the gate's wrong passes 39 of 52 → 2 of 6.</div></li>
+        <li><div class="when">30 Oct</div><div class="what">The prep finder reads the same sections</div><div class="why">Preps found 9 → 18 of 26, false preps 15 → 0.</div></li>
+      </ol>
+    </section>
+
+    <!-- 12 -->
+    <section class="chapter" id="open">
+      <div class="chapter-head">
+        <div class="meta"><span class="num">12</span><span class="date">as of 30 Oct 2026</span></div>
+        <h2>Still open</h2>
+        <p class="problem">Six back teeth of 36 are still wrong. Here is why, and what is not yet known.</p>
+      </div>
+      <ul class="plain prose">
+        <li><b>Margins that swing in height round the tooth.</b> A premolar on a short segment scan whose margin rises 5 mm
+          from one side to the other. The ring DP assumes the height changes slowly.</li>
+        <li><b>Short proximal walls.</b> Between teeth the margin can sit only 1.1–1.5 mm below the prep's top, under the
+          1.5 mm minimum drop.</li>
+        <li><b>Deep margins.</b> The cut reaches 10 mm below the top; some telescope crowns go deeper.</li>
+        <li><b>Wall-free preps.</b> Low, wide molars with almost no wall are not found by the prep finder, by choice.</li>
+        <li><b>Doubt on rough scans.</b> It is trusted only on quiet scans; on noisy synthetic ones it flags half the right
+          lines.</li>
+        <li><b>Overfitting.</b> Every real back-tooth case has now been looked at. The true held-out test will be a lab's own
+          cases, measured once.</li>
+      </ul>
+    </section>
+
+    <!-- 13 -->
+    <section class="chapter" id="invent">
+      <div class="chapter-head">
+        <div class="meta"><span class="num">13</span><span class="date">for you</span></div>
+        <h2>Invent it yourself</h2>
+        <p class="problem">The algorithm, as the questions that produce it, in order.</p>
+      </div>
+      <ol class="recap">
+        <li><span><b>What does a fingertip feel at the margin?</b> A wall, a concave inner angle, a convex lip, a drop. The margin is that convex corner.</span></li>
+        <li><span><b>How do you join clicks along it?</b> Shortest paths where convex edges are nearly free and grooves cost up to three times their length.</span></li>
+        <li><span><b>What if a click is a pixel off?</b> Move it to the strongest ridge within 0.3 mm, unless it already scores four-fifths of that.</span></li>
+        <li><span><b>Who places the clicks?</b> Spokes from the tooth's centre; on each, the first convex corner after the wall.</span></li>
+        <li><span><b>How do you catch a smooth wrong line?</b> Wander: traced length over the anchor ring's perimeter.</span></li>
+        <li><span><b>Why trust one trace?</b> Don't: every corner is a candidate; a ring DP keeps neighbours consistent; trace many, keep the best.</span></li>
+        <li><span><b>Why does it fail on real preps?</b> The line angle is sharper than the finish line, and looking down at a vertical wall sees nothing.</span></li>
+        <li><span><b>What is a corner that ignores which way is up?</b> The turn of the true cross-section's contour, over ±0.15 mm chords.</span></li>
+        <li><span><b>How much to smooth?</b> The least that makes the median turn quiet (6°); a quiet scan keeps its sharp corners.</span></li>
+        <li><span><b>Which candidate line is right?</b> The one the scan agrees sits on its crease: march across the line and look for a stronger crease nearby.</span></li>
+        <li><span><b>When should a human look?</b> When the line fails the gate, or any stretch of it is in doubt.</span></li>
+        <li><span><b>How do you know you are not fooling yourself?</b> Real held-out data, ablations like β = 0, and plateaus rather than tuned points.</span></li>
+      </ol>
+      <p>If you closed the answers and still wrote most of these down, you have reinvented a production margin finder.</p>
+
+      <footer class="end">
+        <p>Every figure on this page runs on synthetic teeth generated in your browser. The numbers come from dcad's
+          development specs, October 2026: synthetic benchmarks, a public research dataset of natural teeth (Teeth3DS+, used for
+          local evaluation only), and real lab demo cases evaluated locally. No patient data is shown.</p>
+        <p>Code: <code>apps/web/src/geometry/livewire.ts</code>, <code>autoMargin.ts</code>, <code>sectionProfile.ts</code>,
+          <code>marginRefine.ts</code>, <code>marginDoubt.ts</code>, <code>naturalMargin.ts</code>, <code>prepFinder.ts</code>.</p>
+        <p><a href="../">dcad</a> · <a href="../app/">Open the editor</a></p>
+      </footer>
+    </section>
+  </article>
+</div>
+
+<script>
+'use strict';
+/* ---------- shared helpers ---------- */
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('dcad-algo:' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('dcad-algo:' + k, JSON.stringify(v)); } catch { /* private window */ } },
+};
+/** Seeded random numbers, so every reader sees the same synthetic scan. */
+function rng(seed) {
+  let s = seed >>> 0 || 1;
+  return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+}
+function gauss(r) { let u = 0, v = 0; while (!u) u = r(); while (!v) v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+
+/** A canvas that follows its container's width (and the screen's pixel density) and redraws on resize. */
+function stage(canvas, aspect, maxH, draw) {
+  const ctx = canvas.getContext('2d');
+  const s = { w: 0, h: 0, ctx, draw };
+  const fit = () => {
+    const w = canvas.parentElement.clientWidth;
+    const h = Math.round(Math.min(maxH, w * aspect));
+    const dpr = Math.min(2.5, window.devicePixelRatio || 1);
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    canvas.style.height = h + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    s.w = w; s.h = h;
+    s.draw();
+  };
+  new ResizeObserver(fit).observe(canvas.parentElement);
+  s.fit = fit;
+  return s;
+}
+/** Pointer position in CSS pixels relative to the canvas. */
+function at(canvas, e) { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+function bindRange(id, fmt, on) {
+  const el = document.getElementById(id); const out = document.querySelector(`output[for="${id}"]`);
+  const upd = () => { if (out) out.textContent = fmt(+el.value); on(+el.value); };
+  el.addEventListener('input', upd); upd();
+  return el;
+}
+function bindSeg(el, on) {
+  const bs = $$('button', el);
+  bs.forEach((b) => b.addEventListener('click', () => { bs.forEach((x) => x.setAttribute('aria-pressed', String(x === b))); on(b.dataset.v); }));
+}
+/** Redraw every live figure when the theme flips (colours come from the tokens). */
+const redrawers = [];
+function onTheme(fn) { redrawers.push(fn); }
+
+/* ---------- theme, progress, chapters ---------- */
+(function chrome() {
+  const root = document.documentElement;
+  const btn = $('#theme');
+  const set = (t) => { if (t) root.setAttribute('data-theme', t); else root.removeAttribute('data-theme'); btn.textContent = (t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')) === 'dark' ? 'Light' : 'Dark'; };
+  set(store.get('theme', null));
+  btn.addEventListener('click', () => {
+    const now = root.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const next = now === 'dark' ? 'light' : 'dark';
+    store.set('theme', next); set(next); redrawers.forEach((f) => f());
+  });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { set(root.getAttribute('data-theme')); redrawers.forEach((f) => f()); });
+
+  const bar = $('.progress');
+  const onScroll = () => {
+    const h = document.documentElement.scrollHeight - innerHeight;
+    bar.style.width = (h > 0 ? (100 * scrollY) / h : 0) + '%';
+  };
+  addEventListener('scroll', onScroll, { passive: true }); onScroll();
+
+  const links = $$('.rail a');
+  const where = $('.bar .where');
+  const io = new IntersectionObserver((es) => {
+    for (const e of es) {
+      if (!e.isIntersecting) continue;
+      links.forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id));
+      const h = $('h2', e.target); if (h && where) where.textContent = h.textContent;
+    }
+  }, { rootMargin: '-40% 0px -55% 0px' });
+  $$('section.chapter, header.open').forEach((s) => io.observe(s));
+
+  const sheet = $('#sheet');
+  $('#chapters').addEventListener('click', () => { sheet.hidden = false; $('a', sheet).focus(); });
+  sheet.addEventListener('click', (e) => { if (e.target === sheet || e.target.closest('a')) sheet.hidden = true; });
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') sheet.hidden = true; });
+})();
+
+/* ---------- puzzles: think first, then hint, then the answer ---------- */
+(function puzzles() {
+  $$('.puzzle').forEach((p) => {
+    const id = p.dataset.id;
+    const ta = $('textarea', p);
+    if (ta) {
+      ta.value = store.get('guess:' + id, '');
+      ta.addEventListener('input', () => store.set('guess:' + id, ta.value));
+    }
+    const hint = $('.hint', p), ans = $('.answer', p);
+    $('[data-act=hint]', p)?.addEventListener('click', (e) => { hint.hidden = !hint.hidden; e.currentTarget.setAttribute('aria-expanded', String(!hint.hidden)); });
+    $('[data-act=reveal]', p)?.addEventListener('click', (e) => {
+      ans.hidden = !ans.hidden; e.currentTarget.setAttribute('aria-expanded', String(!ans.hidden));
+      e.currentTarget.textContent = ans.hidden ? 'Show what dcad does' : 'Hide the answer';
+      if (!ans.hidden) store.set('seen:' + id, true);
+      count();
+    });
+  });
+  const count = () => {
+    const all = $$('.puzzle'); const seen = all.filter((p) => store.get('seen:' + p.dataset.id, false)).length;
+    const el = $('#puzzle-count'); if (el) el.textContent = `${seen} of ${all.length} puzzles opened`;
+  };
+  count();
+})();
+
+/* ---------- Figure: a prepared tooth (synthetic) to turn, with its margin and a cutting plane ---------- */
+const Die = (() => {
+  const T = 72; // meridians
+  const deg = Math.PI / 180;
+  const Rm = (t) => 4.4 + 0.45 * Math.cos(2 * t);
+  const zm = (t) => 0.55 * Math.cos(2 * t) - 0.12 * Math.cos(4 * t);
+  /** The radial profile (r, z) of the die at angle t, from the occlusal centre down to the base; `m` = index of the margin. */
+  function profile(t) {
+    const pts = [];
+    const R = Rm(t), Z = zm(t), c = 0.62;
+    const ztop = 5.3 + 0.2 * Math.cos(4 * t + 0.4);
+    const Rt = R - c - 0.62;
+    for (let i = 0; i <= 8; i++) { const u = i / 8; pts.push([u * (Rt - 0.45), ztop + 0.5 * (1 - u * u) + 0.22 * u * Math.cos(4 * t)]); }
+    for (let i = 1; i <= 5; i++) { const a = (i / 5) * (Math.PI / 2); pts.push([Rt - 0.45 + 0.45 * Math.sin(a), ztop - 0.45 + 0.45 * Math.cos(a) + 0.22 * Math.cos(4 * t) * (1 - i / 5)]); }
+    const wTop = ztop - 0.45, wBot = Z + 0.6;
+    for (let i = 1; i <= 9; i++) { const u = i / 9; pts.push([Rt + u * (R - c - Rt), wTop + u * (wBot - wTop)]); }
+    for (let i = 1; i <= 6; i++) { const u = i / 6; const a = [R - c, wBot], b = [R - c, Z], d = [R, Z]; pts.push([(1 - u) ** 2 * a[0] + 2 * u * (1 - u) * b[0] + u * u * d[0], (1 - u) ** 2 * a[1] + 2 * u * (1 - u) * b[1] + u * u * d[1]]); }
+    const m = pts.length - 1;
+    const tail = [[R + 0.04, Z - 0.18], [R - 0.06, Z - 0.55], [R - 0.08, Z - 0.9], [R + 0.25, Z - 1.18], [R + 0.8, Z - 1.42], [R + 1.5, Z - 1.66], [R + 2.3, Z - 2.0], [R + 2.9, Z - 2.7], [R + 3.2, -3.4]];
+    pts.push(...tail);
+    return { pts, m };
+  }
+  const meridians = Array.from({ length: T }, (_, k) => profile((2 * Math.PI * k) / T));
+  const S = meridians[0].pts.length;
+
+  function init(canvas, opts) {
+    let yaw = -35 * deg, pitch = 32 * deg, cutAt = 20 * deg, showCut = true, spin = !reduceMotion, visible = true;
+    const st = stage(canvas, 0.62, 460, draw);
+    let drag = null;
+    canvas.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, yaw, pitch }; spin = false; canvas.setPointerCapture(e.pointerId); });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      yaw = drag.yaw + (e.clientX - drag.x) * 0.01;
+      pitch = Math.max(8 * deg, Math.min(82 * deg, drag.pitch + (e.clientY - drag.y) * 0.006));
+      draw();
+    });
+    const end = () => { drag = null; };
+    canvas.addEventListener('pointerup', end); canvas.addEventListener('pointercancel', end);
+    new IntersectionObserver((es) => { visible = es[0].isIntersecting; }).observe(canvas);
+    const tick = () => { if (spin && visible && !drag) { yaw += 0.0035; draw(); } requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+    onTheme(draw);
+    opts.onCut = (a) => { cutAt = a * deg; draw(); };
+    opts.onShowCut = (v) => { showCut = v; draw(); };
+
+    function draw() {
+      const { ctx, w, h } = st;
+      if (!w) return;
+      ctx.clearRect(0, 0, w, h);
+      const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+      const inset = w > 520 ? Math.min(230, w * 0.32) : 0;
+      const cx0 = (w - inset) / 2, cz0 = h * 0.56, scale = Math.min(w - inset, h * 1.25) / 17;
+      // world (x, y, z-up) -> view: yaw about z, then tilt toward the viewer by pitch.
+      const view = (x, y, z) => {
+        const xr = x * cy - y * sy, yr = x * sy + y * cy;
+        const depth = yr * cp + z * sp, up = z * cp - yr * sp;
+        const f = 1 / (1 + depth * -0.012);
+        return [cx0 + xr * scale * f, cz0 - (up - 1) * scale * f, depth];
+      };
+      const P = meridians.map((m, k) => { const t = (2 * Math.PI * k) / T; return m.pts.map(([r, z]) => [r * Math.cos(t), r * Math.sin(t), z]); });
+      const V = P.map((row) => row.map((p) => view(...p)));
+      const quads = [];
+      const light = norm([-0.45, -0.6, 0.75]);
+      const camDir = [sy * cp, -cy * cp, sp]; // world direction toward the viewer (approx.)
+      for (let k = 0; k < T; k++) {
+        const k2 = (k + 1) % T;
+        for (let i = 0; i < S - 1; i++) {
+          const a = P[k][i], b = P[k2][i], c = P[k2][i + 1], d = P[k][i + 1];
+          const n = norm(cross(sub(b, d), sub(c, a)));
+          const facing = dot(n, camDir);
+          if (facing < -0.05) continue;
+          const lam = Math.max(0, dot(n, light));
+          quads.push({ k, i, z: (V[k][i][2] + V[k2][i][2] + V[k2][i + 1][2] + V[k][i + 1][2]) / 4, lam, gum: i >= meridians[k].m + 3 });
+        }
+      }
+      quads.sort((p, q) => p.z - q.z);
+      const dark = document.documentElement.getAttribute('data-theme') === 'dark' || (!document.documentElement.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+      for (const q of quads) {
+        const { k, i } = q, k2 = (k + 1) % T;
+        const base = q.gum ? (dark ? [150, 98, 108] : [214, 168, 172]) : (dark ? [150, 166, 178] : [205, 214, 220]);
+        const s = 0.42 + 0.66 * q.lam;
+        ctx.fillStyle = `rgb(${base.map((v) => Math.min(255, Math.round(v * s))).join(',')})`;
+        ctx.beginPath();
+        ctx.moveTo(V[k][i][0], V[k][i][1]); ctx.lineTo(V[k2][i][0], V[k2][i][1]); ctx.lineTo(V[k2][i + 1][0], V[k2][i + 1][1]); ctx.lineTo(V[k][i + 1][0], V[k][i + 1][1]);
+        ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 0.6; ctx.stroke();
+      }
+      // The margin: front half solid, back half faint.
+      const pencil = css('--pencil');
+      for (let k = 0; k < T; k++) {
+        const k2 = (k + 1) % T, m = meridians[k].m, m2 = meridians[k2].m;
+        const t = (2 * Math.PI * (k + 0.5)) / T;
+        const front = dot([Math.cos(t), Math.sin(t), 0], camDir) > -0.15;
+        ctx.strokeStyle = pencil; ctx.globalAlpha = front ? 1 : 0.22; ctx.lineWidth = front ? 3 : 1.5;
+        ctx.beginPath(); ctx.moveTo(V[k][m][0], V[k][m][1]); ctx.lineTo(V[k2][m2][0], V[k2][m2][1]); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      if (showCut) {
+        // The cut: a half-plane through the axis at angle cutAt; its trace on the die is one meridian.
+        const t = cutAt, pr = profile(t);
+        const pts = pr.pts.map(([r, z]) => view(r * Math.cos(t), r * Math.sin(t), z));
+        const top = view(0, 0, 7.4), bot = view(0, 0, -3.6), far = view(8.2 * Math.cos(t), 8.2 * Math.sin(t), -3.6), farTop = view(8.2 * Math.cos(t), 8.2 * Math.sin(t), 7.4);
+        ctx.fillStyle = css('--scan'); ctx.globalAlpha = 0.12;
+        ctx.beginPath(); ctx.moveTo(top[0], top[1]); ctx.lineTo(farTop[0], farTop[1]); ctx.lineTo(far[0], far[1]); ctx.lineTo(bot[0], bot[1]); ctx.closePath(); ctx.fill();
+        ctx.globalAlpha = 1; ctx.strokeStyle = css('--scan'); ctx.lineWidth = 2.2;
+        ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]))); ctx.stroke();
+        const mp = pts[pr.m];
+        ctx.fillStyle = pencil; ctx.beginPath(); ctx.arc(mp[0], mp[1], 4.5, 0, 7); ctx.fill();
+        if (inset) drawInset(ctx, w - inset - 14, 18, inset, h - 36, pr);
+      }
+    }
+  }
+  function drawInset(ctx, x0, y0, iw, ih, pr) {
+    ctx.save();
+    ctx.fillStyle = css('--stone'); ctx.strokeStyle = css('--rule'); ctx.lineWidth = 1;
+    roundRect(ctx, x0, y0, iw, ih, 10); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = css('--muted'); ctx.font = '500 11px ' + css('--mono');
+    ctx.fillText('THE CUT, FLAT', x0 + 12, y0 + 20);
+    const rMax = 8.2, zMin = -3.6, zMax = 6.4;
+    const pad = 16, sx = (iw - 2 * pad) / rMax, sz = (ih - 44) / (zMax - zMin), s = Math.min(sx, sz);
+    const X = (r) => x0 + pad + r * s, Y = (z) => y0 + ih - 14 - (z - zMin) * s;
+    ctx.strokeStyle = css('--rule'); ctx.setLineDash([3, 4]);
+    ctx.beginPath(); ctx.moveTo(X(0), Y(zMin)); ctx.lineTo(X(0), Y(zMax)); ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle = css('--scan'); ctx.lineWidth = 2;
+    ctx.beginPath(); pr.pts.forEach(([r, z], i) => (i ? ctx.lineTo(X(r), Y(z)) : ctx.moveTo(X(r), Y(z)))); ctx.stroke();
+    const [mr, mz] = pr.pts[pr.m];
+    ctx.fillStyle = css('--pencil'); ctx.beginPath(); ctx.arc(X(mr), Y(mz), 4.5, 0, 7); ctx.fill();
+    ctx.fillStyle = css('--ink-2'); ctx.font = '500 11px ' + css('--mono');
+    ctx.fillText('margin', X(mr) + 8, Y(mz) - 6);
+    ctx.fillText('axis', X(0) + 5, Y(zMax) + 10);
+    ctx.restore();
+  }
+  return { init, profile, Rm, zm };
+})();
+
+function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function norm(a) { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+
+/* ---------- Figure: live-wire on a curvature map (a prep seen from above), clicks with and without the snap ---------- */
+const LiveWire = (() => {
+  const W = 160, H = 112, MM = 0.1; // grid cells; 0.1 mm per cell, so the map is 16 × 11.2 mm
+  const C = [80, 56];
+  const R = (t) => 37 + 5.5 * Math.cos(2 * t) + 2.6 * Math.sin(3 * t + 1);
+
+  /** Signed curvature per cell: the finish line (a convex lip), the occlusal line angle inside it (convex too), the gum crease outside (concave), and scan noise. */
+  function build(noise, seed) {
+    const r = rng(seed);
+    const k = new Float32Array(W * H);
+    const blobs = Array.from({ length: 34 }, () => [r() * W, r() * H, (r() - 0.5) * 2, 2 + r() * 4]);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const dx = x - C[0], dy = y - C[1], t = Math.atan2(dy, dx), d = Math.hypot(dx, dy), Rt = R(t);
+      let v = 1.0 * Math.exp(-((d - Rt) ** 2) / (2 * 1.1 ** 2)); // finish line
+      v += 0.62 * Math.exp(-((d - (Rt - 8.5)) ** 2) / (2 * 1.6 ** 2)) * (0.75 + 0.25 * Math.cos(5 * t)); // occlusal line angle
+      v -= 0.55 * Math.exp(-((d - (Rt + 7)) ** 2) / (2 * 1.8 ** 2)); // gum crease
+      // A gap in the finish line where the scan is weak (a real scan has them), bridged by the path.
+      if (Math.abs(((t + Math.PI) % (2 * Math.PI)) - 0.6) < 0.16) v *= 0.35;
+      let n = 0;
+      for (const [bx, by, a, s] of blobs) n += a * Math.exp(-((x - bx) ** 2 + (y - by) ** 2) / (2 * s * s));
+      k[y * W + x] = v + noise * (0.55 * n + 0.35 * (r() - 0.5));
+    }
+    return k;
+  }
+
+  /** dcad's weight (livewire.ts, κ0 = 1 mm⁻¹): a convex edge costs as little as 1/50 of its length, a concave one up
+   * to 3×. The gum line flips the sign, so its crease is the cheap one. Our map's units stand in for 1/mm. */
+  const K0 = 0.25;
+  const weight = (kv) => (kv > 0 ? Math.max(0.02, 1 / (1 + (kv / K0) ** 2)) : 1 + Math.min(2, -kv / K0));
+  const cost = (kv, conv) => weight(conv * kv);
+
+  /** Dijkstra over the 8-neighbour grid from a to b; returns the path as cell indices. */
+  function path(k, a, b, conv) {
+    const N = W * H, dist = new Float64Array(N).fill(Infinity), prev = new Int32Array(N).fill(-1);
+    const heap = new Heap();
+    dist[a] = 0; heap.push(a, 0);
+    const nb = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]];
+    while (heap.size) {
+      const [u, du] = heap.pop();
+      if (u === b) break;
+      if (du > dist[u]) continue;
+      const ux = u % W, uy = (u / W) | 0;
+      for (const [dx, dy, len] of nb) {
+        const x = ux + dx, y = uy + dy;
+        if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        const v = y * W + x;
+        const nd = du + len * cost(0.5 * (k[u] + k[v]), conv);
+        if (nd < dist[v]) { dist[v] = nd; prev[v] = u; heap.push(v, nd); }
+      }
+    }
+    const out = [];
+    for (let v = b; v !== -1; v = prev[v]) { out.push(v); if (v === a) break; }
+    return out.reverse();
+  }
+
+  /** The snap (ANCHOR_SNAP_MM = 0.3): a click moves to the strongest ridge cell of the line's sign within 0.3 mm
+   * (3 cells), but only when the clicked cell is under four-fifths of that one, so a click on the ridge stays put. */
+  function snap(k, cell, sign = 1) {
+    const cx = cell % W, cy = (cell / W) | 0;
+    let best = cell, bv = -Infinity;
+    for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+      if (dx * dx + dy * dy > 9) continue;
+      const x = cx + dx, y = cy + dy;
+      if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      const v = sign * k[y * W + x];
+      if (v > bv) { bv = v; best = y * W + x; }
+    }
+    return sign * k[cell] < 0.8 * bv ? best : cell;
+  }
+
+  function init(canvas, ui) {
+    let noise = 0.35, snapOn = true, line = 'finish';
+    let k = build(noise, 7);
+    // Four example clicks, about a pixel off the line, as a hurried hand places them.
+    const seedClicks = [0.2, 1.7, 3.1, 4.6].map((t, i) => { const d = R(t) + (i % 2 ? 1.6 : -1.4); return Math.round(C[1] + d * Math.sin(t)) * W + Math.round(C[0] + d * Math.cos(t)); });
+    let clicks = seedClicks.slice();
+    let closed = true;
+    let segs = [];
+    const st = stage(canvas, H / W, 520, draw);
+    let img = null;
+
+    const recompute = () => {
+      const sign = line === 'finish' ? 1 : -1;
+      const anchors = clicks.map((c) => (snapOn ? snap(k, c, sign) : c));
+      segs = [];
+      const n = anchors.length;
+      for (let i = 0; i < (closed ? n : n - 1); i++) segs.push(path(k, anchors[i], anchors[(i + 1) % n], line === 'finish' ? 1 : -1));
+      ui.readout(anchors, segs);
+      draw();
+    };
+    const paintMap = () => {
+      const c = document.createElement('canvas'); c.width = W; c.height = H;
+      const g = c.getContext('2d'); const im = g.createImageData(W, H);
+      const pos = hex(css('--graphite')), neg = hex(css('--scan')), bg = hex(css('--paper'));
+      for (let i = 0; i < W * H; i++) {
+        const v = Math.max(-1, Math.min(1, k[i]));
+        const col = v >= 0 ? pos : neg, a = Math.abs(v) * 0.85;
+        im.data[i * 4] = bg[0] + (col[0] - bg[0]) * a; im.data[i * 4 + 1] = bg[1] + (col[1] - bg[1]) * a; im.data[i * 4 + 2] = bg[2] + (col[2] - bg[2]) * a; im.data[i * 4 + 3] = 255;
+      }
+      g.putImageData(im, 0, 0); img = c;
+    };
+    function draw() {
+      const { ctx, w, h } = st; if (!w) return;
+      if (!img) paintMap();
+      ctx.imageSmoothingEnabled = true; ctx.drawImage(img, 0, 0, w, h);
+      const sx = w / W, sy = h / H;
+      const P = (c) => [((c % W) + 0.5) * sx, (((c / W) | 0) + 0.5) * sy];
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      ctx.strokeStyle = css('--pencil'); ctx.lineWidth = 3;
+      for (const s of segs) { ctx.beginPath(); s.forEach((c, i) => { const [x, y] = P(c); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke(); }
+      clicks.forEach((c) => {
+        const [x, y] = P(c), [ax, ay] = P(snapOn ? snap(k, c, line === 'finish' ? 1 : -1) : c);
+        ctx.strokeStyle = css('--ink'); ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.stroke();
+        if (snapOn && (ax !== x || ay !== y)) { ctx.setLineDash([2, 3]); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(ax, ay); ctx.stroke(); ctx.setLineDash([]); }
+        ctx.fillStyle = css('--pencil'); ctx.beginPath(); ctx.arc(ax, ay, 3.5, 0, 7); ctx.fill();
+      });
+      // Scale bar: 2 mm.
+      ctx.fillStyle = css('--ink-2'); ctx.fillRect(14, h - 18, 20 * sx, 3);
+      ctx.font = '500 11px ' + css('--mono'); ctx.fillText('2 mm', 14, h - 24);
+    }
+    canvas.addEventListener('click', (e) => {
+      const [x, y] = at(canvas, e);
+      const cx = Math.max(0, Math.min(W - 1, Math.floor((x / st.w) * W))), cy = Math.max(0, Math.min(H - 1, Math.floor((y / st.h) * H)));
+      if (closed) { clicks = []; closed = false; }
+      clicks.push(cy * W + cx);
+      recompute();
+    });
+    onTheme(() => { img = null; draw(); });
+    ui.onClose = () => { if (clicks.length >= 3) { closed = true; recompute(); } };
+    ui.onClear = () => { clicks = []; closed = false; segs = []; ui.readout([], []); draw(); };
+    ui.onExample = () => { clicks = seedClicks.slice(); closed = true; recompute(); };
+    ui.onSnap = (v) => { snapOn = v; recompute(); };
+    ui.onNoise = (v) => { noise = v; k = build(noise, 7); img = null; recompute(); };
+    ui.onLine = (v) => { line = v; recompute(); };
+    recompute();
+    return { W, H, MM, R, C };
+  }
+  return { init, W, H, MM, R, C, snap };
+})();
+
+class Heap {
+  constructor() { this.k = []; this.p = []; }
+  get size() { return this.k.length; }
+  push(k, p) { const a = this.k, b = this.p; a.push(k); b.push(p); let i = a.length - 1; while (i > 0) { const j = (i - 1) >> 1; if (b[j] <= p) break; a[i] = a[j]; b[i] = b[j]; i = j; } a[i] = k; b[i] = p; }
+  pop() {
+    const a = this.k, b = this.p, top = [a[0], b[0]], k = a.pop(), p = b.pop();
+    if (a.length) { let i = 0; const n = a.length; for (;;) { let c = 2 * i + 1; if (c >= n) break; if (c + 1 < n && b[c + 1] < b[c]) c++; if (b[c] >= p) break; a[i] = a[c]; b[i] = b[c]; i = c; } a[i] = k; b[i] = p; }
+    return top;
+  }
+}
+function hex(c) {
+  c = c.trim();
+  if (c.startsWith('#')) { const n = parseInt(c.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+  const m = c.match(/\d+/g); return m ? m.slice(0, 3).map(Number) : [128, 128, 128];
+}
+
+/* ---------- Figure: one cut through a prep; heights vs the true section, the turn of the contour, the ledge ---------- */
+const Section = (() => {
+  const DS = 0.05; // resample step along the contour, mm
+  const QUIET = 6; // QUIET_TURN_DEG: smooth until the median turn is at most this
+  const SIGMAS = [0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4]; // SMOOTH_SIGMAS_MM, tried in order
+  const WIN = 3; // ±3 samples = ±0.15 mm chords
+  const MIN_DROP = 1.5, MIN_CONVEXITY = 0.4, TURN_UNIT = 30; // autoMargin.ts
+  const LEDGE = { wallDeg: 50, wallDropMm: 1, innerTurnDeg: 8, lipTurnDeg: 12, lipWithinMm: 1.5, dropAfterMm: 0.4 };
+
+  /** A synthetic cut: occlusal surface, line angle, axial wall leaning by `lean` degrees (negative = overhangs the
+   * margin), chamfer, the lip (the true margin), root, then a gum bulge that rises above the margin's height. */
+  function contour(lean, gum) {
+    const pts = [];
+    const zTop = 5.4, Rtop = 3.0, wallH = 3.9;
+    for (let i = 0; i <= 20; i++) { const u = i / 20; pts.push([u * (Rtop - 0.5), zTop + 0.35 * (1 - u * u) + 0.18 * Math.sin(u * 9)]); }
+    for (let i = 1; i <= 8; i++) { const a = (i / 8) * (Math.PI / 2); pts.push([Rtop - 0.5 + 0.5 * Math.sin(a), zTop - 0.5 + 0.5 * Math.cos(a)]); }
+    const wTop = [Rtop, zTop - 0.5];
+    const wBot = [Rtop + Math.tan((lean * Math.PI) / 180) * wallH, zTop - 0.5 - wallH];
+    for (let i = 1; i <= 24; i++) { const u = i / 24; pts.push([wTop[0] + u * (wBot[0] - wTop[0]), wTop[1] + u * (wBot[1] - wTop[1])]); }
+    const lip = [wBot[0] + 0.62, wBot[1] - 0.55];
+    for (let i = 1; i <= 10; i++) { const u = i / 10; const b = [wBot[0], lip[1]]; pts.push([(1 - u) ** 2 * wBot[0] + 2 * u * (1 - u) * b[0] + u * u * lip[0], (1 - u) ** 2 * wBot[1] + 2 * u * (1 - u) * b[1] + u * u * lip[1]]); }
+    const truth = pts.length - 1;
+    const tail = [[lip[0] + 0.03, lip[1] - 0.2], [lip[0] - 0.05, lip[1] - 0.6], [lip[0] - 0.08, lip[1] - 1.0], [lip[0] + 0.25, lip[1] - 1.25],
+      [lip[0] + 0.8, lip[1] - 1.2 + gum * 0.6], [lip[0] + 1.4, lip[1] - 0.9 + gum], [lip[0] + 2.1, lip[1] - 0.95 + gum], [lip[0] + 2.9, lip[1] - 1.6 + gum * 0.4], [lip[0] + 3.6, lip[1] - 2.6]];
+    for (let i = 1; i < tail.length; i++) for (let j = 1; j <= 6; j++) { const u = j / 6, a = tail[i - 1], b = tail[i]; pts.push([a[0] + u * (b[0] - a[0]), a[1] + u * (b[1] - a[1])]); }
+    pts.splice(truth + 1, 0, tail[0]);
+    return { pts, truth: pts[truth] };
+  }
+  function resample(pts, ds) {
+    const out = [pts[0]]; let carry = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i], L = Math.hypot(b[0] - a[0], b[1] - a[1]); let t = ds - carry;
+      while (t <= L) { out.push([a[0] + ((b[0] - a[0]) * t) / L, a[1] + ((b[1] - a[1]) * t) / L]); t += ds; }
+      carry = L - (t - ds);
+    }
+    return out;
+  }
+  /** Scan noise along the surface normal (a rough scan is rough on every axis). */
+  function addNoise(pts, amp, seed) {
+    const r = rng(seed); let e = 0;
+    return pts.map((p, i) => {
+      e = 0.55 * e + gauss(r) * amp;
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+      const tx = b[0] - a[0], ty = b[1] - a[1], l = Math.hypot(tx, ty) || 1;
+      return [p[0] - (ty / l) * e, p[1] + (tx / l) * e];
+    });
+  }
+  function smooth(pts, sigmaMm) {
+    const s = sigmaMm / DS; if (s < 0.5) return pts.slice();
+    const R = Math.ceil(3 * s), w = Array.from({ length: 2 * R + 1 }, (_, i) => Math.exp(-((i - R) ** 2) / (2 * s * s)));
+    return pts.map((_, i) => {
+      let x = 0, y = 0, sw = 0;
+      for (let j = -R; j <= R; j++) { const k = Math.min(pts.length - 1, Math.max(0, i + j)); x += pts[k][0] * w[j + R]; y += pts[k][1] * w[j + R]; sw += w[j + R]; }
+      return [x / sw, y / sw];
+    });
+  }
+  /** turnsDeg (sectionProfile.ts): direction of the chord before minus the chord after, over ±WIN samples, wrapped to
+   * (−180°, 180°]. With s outward and h up, clockwise is positive: convex, as at a lip or a line angle. */
+  function turns(pts) {
+    return pts.map((p, i) => {
+      if (i < WIN || i >= pts.length - WIN) return NaN;
+      const a = pts[i - WIN], b = pts[i + WIN];
+      let d = (Math.atan2(p[1] - a[1], p[0] - a[0]) - Math.atan2(b[1] - p[1], b[0] - p[0])) * 180 / Math.PI;
+      while (d > 180) d -= 360; while (d <= -180) d += 360;
+      return d;
+    });
+  }
+  const medianAbs = (xs) => { const s = xs.filter(Number.isFinite).map(Math.abs).sort((a, b) => a - b); return s[s.length >> 1] || 0; };
+  /** quietTurns: the least smoothing that makes the median |turn| at most 6°; roughness is the median before smoothing. */
+  function quiet(raw) {
+    let rough = 0, out = null;
+    for (const sg of SIGMAS) {
+      const sm = smooth(raw, sg), tr = turns(sm), med = medianAbs(tr);
+      if (sg === 0) rough = med;
+      out = { sm, tr, sigma: sg };
+      if (med <= QUIET) break;
+    }
+    return { ...out, rough };
+  }
+  /** sectionEdges: score = turn / 30° where the (unsmoothed) drop below the top is at least 1.5 mm; candidates are
+   * local maxima within ±3 samples scoring 0.4 (12°) or more; the pick is the FIRST of them, not the strongest. */
+  function marginPick(raw, tr) {
+    const top = raw[0][1], score = tr.map((x, i) => (Number.isFinite(x) && top - raw[i][1] >= MIN_DROP ? x / TURN_UNIT : -Infinity));
+    const cands = [];
+    for (let i = 0; i < score.length; i++) {
+      if (!(score[i] >= MIN_CONVEXITY)) continue;
+      let peak = true;
+      for (let j = Math.max(0, i - WIN); j <= Math.min(score.length - 1, i + WIN); j++) if (score[j] > score[i] || (j < i && score[j] === score[i])) { peak = false; break; }
+      if (peak) cands.push(i);
+    }
+    return { pick: cands.length ? cands[0] : -1, cands };
+  }
+  /** sectionLedge (prepFinder.ts): a wall (1 mm of drop steeper than 50°, measured per mm of arc), then a concave
+   * inner angle (≤ −8°, a local minimum), then within 1.5 mm a convex lip (≥ 12°, a local maximum) with 0.4 mm of drop
+   * below it. */
+  function ledge(pts, tr) {
+    const n = pts.length, top = pts[0][1], steep = Math.sin((LEDGE.wallDeg * Math.PI) / 180);
+    const ext = (j, sgn) => { for (let k = Math.max(WIN, j - WIN); k <= Math.min(n - 1 - WIN, j + WIN); k++) if (sgn * tr[k] > sgn * tr[j]) return false; return true; };
+    let run = 0, wall = -1;
+    for (let i = 2; i < n - 2; i++) {
+      const descent = (pts[i - 2][1] - pts[i + 2][1]) / (4 * DS);
+      run = descent >= steep ? run + (pts[i - 1][1] - pts[i][1]) : 0;
+      if (run >= LEDGE.wallDropMm && top - pts[i][1] >= 1) { wall = i; break; }
+    }
+    if (wall < 0) return { why: 'no wall' };
+    let inner = -1;
+    for (let j = wall; j < n - WIN; j++) if (tr[j] <= -LEDGE.innerTurnDeg && ext(j, -1)) { inner = j; break; }
+    if (inner < 0) return { wallEnd: wall, why: 'no inner angle' };
+    const reach = Math.round(LEDGE.lipWithinMm / DS);
+    for (let j = inner + 1; j <= Math.min(n - 1 - WIN, inner + reach); j++) {
+      if (!(tr[j] >= LEDGE.lipTurnDeg && ext(j, 1))) continue;
+      let lowest = Infinity; for (let k = j; k < n; k++) lowest = Math.min(lowest, pts[k][1]);
+      if (pts[j][1] - lowest >= LEDGE.dropAfterMm) return { wallEnd: wall, inner, lip: j };
+    }
+    return { wallEnd: wall, inner, why: 'no lip' };
+  }
+  /** The old way: heights seen from above at each radius (the topmost surface), and the edge where the height falls fastest. */
+  function heights(pts) {
+    const rMax = Math.max(...pts.map((p) => p[0]));
+    const out = [];
+    for (let r = 0; r <= rMax; r += DS) {
+      let top = -Infinity;
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1], b = pts[i];
+        if ((a[0] - r) * (b[0] - r) > 0 || a[0] === b[0]) continue;
+        const z = a[1] + ((r - a[0]) / (b[0] - a[0])) * (b[1] - a[1]); if (z > top) top = z;
+      }
+      if (top > -Infinity) out.push([r, top]);
+    }
+    return out;
+  }
+  /** heightEdges (autoMargin.ts), the rough-scan sampler: convexity = slope before − slope after over ±0.2 mm, where
+   * the drop is at least 1.5 mm; the first run reaching max(0.5, half the strongest), climbed to its top. */
+  function heightEdge(hp) {
+    const w = 4, top = hp[0][1], n = hp.length;
+    const sc = hp.map((p, i) => (i < w || i >= n - w || top - p[1] < MIN_DROP ? -Infinity
+      : (p[1] - hp[i - w][1]) / (p[0] - hp[i - w][0]) - (hp[i + w][1] - p[1]) / (hp[i + w][0] - p[0])));
+    const max = Math.max(...sc.filter(Number.isFinite), 0), thr = Math.max(0.5, 0.5 * max);
+    let i = sc.findIndex((v) => v >= thr);
+    if (i < 0) return -1;
+    while (i + 1 < n && sc[i + 1] >= sc[i]) i++;
+    return i;
+  }
+
+  function init(canvas, ui) {
+    let noise = 0.004, lean = 6, gum = 0.6, sampler = 'section', sigmaMode = 'auto', sigmaManual = 0.1;
+    const st = stage(canvas, 0.78, 560, draw);
+    let model = null;
+    const compute = () => {
+      const { pts, truth } = contour(lean, gum);
+      const clean = resample(pts, DS);
+      const raw = addNoise(clean, noise, 11);
+      let q;
+      if (sigmaMode === 'auto') q = quiet(raw);
+      else { const sm = smooth(raw, sigmaManual); q = { sm, tr: turns(sm), sigma: sigmaManual, rough: quiet(raw).rough }; }
+      const M = marginPick(raw, q.tr);
+      const L = ledge(q.sm, q.tr);
+      const hp = heights(raw);
+      const he = heightEdge(hp);
+      model = { raw, sm: q.sm, tr: q.tr, truth, sigma: q.sigma, rough: q.rough, M, L, hp, he };
+      const pick = sampler === 'section' ? (M.pick >= 0 ? raw[M.pick] : null) : he >= 0 ? hp[he] : null;
+      const err = pick ? Math.hypot(pick[0] - truth[0], pick[1] - truth[1]) : null;
+      ui.readout({ sigma: q.sigma, rough: q.rough, err, sampler, corners: M.cands.length, ledge: !L.why });
+      draw();
+    };
+    function draw() {
+      const { ctx, w, h } = st; if (!w || !model) return;
+      ctx.clearRect(0, 0, w, h);
+      const top = h * 0.66;
+      const rMin = -0.3, rMax = 9.2, zMin = -3.6, zMax = 6.2;
+      const pad = 34, s = Math.min((w - pad - 14) / (rMax - rMin), (top - 22) / (zMax - zMin));
+      const X = (r) => pad + (r - rMin) * s, Y = (z) => 12 + (zMax - z) * s;
+      // grid in mm
+      ctx.strokeStyle = css('--rule'); ctx.lineWidth = 1; ctx.font = '500 10px ' + css('--mono'); ctx.fillStyle = css('--muted');
+      for (let r = 0; r <= 9; r += 1) { ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.moveTo(X(r), Y(zMax)); ctx.lineTo(X(r), Y(zMin)); ctx.stroke(); ctx.globalAlpha = 1; if (r % 2 === 0) ctx.fillText(r + '', X(r) - 3, Y(zMin) + 12); }
+      ctx.fillText('mm from the axis →', X(5.2), Y(zMin) + 12);
+      const line = (pts, col, wid, dash) => { ctx.strokeStyle = col; ctx.lineWidth = wid; ctx.setLineDash(dash || []); ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])))); ctx.stroke(); ctx.setLineDash([]); };
+      line(model.raw, css('--graphite'), 1.2);
+      if (sampler === 'heights') {
+        line(model.hp, css('--wax'), 2.4);
+        // The view from above: a few rays down.
+        ctx.strokeStyle = css('--wax'); ctx.globalAlpha = 0.35; ctx.setLineDash([2, 4]);
+        for (let i = 0; i < model.hp.length; i += 12) { const p = model.hp[i]; ctx.beginPath(); ctx.moveTo(X(p[0]), Y(zMax)); ctx.lineTo(X(p[0]), Y(p[1])); ctx.stroke(); }
+        ctx.setLineDash([]); ctx.globalAlpha = 1;
+      } else {
+        line(model.sm, css('--scan'), 2.4);
+      }
+      // truth and pick
+      const tp = model.truth;
+      ctx.strokeStyle = css('--ink'); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(X(tp[0]), Y(tp[1]), 8, 0, 7); ctx.stroke();
+      ctx.fillStyle = css('--ink-2'); ctx.font = '500 11px ' + css('--mono'); ctx.fillText('true margin', X(tp[0]) + 11, Y(tp[1]) + 4);
+      const pick = sampler === 'section' ? (model.M.pick >= 0 ? model.raw[model.M.pick] : null) : model.he >= 0 ? model.hp[model.he] : null;
+      if (sampler === 'section') for (const c of model.M.cands.slice(1)) { const p = model.raw[c]; ctx.strokeStyle = css('--pencil'); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 4, 0, 7); ctx.stroke(); }
+      if (pick) { ctx.fillStyle = css('--pencil'); ctx.beginPath(); ctx.arc(X(pick[0]), Y(pick[1]), 5, 0, 7); ctx.fill(); ctx.fillText('found', X(pick[0]) - 44, Y(pick[1]) - 8); }
+      if (sampler === 'section' && model.L.wallEnd !== undefined) {
+        const a = model.sm[model.L.wallEnd]; ctx.fillStyle = css('--scan'); ctx.beginPath(); ctx.arc(X(a[0]), Y(a[1]), 3.5, 0, 7); ctx.fill();
+        if (model.L.inner !== undefined) { const b = model.sm[model.L.inner]; ctx.strokeStyle = css('--wax'); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(X(b[0]), Y(b[1]), 5, 0, 7); ctx.stroke(); }
+        // The minimum drop: corners above this line are never the margin (the line angle lives there).
+        const yTop = model.raw[0][1] - MIN_DROP; ctx.setLineDash([2, 5]); ctx.strokeStyle = css('--muted'); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(X(rMin), Y(yTop)); ctx.lineTo(X(rMax), Y(yTop)); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = css('--muted'); ctx.font = '500 10px ' + css('--mono'); ctx.fillText('1.5 mm below the top', X(rMax) - 128, Y(yTop) - 4);
+      }
+      // turn plot (section) or height derivative (heights)
+      const y0 = top + 18, ph = h - y0 - 22;
+      ctx.fillStyle = css('--muted'); ctx.font = '500 10px ' + css('--mono');
+      if (sampler === 'section') {
+        const tr = model.tr.map((x) => (Number.isFinite(x) ? x : 0)), n = tr.length, maxT = 60;
+        const PX = (i) => pad + (i / (n - 1)) * (w - pad - 14), PY = (t) => y0 + ph / 2 - (Math.max(-maxT, Math.min(maxT, t)) / maxT) * (ph / 2);
+        ctx.fillText('TURN OF THE CONTOUR, ° (convex up)', pad, y0 - 5);
+        ctx.strokeStyle = css('--rule'); ctx.beginPath(); ctx.moveTo(pad, PY(0)); ctx.lineTo(w - 14, PY(0)); ctx.stroke();
+        ctx.setLineDash([3, 3]); ctx.strokeStyle = css('--pencil'); ctx.globalAlpha = 0.6; ctx.beginPath(); ctx.moveTo(pad, PY(LEDGE.lipTurnDeg)); ctx.lineTo(w - 14, PY(LEDGE.lipTurnDeg)); ctx.stroke();
+        ctx.strokeStyle = css('--wax'); ctx.beginPath(); ctx.moveTo(pad, PY(-LEDGE.innerTurnDeg)); ctx.lineTo(w - 14, PY(-LEDGE.innerTurnDeg)); ctx.stroke(); ctx.globalAlpha = 1; ctx.setLineDash([]);
+        ctx.fillText('+12° corner', w - 82, PY(LEDGE.lipTurnDeg) - 4); ctx.fillText('−8° inner', w - 82, PY(-LEDGE.innerTurnDeg) + 12);
+        ctx.strokeStyle = css('--scan'); ctx.lineWidth = 1.6; ctx.beginPath(); tr.forEach((t, i) => (i ? ctx.lineTo(PX(i), PY(t)) : ctx.moveTo(PX(i), PY(t)))); ctx.stroke();
+        if (model.M.pick >= 0) { ctx.fillStyle = css('--pencil'); ctx.beginPath(); ctx.arc(PX(model.M.pick), PY(tr[model.M.pick]), 4, 0, 7); ctx.fill(); }
+        const iTop = model.raw.findIndex((p) => model.raw[0][1] - p[1] >= MIN_DROP); if (iTop > 0) { ctx.fillStyle = css('--sunk'); ctx.globalAlpha = 0.55; ctx.fillRect(pad, y0, PX(iTop) - pad, ph); ctx.globalAlpha = 1; ctx.fillStyle = css('--muted'); ctx.fillText('above the minimum drop', pad + 4, y0 + 12); }
+        ctx.fillStyle = css('--muted'); ctx.fillText('along the contour, from the top of the prep →', pad, h - 6);
+      } else {
+        const hp = model.hp, n = hp.length;
+        const d = hp.map((p, i) => (i ? (hp[i - 1][1] - p[1]) / DS : 0));
+        const maxD = Math.max(1, ...d.map(Math.abs));
+        const PX = (i) => pad + (i / (n - 1)) * (w - pad - 14), PY = (v) => y0 + ph / 2 - (v / maxD) * (ph / 2);
+        ctx.fillText('HOW FAST THE HEIGHT FALLS, per mm of radius', pad, y0 - 5);
+        ctx.strokeStyle = css('--rule'); ctx.beginPath(); ctx.moveTo(pad, PY(0)); ctx.lineTo(w - 14, PY(0)); ctx.stroke();
+        ctx.strokeStyle = css('--wax'); ctx.lineWidth = 1.6; ctx.beginPath(); d.forEach((v, i) => (i ? ctx.lineTo(PX(i), PY(v)) : ctx.moveTo(PX(i), PY(v)))); ctx.stroke();
+        if (model.he >= 0) { ctx.fillStyle = css('--pencil'); ctx.beginPath(); ctx.arc(PX(model.he), PY(d[model.he]), 4, 0, 7); ctx.fill(); }
+        ctx.fillStyle = css('--muted'); ctx.fillText('radius, from the axis →', pad, h - 6);
+      }
+    }
+    onTheme(draw);
+    ui.onNoise = (v) => { noise = v; compute(); };
+    ui.onLean = (v) => { lean = v; compute(); };
+    ui.onGum = (v) => { gum = v; compute(); };
+    ui.onSampler = (v) => { sampler = v; compute(); };
+    ui.onSigmaMode = (v) => { sigmaMode = v; compute(); };
+    ui.onSigma = (v) => { sigmaManual = v; if (sigmaMode === 'manual') compute(); };
+    compute();
+  }
+  return { init, LEDGE, QUIET, SIGMAS, contour, resample, addNoise, quiet, marginPick };
+})();
+
+/* ---------- Figure: candidate corners on 32 spokes, three ways to choose, and the doubt marks ---------- */
+const Ring = (() => {
+  const N = 32;
+  /** dcad's ring DP (marginRefine.ts): unary −0.5·min(convexity, 3), pair 5·|Δdrop| + 2·|Δradius|, closed round the ring. */
+  const DP_CONVEXITY = 0.5, DP_CAP = 3, DP_DROP = 5, DP_RADIUS = 2;
+
+  /** Spokes with 1–3 candidates each, outward order: a corner up the wall (one run of `run` neighbouring spokes, the
+   * way false edges come on real scans), the finish line, sometimes a scrap of gum. Beside each wall corner, just above
+   * it, runs the line angle: a stronger crease that is not a candidate (it lies above the 1.5 mm minimum drop). */
+  function build(seed, sharp, run) {
+    const r = rng(seed);
+    const ph = r() * 6.28, ph2 = r() * 6.28, start = Math.floor(r() * N);
+    const inRun = (i) => ((i - start + N) % N) < run;
+    return Array.from({ length: N }, (_, i) => {
+      const t = (2 * Math.PI * i) / N;
+      const R = 4.4 + 0.45 * Math.cos(2 * t + ph), D = 3.9 + 0.55 * Math.cos(2 * t) + 0.25 * Math.sin(3 * t + ph2);
+      const cands = [], creases = [];
+      if (inRun(i)) {
+        const c = { radius: R - 0.55 - 0.2 * r(), drop: D - 1.7 - 0.5 * r(), conv: sharp * (0.85 + 0.3 * r()), kind: 'decoy' };
+        cands.push(c);
+        creases.push({ radius: c.radius - 0.35, drop: c.drop - 0.55 - 0.25 * r(), conv: Math.max(2.4, 1.8 * c.conv) });
+      }
+      cands.push({ radius: R + 0.05 * gauss(r), drop: D + 0.05 * gauss(r), conv: 0.75 + 0.6 * r(), kind: 'finish' });
+      if (r() < 0.35) cands.push({ radius: R + 1.1 + 0.3 * r(), drop: D + 0.9 + 0.4 * r(), conv: 0.45 + 0.4 * r(), kind: 'gum' });
+      return { t, cands, creases };
+    });
+  }
+  function chooseDP(spokes, lambda) {
+    const unary = (c) => -DP_CONVEXITY * Math.min(c.conv, DP_CAP);
+    const pair = (a, b) => lambda * (DP_DROP * Math.abs(a.drop - b.drop) + DP_RADIUS * Math.abs(a.radius - b.radius));
+    let best = { cost: Infinity, pick: null };
+    for (let f = 0; f < spokes[0].cands.length; f++) {
+      let cost = [unary(spokes[0].cands[f])];
+      const back = [];
+      let prevCands = [spokes[0].cands[f]];
+      for (let i = 1; i < N; i++) {
+        const cs = spokes[i].cands, nc = [], nb = [];
+        for (const c of cs) {
+          let m = Infinity, arg = 0;
+          prevCands.forEach((p, j) => { const v = cost[j] + pair(p, c); if (v < m) { m = v; arg = j; } });
+          nc.push(m + unary(c)); nb.push(arg);
+        }
+        back.push(nb); cost = nc; prevCands = cs;
+      }
+      cost.forEach((v, j) => {
+        const total = v + pair(spokes[N - 1].cands[j], spokes[0].cands[f]);
+        if (total < best.cost) {
+          const pick = new Array(N); pick[N - 1] = j;
+          for (let i = N - 1; i >= 1; i--) pick[i - 1] = i - 1 === 0 ? f : back[i - 1][pick[i]];
+          pick[0] = f;
+          best = { cost: total, pick };
+        }
+      });
+    }
+    return best.pick;
+  }
+  /** The doubt rule for finish lines (marginDoubt.ts), on a spoke: the chosen corner is off when a crease of the same
+   * kind at least 1.6× stronger lies more than 0.35 mm from it, within the 1.5 mm the check looks across. */
+  const doubtful = (sp, c) => [...sp.cands, ...sp.creases].some((o) => {
+    if (o === c) return false;
+    const d = Math.hypot(o.radius - c.radius, o.drop - c.drop);
+    return o.conv >= 1.6 * c.conv && d > 0.35 && d <= 1.5;
+  });
+
+  function init(canvas, ui) {
+    let seed = 3, sharp = 1.6, run = 6, lambda = 1, mode = 'dp';
+    let spokes = build(seed, sharp, run), chosen = [];
+    const st = stage(canvas, 0.62, 520, draw);
+    const compute = () => {
+      const pick = mode === 'first' ? spokes.map(() => 0)
+        : mode === 'strong' ? spokes.map((s) => s.cands.reduce((b, c, j) => (c.conv > s.cands[b].conv ? j : b), 0))
+        : chooseDP(spokes, lambda);
+      chosen = spokes.map((s, i) => s.cands[pick[i]]);
+      const on = chosen.filter((c) => c.kind === 'finish').length;
+      // Wander, as dcad defines it, needs a trace; here the jumps between neighbours stand in for it.
+      let jumps = 0; for (let i = 0; i < N; i++) { const a = chosen[i], b = chosen[(i + 1) % N]; jumps += Math.abs(a.drop - b.drop); }
+      let parts = 0, prev = doubtful(spokes[N - 1], chosen[N - 1]);
+      for (let i = 0; i < N; i++) { const d = doubtful(spokes[i], chosen[i]); if (d && !prev) parts++; prev = d; }
+      if (parts === 0 && chosen.every((c, i) => doubtful(spokes[i], c))) parts = 1;
+      ui.readout({ on, jumps, parts, decoys: chosen.filter((c) => c.kind === 'decoy').length });
+      draw();
+    };
+    function draw() {
+      const { ctx, w, h } = st; if (!w) return;
+      ctx.clearRect(0, 0, w, h);
+      const wide = w >= 560;
+      const topW = wide ? w * 0.48 : w, topH = wide ? h : h * 0.6;
+      const cx = topW / 2, cy = topH / 2, s = Math.min(topW, topH) / 2 / 6.6;
+      const P = (c, t) => [cx + c.radius * s * Math.cos(t), cy - c.radius * s * Math.sin(t)];
+      // spokes
+      ctx.strokeStyle = css('--rule'); ctx.lineWidth = 1;
+      for (const sp of spokes) { ctx.beginPath(); ctx.moveTo(cx, cy); const e = [cx + 6.3 * s * Math.cos(sp.t), cy - 6.3 * s * Math.sin(sp.t)]; ctx.lineTo(e[0], e[1]); ctx.stroke(); }
+      const col = (k) => (k === 'decoy' ? css('--wax') : k === 'gum' ? css('--muted') : css('--graphite'));
+      for (const sp of spokes) for (const c of sp.creases) { const [x, y] = P(c, sp.t); ctx.strokeStyle = css('--wax'); ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 3, 0, 7); ctx.stroke(); }
+      for (const sp of spokes) for (const c of sp.cands) { const [x, y] = P(c, sp.t); ctx.fillStyle = col(c.kind); ctx.beginPath(); ctx.arc(x, y, 2 + 1.6 * Math.min(c.conv, 2), 0, 7); ctx.fill(); }
+      ctx.strokeStyle = css('--pencil'); ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
+      ctx.beginPath(); chosen.forEach((c, i) => { const [x, y] = P(c, spokes[i].t); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.closePath(); ctx.stroke();
+      chosen.forEach((c, i) => { if (!doubtful(spokes[i], c)) return; const [x, y] = P(c, spokes[i].t); ctx.strokeStyle = css('--pencil'); ctx.lineWidth = 1.5; ctx.setLineDash([2, 2]); ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.stroke(); ctx.setLineDash([]); });
+      ctx.fillStyle = css('--muted'); ctx.font = '500 10px ' + css('--mono'); ctx.fillText('SEEN FROM ABOVE', 10, 16);
+      // unrolled: drop below the prep top against the angle round the tooth
+      const x0 = wide ? topW + 28 : 36, y0 = wide ? 28 : topH + 26, pw = (wide ? w - topW - 40 : w - 50), ph = (wide ? h - 60 : h - topH - 50);
+      const dMin = 1.4, dMax = 6.2;
+      const X = (i) => x0 + (i / (N - 1)) * pw, Y = (d) => y0 + ((d - dMin) / (dMax - dMin)) * ph;
+      ctx.fillStyle = css('--muted'); ctx.fillText('DROP BELOW THE PREP TOP, ROUND THE TOOTH', x0, y0 - 10);
+      ctx.strokeStyle = css('--rule'); for (let d = 2; d <= 6; d += 1) { ctx.beginPath(); ctx.moveTo(x0, Y(d)); ctx.lineTo(x0 + pw, Y(d)); ctx.stroke(); ctx.fillText(d + ' mm', x0 - 34 < 0 ? x0 + pw - 30 : x0 - 34, Y(d) + 3); }
+      for (let i = 0; i < N; i++) for (const c of spokes[i].cands) { ctx.fillStyle = col(c.kind); ctx.beginPath(); ctx.arc(X(i), Y(c.drop), 2 + 1.4 * Math.min(c.conv, 2), 0, 7); ctx.fill(); }
+      ctx.strokeStyle = css('--pencil'); ctx.lineWidth = 2.2; ctx.beginPath(); chosen.forEach((c, i) => (i ? ctx.lineTo(X(i), Y(c.drop)) : ctx.moveTo(X(i), Y(c.drop)))); ctx.stroke();
+    }
+    onTheme(draw);
+    ui.onMode = (v) => { mode = v; compute(); };
+    ui.onLambda = (v) => { lambda = v; compute(); };
+    ui.onSharp = (v) => { sharp = v; spokes = build(seed, sharp, run); compute(); };
+    ui.onRun = (v) => { run = v; spokes = build(seed, sharp, run); compute(); };
+    ui.onShuffle = () => { seed = (seed * 7 + 5) % 997; spokes = build(seed, sharp, run); compute(); };
+    compute();
+  }
+  return { init };
+})();
+
+/* ---------- Figure: the β plateau (measured points only) ---------- */
+function initBeta(canvas, slider) {
+  const pts = [[0, 0], [2, 0], [4, 7], [8, 20], [16, 20]];
+  let at = 3;
+  const st = stage(canvas, 0.42, 280, draw);
+  function draw() {
+    const { ctx, w, h } = st; if (!w) return;
+    ctx.clearRect(0, 0, w, h);
+    const pad = 44, bw = (w - pad - 20) / pts.length;
+    const Y = (v) => h - 30 - (v / 23) * (h - 56);
+    ctx.strokeStyle = css('--rule'); ctx.fillStyle = css('--muted'); ctx.font = '500 10px ' + css('--mono');
+    for (const v of [0, 10, 20, 23]) { ctx.beginPath(); ctx.moveTo(pad, Y(v)); ctx.lineTo(w - 16, Y(v)); ctx.stroke(); ctx.fillText(String(v), pad - 22, Y(v) + 3); }
+    ctx.fillText('of 23 right', pad - 4, 14);
+    pts.forEach(([b, v], i) => {
+      const x = pad + i * bw + bw * 0.2, ww = bw * 0.6;
+      ctx.fillStyle = i === at ? css('--pencil') : css('--graphite'); ctx.globalAlpha = i === at ? 1 : 0.45;
+      ctx.fillRect(x, Y(v), ww, Math.max(2, Y(0) - Y(v)));
+      ctx.globalAlpha = 1; ctx.fillStyle = css('--ink'); ctx.font = '500 12px ' + css('--mono');
+      ctx.fillText(String(v), x + ww / 2 - 6, Y(v) - 6);
+      ctx.fillStyle = css('--muted'); ctx.font = '500 11px ' + css('--mono'); ctx.fillText('β ' + b, x + ww / 2 - 12, h - 12);
+    });
+  }
+  slider.addEventListener('input', () => { at = +slider.value; $('output[for="beta-r"]').textContent = String(pts[at][0]); draw(); });
+  onTheme(draw);
+}
+
+/* ---------- The scoreboard: before and after each step (aggregate numbers from the specs) ---------- */
+function initScore(el, detail) {
+  const rows = [
+    { name: 'Synthetic preps, right', of: 17, a: 6, b: 16, when: '26 Oct · the refiner', note: 'The plain automatic margin against the refiner, on 17 synthetic preps with scanner-like noise. Right = passes the gate within 0.15 mm mean of the true line.' },
+    { name: 'Natural teeth, gum line right', of: 24, a: 0, b: 22, when: '27 Oct · random walker', note: 'Held-out real natural teeth (Teeth3DS+), scored once with frozen parameters. Median error 1.50 mm before, 0.11 mm after.' },
+    { name: 'Real back teeth, right', of: 36, a: 5, b: 28, when: '29 Oct · true sections', note: '36 real posterior lab preps. Right = mean ≤ 0.10 mm from the lab’s line, 90% within 0.2 mm, 90% coverage.' },
+    { name: 'Real back teeth, right', of: 36, a: 28, b: 30, when: '29 Oct · doubt picks the line', note: 'The same 36. No case that was right turned wrong.' },
+    { name: 'Real front teeth, right', of: 27, a: 1, b: 19, when: '29–30 Oct · sections, doubt, frame fix', note: 'Front teeth were never tuned on: 1 → 12 (sections) → 14 (doubt) → 19 (the tooth’s up direction fixed).' },
+    { name: 'Real preps found by the finder', of: 26, a: 9, b: 18, when: '30 Oct · ledge on sections', note: 'Posterior lab preps found on whole jaws, with no click.' },
+    { name: 'False preps on 28 natural jaws', of: 15, a: 15, b: 0, when: '30 Oct · ledge on sections', note: 'Lower is better: a ring on a tooth that was never prepared would design a crown on a healthy tooth.', lower: true },
+  ];
+  let on = 2, phase = 'b';
+  const render = () => {
+    el.innerHTML = '';
+    rows.forEach((r, i) => {
+      const row = document.createElement('div');
+      row.className = 'row' + (i === on ? ' on' : ''); row.setAttribute('role', 'listitem'); row.tabIndex = 0;
+      const v = phase === 'a' ? r.a : r.b;
+      row.innerHTML = `<div class="name">${r.name}<br><span class="mono" style="color:var(--muted);font-size:.74rem">${r.when}</span></div><div class="track"><div class="fill" style="width:${(100 * v) / r.of}%"></div></div><div class="val">${v} / ${r.of}</div>`;
+      const pick = () => { on = i; render(); };
+      row.addEventListener('click', pick); row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
+      el.appendChild(row);
+    });
+    const r = rows[on];
+    detail.innerHTML = `<p><b style="font-family:var(--display)">${r.a} → ${r.b} of ${r.of}</b> ${r.lower ? '(lower is better)' : ''}. ${r.note}</p>`;
+  };
+  const seg = $('#score-phase');
+  bindSeg(seg, (v) => { phase = v; render(); });
+  render();
+}
+
+/* ---------- wiring ---------- */
+(function main() {
+  // The die
+  const dieUi = {};
+  Die.init($('#die'), dieUi);
+  bindRange('cut', (v) => v + '°', (v) => dieUi.onCut?.(v));
+  bindSeg($('#cutshow'), (v) => dieUi.onShowCut(v === 'on'));
+
+  // Live-wire
+  const lwUi = {
+    readout(anchors, segs) {
+      const el = $('#lw-read');
+      if (!segs.length) { el.innerHTML = `<span>${anchors.length ? anchors.length + ' clicks so far: tap more, then close the loop' : 'Tap near the dark ring to place clicks'}</span>`; return; }
+      const W = LiveWire.W, pts = [];
+      segs.forEach((s) => s.forEach((c, i) => { if (i || !pts.length) pts.push([c % W, (c / W) | 0]); }));
+      let len = 0; for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+      // Sharpest turn over a 0.6 mm stride, as dcad's gate measures it.
+      const k = 6; let worst = 0;
+      for (let i = k; i < pts.length - k; i++) {
+        const a = [pts[i][0] - pts[i - k][0], pts[i][1] - pts[i - k][1]], b = [pts[i + k][0] - pts[i][0], pts[i + k][1] - pts[i][1]];
+        const la = Math.hypot(...a), lb = Math.hypot(...b); if (!la || !lb) continue;
+        worst = Math.max(worst, (Math.acos(Math.max(-1, Math.min(1, (a[0] * b[0] + a[1] * b[1]) / (la * lb)))) * 180) / Math.PI);
+      }
+      el.innerHTML = `<span>clicks <b>${anchors.length}</b></span><span>length <b>${(len * LiveWire.MM).toFixed(1)} mm</b></span><span>sharpest turn over 0.6 mm <b class="${worst > 120 ? 'bad' : ''}">${worst.toFixed(0)}°</b></span><span>${worst > 120 ? '<b class="bad">would fail the gate: the crown would fold here</b>' : 'passes the 120° rule'}</span>`;
+    },
+  };
+  LiveWire.init($('#lw'), lwUi);
+  $('#lw-close').addEventListener('click', () => lwUi.onClose());
+  $('#lw-clear').addEventListener('click', () => lwUi.onClear());
+  $('#lw-ex').addEventListener('click', () => lwUi.onExample());
+  bindSeg($('#lw-snap'), (v) => lwUi.onSnap(v === 'on'));
+  bindSeg($('#lw-line'), (v) => lwUi.onLine(v));
+  bindRange('lw-noise', (v) => v.toFixed(2), (v) => lwUi.onNoise?.(v));
+
+  // The cut
+  const secUi = {
+    readout({ sigma, rough, err, sampler, corners, ledge }) {
+      const ok = err !== null && err <= 0.1;
+      $('#sec-read').innerHTML = sampler === 'section'
+        ? `<span>roughness <b>${rough.toFixed(1)}°</b></span><span>smoothing σ <b>${sigma.toFixed(2)} mm</b></span><span>corners below 1.5 mm <b>${corners}</b></span><span>found <b class="${ok ? 'good' : 'bad'}">${err === null ? 'nothing' : err.toFixed(2) + ' mm from the true margin'}</b></span><span>prep-finder ledge <b>${ledge ? 'yes' : 'no'}</b></span>`
+        : `<span>heights from above</span><span>found <b class="${ok ? 'good' : 'bad'}">${err === null ? 'nothing' : err.toFixed(2) + ' mm from the true margin'}</b></span><span>${'tilt the wall below 0° to hide the margin'}</span>`;
+    },
+  };
+  // Controls bind before init so the first compute sees their values.
+  Section.init($('#sec'), secUi);
+  bindRange('sec-lean', (v) => v + '°', (v) => secUi.onLean(v));
+  bindRange('sec-noise', (v) => v.toFixed(3) + ' mm', (v) => secUi.onNoise(v));
+  bindRange('sec-gum', (v) => v.toFixed(1) + ' mm', (v) => secUi.onGum(v));
+  bindRange('sec-sigma', (v) => v.toFixed(2) + ' mm', (v) => secUi.onSigma(v));
+  bindSeg($('#sec-sampler'), (v) => secUi.onSampler(v));
+  bindSeg($('#sec-sm'), (v) => secUi.onSigmaMode(v));
+
+  // The ring
+  const ringUi = {
+    readout({ on, jumps, parts }) {
+      $('#ring-read').innerHTML = `<span>spokes on the finish line <b class="${on === 32 ? 'good' : 'bad'}">${on} / 32</b></span><span>height jumps round the ring <b>${jumps.toFixed(1)} mm</b></span><span>stretches in doubt <b class="${parts ? 'bad' : 'good'}">${parts}</b></span><span>${parts ? '<b class="bad">margin.doubt stops one-click for review</b>' : 'no doubt: one-click may go on'}</span>`;
+    },
+  };
+  Ring.init($('#ring'), ringUi);
+  bindSeg($('#ring-mode'), (v) => ringUi.onMode(v));
+  bindRange('ring-lambda', (v) => v.toFixed(1) + '×', (v) => ringUi.onLambda(v));
+  bindRange('ring-sharp', (v) => v.toFixed(1), (v) => ringUi.onSharp(v));
+  bindRange('ring-run', (v) => v + ' of 32', (v) => ringUi.onRun(v));
+  $('#ring-new').addEventListener('click', () => ringUi.onShuffle());
+
+  initBeta($('#beta'), $('#beta-r'));
+  initScore($('#scoreboard'), $('#score-detail'));
+})();
+
+</script>
+</body>
+</html>

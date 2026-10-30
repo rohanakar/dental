@@ -31,6 +31,8 @@
 
 		# The editor lives at /app/; the landing page is the site root.
 		redir /app {$BASE_PATH}/app/ 308
+		# The margin algorithm, a static page (apps/web/public/algorithm/).
+		redir /algorithm {$BASE_PATH}/algorithm/ 308
 
 		handle {
 			root * /srv
