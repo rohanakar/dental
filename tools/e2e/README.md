@@ -86,3 +86,28 @@ pnpm --filter @dcad/e2e offline       # or: online, move, bridge, ai-bridge, imp
 ```
 
 Day 7 turns these into `@playwright/test` specs.
+
+## Walkthrough videos
+
+`video/` films a narrated walkthrough series of the app, one episode per feature
+(`specs/2026-10-30-walkthrough-videos.md`). Each episode drives the real editor like the scripts above and checks what
+it shows; a check runs on screen as a ✓ or ✕ toast, so a broken feature fails the run instead of making a misleading
+video.
+
+- **How it films:** headless Chrome on the GPU, not SwiftShader (60 fps against 4). Chrome's screencast is piped to
+  the system ffmpeg as 1920×1080 H.264 at 30 fps.
+- **Narration:** macOS `say` (`VOICE`, default Samantha), one clip per caption, laid over the video afterwards. The
+  clip's length paces the episode. `NARRATION=0` leaves the audio out.
+- **The overlay** (`video/overlay.mjs`) draws the cursor, captions, keycaps, rings, check toasts and the title and end
+  cards. It is pointer-events: none, so it never takes a click.
+- **Episodes:** `video/episodes/NN-<slug>.mjs`. Each exports `{ id, title, summary, learn, start, setup?, intro,
+  outro, run(d) }`; `d` is the `Director` in `video/director.mjs`.
+- **Outputs:** `out/videos/` holds `NN-<slug>.mp4` and `.vtt`, `report.json` (checks, chapters, durations) and
+  `index.html`, a gallery with chapters to seek to and each episode's checks.
+
+```bash
+pnpm dev:web                                    # terminal 1
+pnpm --filter @dcad/e2e videos                  # every episode (exits non-zero on a failed check)
+pnpm --filter @dcad/e2e videos 04 07            # some episodes, by number or id
+pnpm --filter @dcad/e2e videos -- --full        # also join them into dcad-walkthrough-full.mp4
+```

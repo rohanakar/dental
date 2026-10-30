@@ -520,3 +520,6 @@ with Auto-design next.
 - Fix: `/algorithm/` served the landing page because Caddy's `try_files {path}` never matches a directory. It now also
   tries `{path}index.html`. Checked in `caddy:2` at the root and under a sub-path. See
   [2026-10-30-margin-algorithm-page.md](2026-10-30-margin-algorithm-page.md).
+- A walkthrough video series filmed from the real app by script (`pnpm --filter @dcad/e2e videos`). It has 13
+  narrated episodes (33 min), from quick start to implants and the algorithm page, and each checks what it shows:
+  209/209 checks. A gallery is in `out/videos/`. See [2026-10-30-walkthrough-videos.md](2026-10-30-walkthrough-videos.md).
