@@ -46,7 +46,9 @@
 				not file
 			}
 			rewrite @editor /app/index.html
-			try_files {path} /index.html
+			# {path}index.html serves a static page's index at its trailing-slash URL (/algorithm/);
+			# try_files {path} alone never matches a directory, so that would fall through to the landing page.
+			try_files {path} {path}index.html /index.html
 			file_server
 		}
 	}

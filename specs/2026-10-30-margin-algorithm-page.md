@@ -137,6 +137,27 @@ An interactive technical document about how dcad finds the crown margin, served 
     a run all the way round at sharpness 3 it takes the wall corners, and every spoke is in doubt.
 - No unit test: documentation (`CLAUDE.md`). `pnpm test` is unaffected.
 
+### Fix after the first deploy: `/algorithm/` served the landing page
+
+- **Symptom:** on dental.cognifuze.com, `/algorithm/` returned the landing page (the root `index.html`, 18,964
+  bytes). `/algorithm/index.html` returned the algorithm page (129,808 bytes). So the build was fine and the routing
+  was wrong.
+- **Cause:** Caddy's `try_files {path} /index.html` never matches a directory. Caddy cleans the trailing slash off
+  `/algorithm/` and only puts it back when the pattern itself ends in `/`. The path then looks like a directory with no
+  slash, the match fails, and the request falls back to `/index.html`. `/app/` was unaffected because it has its own
+  rewrite.
+- **Fix (`infra/Caddyfile`):** `try_files {path} {path}index.html /index.html`. The new candidate only matches URLs
+  that end in `/`, which is exactly where the page's relative URLs resolve correctly. Every other route keeps its
+  behaviour, and any future static page in `apps/web/public/<dir>/` works the same way.
+- **Verified in `caddy:2` (v2.11.7) in Docker,** with the repo's Caddyfile and a stub `/srv`, at `BASE_PATH=""` and
+  `BASE_PATH=/dental`:
+  - `/algorithm/` now serves the algorithm page. Before the fix it served the landing page, reproducing the bug.
+  - Unchanged: `/algorithm` and `/app` 308 to their slash forms; `/app/` and `/app/case/123` serve the editor;
+    `/algorithm/fonts/*` and `/assets/*` serve files; unknown routes and `/` serve the landing page.
+  - `/algorithm/` keeps `Cache-Control: no-cache`.
+- **Lesson:** the original verification only read the redirect in the config and never ran Caddy. Check routing
+  changes by running the proxy.
+
 ### Follow-ups
 
 - **It goes live on the next deploy** (`git pull && ./infra/compose.sh up -d --build` on the VM).

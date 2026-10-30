@@ -517,3 +517,6 @@ with Auto-design next.
 - The margin algorithm as a page to read, at `/algorithm`. Thirteen chapters in the order things happened, ten
   puzzles, and six interactive figures on synthetic teeth. It is static and self-contained, with self-hosted fonts and
   a Caddy redirect. See [2026-10-30-margin-algorithm-page.md](2026-10-30-margin-algorithm-page.md).
+- Fix: `/algorithm/` served the landing page because Caddy's `try_files {path}` never matches a directory. It now also
+  tries `{path}index.html`. Checked in `caddy:2` at the root and under a sub-path. See
+  [2026-10-30-margin-algorithm-page.md](2026-10-30-margin-algorithm-page.md).
