@@ -486,3 +486,17 @@ with Auto-design next.
 - 126 tests. See [2026-10-30-prep-finder-sections.md](2026-10-30-prep-finder-sections.md),
   [2026-10-30-front-tooth-frame-side.md](2026-10-30-front-tooth-frame-side.md) and
   [2026-10-30-cement-gap-real-scans.md](2026-10-30-cement-gap-real-scans.md).
+
+**2026-10-30: round two on real scans: the cement gap, contacts, pontics and the prep finder.**
+- Cement gap: two intaglio profiles per rim interval and 80 points per profile, and the check now skips walls blocked
+  out under an overhang. Real crowns within 0.01 mm: 16 of 18 (the other 2 have margins 0.3–0.4 mm off). Retainers:
+  0.008–0.011 mm. Crowns take 0.70 s.
+- Neighbour contacts: the neighbour's tooth, not the prep's own cusps or the gum behind the last molar.
+- Pontics: the base follows a partly scanned ridge and spans holes.
+- Prep finder: re-centring on wide molars and one ring per prep. Posterior lab preps found: 18 of 26. False preps on
+  28 natural jaws: still 0.
+- 126 tests; the golden cases 15/15; all 13 offline browser scripts pass. See
+  [2026-10-30-cement-gap-real-scans.md](2026-10-30-cement-gap-real-scans.md),
+  [2026-10-30-neighbour-contacts.md](2026-10-30-neighbour-contacts.md),
+  [2026-10-30-pontic-partial-ridge.md](2026-10-30-pontic-partial-ridge.md) and
+  [2026-10-30-prep-finder-sections.md](2026-10-30-prep-finder-sections.md).

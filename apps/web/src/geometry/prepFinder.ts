@@ -82,6 +82,8 @@ const PROFILES = 24;
 const PROFILE_STEP_MM = 0.05;
 const PROFILE_RADIUS_MM = 8;
 const MIN_RING = 0.65;
+/** Ledge points of two rings this close (mm) are the same finish line. */
+const SAME_LEDGE_MM = 1;
 /** The section ledge (step 4): the wall's steepness and drop, the chamfer's and lip's turns, the lip's reach and drop. */
 const LEDGE = { wallDeg: 50, wallDropMm: 1, innerTurnDeg: 8, lipTurnDeg: 12, lipWithinMm: 1.5, dropAfterMm: 0.4 } as const;
 /** Turns are measured over ±this many profile samples (±0.15 mm), and corners are extremes within it. */
@@ -135,6 +137,7 @@ export function findPreps(input: PrepFinderInput): PrepFinding {
   // 4. The finish line around each peak.
   const cut = { positions: P, indices: Uint32Array.from(input.indices), grid: input.grid ?? buildTriangleGrid(P, Uint32Array.from(input.indices)) };
   const sites: PrepSite[] = [];
+  const ledgesOf: V3[][] = [];
   for (const i of peaks) {
     const s = i * S_STEP_MM;
     const frame = { mesial: curve.tangentAt(s), buccal: curve.normalAt(s) };
@@ -148,14 +151,38 @@ export function findPreps(input: PrepFinderInput): PrepFinding {
         if (along.fraction > ring.fraction) ring = along;
       }
     }
+    if (ring.fraction >= RETRY_RING && ring.fraction < MIN_RING && ring.ledges.length > 0) {
+      // A peak off the prep's centre (a wide molar's highest cusp): profiled again from the top over the centre of the
+      // ledges it found, where every profile crosses the wall square on.
+      const c = ring.ledges.reduce<V3>((acc, p) => add(acc, scale(p, 1 / ring.ledges.length)), [0, 0, 0]);
+      const h = heightAt(c, ring.axis);
+      if (h !== null) {
+        const centred = sectionFinishLine(cut, add(c, scale(ring.axis, h - dot(c, ring.axis))), ring.axis, frame.mesial);
+        if (centred.fraction > ring.fraction) ring = centred;
+      }
+    }
     if (ring.fraction < MIN_RING) continue;
     // The ring's centre: the centroid of the ledge points, in the plane across the profiles' axis.
     const c = ring.ledges.reduce<V3>((acc, p) => add(acc, scale(p, 1 / ring.ledges.length)), [0, 0, 0]);
     const h = heightAt(c, ring.axis);
     if (h === null) continue;
     const top = add(c, scale(ring.axis, h - dot(c, ring.axis)));
+    // The same prep found again: a wide molar's second peak can ring it from a centre 3–5 mm off. Two rings are one
+    // prep when a third of the new ring's ledge points lie within SAME_LEDGE_MM of the other's (the same finish line,
+    // sampled from another centre: measured 48–94% on real duplicates, 0 between neighbouring preps); the stronger
+    // ring stays.
+    const same = sites.findIndex((_, k) => {
+      const near = ring.ledges.filter((p) => ledgesOf[k]!.some((q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) <= SAME_LEDGE_MM)).length;
+      return near >= ring.ledges.length / 3;
+    });
+    if (same >= 0) {
+      if (sites[same]!.ring >= ring.fraction) continue;
+      sites.splice(same, 1);
+      ledgesOf.splice(same, 1);
+    }
     if (sites.some((x) => Math.hypot(x.top[0] - top[0], x.top[1] - top[1], x.top[2] - top[2]) < PEAK_SPACING_MM)) continue;
     sites.push({ top, s: curve.project(top), ring: ring.fraction });
+    ledgesOf.push(ring.ledges);
   }
   sites.sort((a, b) => a.s - b.s);
   // 7. Scan bodies: a flat round top on a tall wall, and no ledge.

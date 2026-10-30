@@ -101,3 +101,37 @@ Measured with `data/exocad/scripts/prepDiag.mts` and `prepSection.mts` (local).
 - **Wide, low molars** (035/46, 045/46): the same occlusal-surface trouble as the margin's.
 - **The two unconfirmed rings** (031, 056): a look at them when the in-house cases come.
 - **Time:** about 0.3 s more per scan, once. Profiles could stop at the first ledge.
+
+## Round two (2026-10-30): off-centre peaks, duplicate rings, wall-free preps
+
+- **Re-centring** (`prepFinder.ts`).
+  - A candidate ringed partway (0.4 up to 0.65) is profiled again from the top over the centre of the ledges it found.
+  - A wide molar's highest cusp can lie 2.6 mm off the prep's centre. From 042/26's own top its ring is 0.83, from the
+    peak below threshold.
+  - Posterior lab preps found: 17 → **18 of 26**.
+- **One ring per prep.** Re-centring rang 042's 26 and 27 twice, from centres 3–5 mm apart. A fixed 3 mm spacing did
+  not catch them, and neither did the ring's radius.
+  - The same prep is the same finish line. A new ring is a duplicate when a third of its ledge points lie within 1 mm
+    of an existing ring's (`SAME_LEDGE_MM`). The stronger ring stays.
+  - Measured: 48–94% shared on the real duplicates, 0 between neighbouring preps.
+  - 042 now has one ring per prepped tooth (8 on each jaw, 17 included).
+- **Wall-free preps** (035/46, 045/46).
+  - Their surface slopes down without a wall and turns sharper at the margin, so they ring 0.25–0.29 even from their
+    tops.
+  - A wall-free variant (a sharp convex corner below 1 mm of drop, then a drop) catches them only with a corner of 20°
+    or less. That also rings 2–3 natural peaks at 0.65 or more.
+  - Not added: a wrong ring is worse than none.
+
+| | Round one | Round two |
+|---|---|---|
+| Posterior lab preps found (26) | 17 | **18** |
+| Anterior lab preps found (20) | 9 | 9 |
+| False preps on 28 natural jaws | 0 | **0** |
+| Rings on 042 (8 prepped teeth per jaw) | upper 7, lower 8 | 8 and 8, one per tooth |
+| Time per jaw (median, max) | 0.64 s, 1.16 s | 0.63 s, 1.18 s |
+
+`prepFinder.test.ts` passes unchanged. Its pairing test is the one-ring-per-prep guard on the synthetic jaws, where
+peaks are centred; the real duplicates came from wide molars.
+
+Browser scripts after round two: all 13 offline ones pass (with the cement-gap, contact and pontic changes of the same
+day).
