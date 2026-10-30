@@ -116,6 +116,13 @@ const normalize = (a: V3): V3 => {
   return [a[0] / l, a[1] / l, a[2] / l];
 };
 
+/**
+ * The intaglio's envelope samples (buildIntaglio) are refined where neighbours lie farther apart than this (mm), up to
+ * this many halvings: on a near-vertical wall a radial step of 0.02 mm moves 0.4 mm down.
+ */
+const ENVELOPE_GAP_MM = 0.05;
+const ENVELOPE_SPLITS = 6;
+
 /** Orthonormal (u, v) with u × v = axis. */
 export function planeBasis(axis: V3): [V3, V3] {
   const u = normalize(cross(Math.abs(axis[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0], axis));
@@ -200,11 +207,29 @@ export function buildIntaglio(input: {
     const pa = dot(p, u), pb = dot(p, v);
     poly.length = 0;
     poly.push(p);
+    // Where two neighbouring samples lie farther apart than ENVELOPE_GAP_MM (a steep wall: a step across moves far
+    // down), sample between them, halving up to ENVELOPE_SPLITS times; a blocked-out undercut stays a vertical drop.
+    const cast = (t: number) => input.offset.first(at(pa + t * (ca - pa), pb + t * (cb - pb)), down, 80)?.point ?? null;
+    const refine = (t0: number, a: V3, t1: number, b: V3, depth: number) => {
+      if (depth >= ENVELOPE_SPLITS || Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) <= ENVELOPE_GAP_MM) return;
+      const tm = (t0 + t1) / 2;
+      const m = cast(tm);
+      if (!m) return;
+      refine(t0, a, tm, m, depth + 1);
+      poly.push(m);
+      refine(tm, m, t1, b, depth + 1);
+    };
+    let prevT = 0;
     for (let s = 1; s < S; s++) {
       const t = s / S;
-      const hit = input.offset.first(at(pa + t * (ca - pa), pb + t * (cb - pb)), down, 80);
-      if (hit) poly.push(hit.point);
-      else misses++;
+      const hit = cast(t);
+      if (!hit) {
+        misses++;
+        continue;
+      }
+      refine(prevT, poly[poly.length - 1]!, t, hit, 0);
+      poly.push(hit);
+      prevT = t;
     }
     poly.push(centre);
     // Resample by 3D arc length to P points (j = 0 is the rim; the centre is shared).

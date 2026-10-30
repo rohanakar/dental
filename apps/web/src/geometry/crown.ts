@@ -695,6 +695,9 @@ export function proposeCrownPoseFor(
  * out to the thickness profile, and joined to the intaglio by the margin band
  * into one closed, outward-oriented mesh.
  */
+/** Points per radial profile of a crown's intaglio (buildIntaglio). */
+const INTAGLIO_PROFILE_POINTS = 64;
+
 export function designCrown(input: CrownInput): CrownDesign {
   const timings: Record<string, number> = {};
   let t = performance.now();
@@ -732,7 +735,9 @@ export function designCrown(input: CrownInput): CrownDesign {
   const distance = distanceFromMargin(jaw.positions, jaw.graph, region.vertexMask, region.loopVertices);
   const offset = offsetPrep({ positions: jaw.positions, indices: jaw.indices, normals: jaw.smoothNormals, faceMask: region.faceMask, distance, params });
   lap('offset');
-  const intaglio = buildIntaglio({ offset: offset.ray, rim, axis });
+  // 64 points per profile: a real prep's tall walls and tight line angles need them for a ±0.01 mm gap
+  // (specs/2026-10-30-cement-gap-real-scans.md).
+  const intaglio = buildIntaglio({ offset: offset.ray, rim, axis, profilePoints: INTAGLIO_PROFILE_POINTS });
   warnings.push(...intaglio.warnings);
   lap('intaglio');
 
