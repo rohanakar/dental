@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { proposeMarginAnchors } from './autoMargin';
 import { liveWireWeight, marginFromAnchors } from './livewire';
+import { refineMargin } from './marginRefine';
 import type { IndexedMesh } from './mesh';
 import type { V3 } from './pca';
 import { analyzeSurface } from './surface';
@@ -83,6 +84,11 @@ describe('automatic margin on the synthetic prep: 46 (mirrored)', () => {
     expect(sum / n).toBeLessThan(0.15);
     expect(max).toBeLessThan(0.5);
     expect(trace.lengthMm).toBeGreaterThan(20);
+
+    // The refiner on this clean scan: quiet, so the doubt warning picks the line, and finds no stretch to doubt.
+    const refined = refineMargin({ ...jaw, graph: surface.graph, weight: liveWireWeight(surface.curvature), frame })!;
+    expect(refined.quiet).toBe(true);
+    expect(refined.doubtParts).toBe(0);
   });
 
   it('finds the margin below a tall undercut wall, at the lip of the chamfer', () => {

@@ -1,6 +1,6 @@
 import { type Command, jawOf, type StepId, unitKind } from '@dcad/shared';
 import { marginProposer } from '../ai/proposers';
-import { passed } from '../ai/qa';
+import { MARGIN_DOUBT_CHECK, passed } from '../ai/qa';
 import { useDesignStore } from '../design/store';
 import { sceneController } from '../state/sceneController';
 import { isStale } from '../workers/latestWins';
@@ -57,7 +57,7 @@ export function autoMargins(): void {
 
 /**
  * Find the margins of `teeth` (the Margin step's "Find all margins", and the automatic pass): one undo step for every
- * margin that passes its checks; the others are named.
+ * margin that passes its checks, or fails only the doubt check (named, to check its marked parts); the others are named.
  */
 export async function findMargins(teeth: number[]): Promise<void> {
   if (running || teeth.length === 0) return;
@@ -67,15 +67,18 @@ export async function findMargins(teeth: number[]): Promise<void> {
   try {
     const cmds: Command[] = [];
     const found: number[] = [];
+    const doubtful: number[] = [];
     const failed: string[] = [];
     for (const fdi of teeth) {
       // One tooth's failure (no ridge found) does not stop the others.
       try {
         const proposal = await marginProposer.run({ fdi });
         const bad = proposal.qa.find((c) => !c.passed);
-        if (passed(proposal.qa)) {
+        // A line whose only failure is a doubtful stretch is kept, to check where the Margin step marks it.
+        const onlyDoubt = !passed(proposal.qa) && proposal.qa.every((c) => c.passed || c.id === MARGIN_DOUBT_CHECK);
+        if (passed(proposal.qa) || onlyDoubt) {
           cmds.push(...proposal.output.commands);
-          found.push(fdi);
+          (onlyDoubt ? doubtful : found).push(fdi);
         } else failed.push(`${fdi}: ${bad ? bad.message.toLowerCase() : 'its checks failed'}`);
       } catch (e) {
         if (isStale(e)) throw e;
@@ -87,9 +90,10 @@ export async function findMargins(teeth: number[]): Promise<void> {
     const list = (xs: number[]) => (xs.length === 1 ? `${xs[0]}` : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`);
     const parts = [
       found.length ? `${found.length === 1 ? 'Margin' : 'Margins'} found for ${list(found)}: check ${found.length === 1 ? 'it' : 'them'}, drag a point to adjust.` : '',
+      doubtful.length ? `Found for ${list(doubtful)}, but a stronger edge runs beside part of ${doubtful.length === 1 ? 'it' : 'them'}: check the marked parts.` : '',
       failed.length ? `Not found cleanly, trace by hand: ${failed.join('; ')}.` : '',
     ].filter(Boolean);
-    tools.set({ message: { kind: failed.length ? 'warning' : 'info', text: parts.join(' ') } });
+    tools.set({ message: { kind: failed.length || doubtful.length ? 'warning' : 'info', text: parts.join(' ') } });
   } catch (e) {
     if (!isStale(e)) tools.set({ message: { kind: 'warning', text: `The margins could not be found: ${errorText(e)}. Trace them by hand.` } });
   } finally {

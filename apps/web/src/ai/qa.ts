@@ -57,7 +57,13 @@ export { sharpestTurnDeg };
  * dense resampled margin (~0.2 mm); a turn sharper than 120° over a ~0.6 mm
  * stride means the live-wire doubled back.
  */
-export function marginGate(input: { points: ReadonlyArray<V3>; lengthMm: number; prepClosed?: boolean; confidence?: number; wander?: number }): QaCheck[] {
+/**
+ * The margin gate's doubt check: an automatic finish line beside a clearly stronger edge (marginDoubt) stops for review.
+ * It says nothing about whether the tooth is prepared, so the finish-or-gum choice leaves it out.
+ */
+export const MARGIN_DOUBT_CHECK = 'margin.doubt';
+
+export function marginGate(input: { points: ReadonlyArray<V3>; lengthMm: number; prepClosed?: boolean; confidence?: number; wander?: number; doubtParts?: number }): QaCheck[] {
   const turn = sharpestTurnDeg(input.points);
   const checks = [
     check('margin.length', input.lengthMm >= MARGIN_LENGTH_MM[0] && input.lengthMm <= MARGIN_LENGTH_MM[1], 'Margin length within 8–60 mm', input.lengthMm, undefined, { unit: 'mm' }),
@@ -68,6 +74,8 @@ export function marginGate(input: { points: ReadonlyArray<V3>; lengthMm: number;
     checks.push(check('margin.wander', input.wander <= MARGIN_MAX_WANDER, 'No detours: traced length over the length round its anchors', input.wander, MARGIN_MAX_WANDER, { bound: 'max' }));
   }
   if (input.confidence !== undefined) checks.push(check('margin.ridge', input.confidence >= 0.75, 'The margin edge shows clearly around the prep: share of the way round', input.confidence, 0.75, { unit: 'fraction', bound: 'min' }));
+  // Only on a quiet scan (specs/2026-10-29-margin-doubt-in-refiner-and-gate.md): on a rough one noise reads as creases.
+  if (input.doubtParts !== undefined) checks.push(check(MARGIN_DOUBT_CHECK, input.doubtParts === 0, 'Stretches where a clearly stronger edge runs beside the line', input.doubtParts, 0, { bound: 'max' }));
   return checks;
 }
 

@@ -46,6 +46,7 @@ import {
   implantSeatGate,
   gumLineGate,
   marginGate,
+  MARGIN_DOUBT_CHECK,
   passed,
   scanBodyGate,
   screwChannelGate,
@@ -242,7 +243,9 @@ export const marginProposer: Proposer = {
     const chosen = useToolStore.getState().marginLine[ctx.fdi] ?? (ctx.tooth.margin?.line === 'gum' ? 'gum' : undefined);
     if (chosen === 'gum') return gumLineProposal(ctx, frame, 'chosen');
     const finish = await finishLineProposal(ctx, frame);
-    if (chosen === 'finish' || passed(finish.qa) || (await prepAtTooth(ctx, frame))) return finish;
+    // A doubtful stretch does not make the tooth natural: the finish-or-gum choice leaves the doubt check out.
+    const shape = finish.qa.filter((c) => c.id !== MARGIN_DOUBT_CHECK);
+    if (chosen === 'finish' || passed(shape) || (await prepAtTooth(ctx, frame))) return finish;
     return gumLineProposal(ctx, frame, 'fallback');
   },
 };
@@ -262,7 +265,7 @@ async function finishLineProposal(ctx: ToothContext, frame: Frame): Promise<Prop
   return {
     proposerId: marginProposer.id,
     output: { commands: [{ type: 'setMargin', fdi: ctx.fdi, margin }], artifact: { anchors: trace.anchors, points: points.map((m) => m.p) } },
-    qa: marginGate({ points: points.map((m) => m.p), lengthMm: trace.lengthMm, prepClosed: region.prepClosed, confidence: trace.confidence, wander: trace.wander }),
+    qa: marginGate({ points: points.map((m) => m.p), lengthMm: trace.lengthMm, prepClosed: region.prepClosed, confidence: trace.confidence, wander: trace.wander, ...(trace.doubtParts !== undefined ? { doubtParts: trace.doubtParts } : {}) }),
     rationale: `The margin follows the prep's finish line, the sharpest edge below its walls, found in ${Math.round(trace.confidence * 100)}% of the directions around the tooth (${trace.lengthMm.toFixed(1)} mm long; ${trace.method}).`,
   };
 }

@@ -326,9 +326,18 @@ const api = {
     const t0 = performance.now();
     const scan = registry.get(request.jawSha);
     const ray = rayOf(scan);
-    // The refiner's best candidate (geometry/marginRefine.ts): it includes the plain 16-profile trace, and repairs a
-    // noisy scan's false edges and jitter.
-    const best = refineMargin({ positions: scan.positions, indices: scan.indices, ray, graph: surfaceOf(scan).graph, weight: weightOf(scan), frame: request.frame });
+    // The refiner's best candidate (geometry/marginRefine.ts): it includes the plain 16-profile trace, repairs a noisy
+    // scan's false edges and jitter, and on a quiet scan lets the doubt warning pick between passing lines.
+    const best = refineMargin({
+      positions: scan.positions,
+      indices: scan.indices,
+      ray,
+      graph: surfaceOf(scan).graph,
+      weight: weightOf(scan),
+      frame: request.frame,
+      normals: scan.normals,
+      grid: registry.cached(scan, 'triangleGrid', () => buildTriangleGrid(scan.positions, scan.indices)),
+    });
     if (!best) throw new Error('No margin ridge found around the prep (check the tooth frame)');
     const result: AutoMarginResult = {
       points: best.points,
@@ -338,6 +347,8 @@ const api = {
       confidence: best.confidence,
       wander: best.wander,
       method: best.name,
+      quiet: best.quiet,
+      ...(best.doubtParts !== undefined ? { doubtParts: best.doubtParts } : {}),
       ms: performance.now() - t0,
     };
     return Comlink.transfer(result, [best.points.buffer as ArrayBuffer]);

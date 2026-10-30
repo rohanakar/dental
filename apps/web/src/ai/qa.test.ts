@@ -30,7 +30,7 @@ const circle = (r: number, n: number, jitter = 0): V3[] =>
 const validation = { triangles: 1, vertices: 1, boundaryEdges: 0, nonManifoldEdges: 0, inconsistentEdges: 0, degenerateTriangles: 0, signedVolumeMm3: 300, closed: true, oriented: true, ok: true };
 
 describe('QA gates', () => {
-  it('margin: passes a smooth closed loop, fails a kink, a short loop, a leak and low confidence', () => {
+  it('margin: passes a smooth closed loop, fails a kink, a short loop, a leak, low confidence and a doubtful stretch', () => {
     const smooth = circle(4, 120);
     expect(passed(marginGate({ points: smooth, lengthMm: 25, prepClosed: true, confidence: 1 }))).toBe(true);
     const kinked = [...smooth];
@@ -39,6 +39,9 @@ describe('QA gates', () => {
     expect(passed(marginGate({ points: smooth, lengthMm: 5 }))).toBe(false);
     expect(passed(marginGate({ points: smooth, lengthMm: 25, prepClosed: false }))).toBe(false);
     expect(passed(marginGate({ points: smooth, lengthMm: 25, confidence: 0.5 }))).toBe(false);
+    // On a quiet scan: no stretch beside a stronger edge passes, two fail.
+    expect(passed(marginGate({ points: smooth, lengthMm: 25, doubtParts: 0 }))).toBe(true);
+    expect(passed(marginGate({ points: smooth, lengthMm: 25, doubtParts: 2 }))).toBe(false);
   });
 
   it('measures turns over a stride: ignores vertex-snapping jitter, catches a doubled-back spike', () => {

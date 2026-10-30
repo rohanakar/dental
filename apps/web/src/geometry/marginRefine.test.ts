@@ -39,6 +39,8 @@ describe('margin refiner', () => {
 
     const refined = refineMargin(noisyPrep)!;
     expect(refined.passes).toBe(true);
+    // A rough scan: its noise reads as creases, so the doubt warning does not judge the line.
+    expect(refined.quiet).toBe(false);
     const truth = syntheticPrepMargin({ fdi: 45, along: ALONG, samples: 256 });
     const off = points(refined.points).map((p) => distanceToClosedPolyline(p, truth));
     expect(off.reduce((a, b) => a + b, 0) / off.length).toBeLessThan(0.15);

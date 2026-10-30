@@ -1,6 +1,7 @@
 import { proposeMarginAnchors, QUIET_TURN_DEG, type AutoMarginProfile, type ProfileCandidate } from './autoMargin';
 import { buildTriangleGrid, type TriangleGrid } from './crossSection';
 import { marginFromAnchors, type EdgeWeight } from './livewire';
+import { marginDoubt } from './marginDoubt';
 import { MARGIN_LENGTH_MM, MARGIN_MAX_TURN_DEG, MARGIN_MAX_WANDER, sharpestTurnDeg } from './marginShape';
 import type { V3 } from './pca';
 import type { RayCaster } from './raycast';
@@ -31,6 +32,11 @@ export interface RefineInput {
   frame: { origin: V3; occlusal: V3; mesial: V3 };
   /** Triangles bucketed for the profiles' sections (built once here when omitted). */
   grid?: TriangleGrid;
+  /**
+   * Unit vertex normals. With them, on a quiet scan the doubt warning (marginDoubt) picks between passing candidates:
+   * a line beside a clearly stronger edge loses to one on its own edge.
+   */
+  normals?: Float32Array;
 }
 
 export interface RefineCandidate {
@@ -56,6 +62,10 @@ export interface RefineCandidate {
 export interface RefineResult extends RefineCandidate {
   /** Every candidate traced, best first. */
   candidates: Array<Omit<RefineCandidate, 'points' | 'anchors' | 'anchorVertices'>>;
+  /** The scan's profiles were quiet (roughnessDeg ≤ QUIET_TURN_DEG): the doubt warning can be trusted on it. */
+  quiet: boolean;
+  /** With normals, on a quiet scan, for a passing line: its off stretches (marginDoubt), 0 when it is on its edge. */
+  doubtParts?: number;
 }
 
 /** An anchor this far (mm) from its neighbours' median radius, or drop, leaves the ring. */
@@ -236,6 +246,26 @@ export function refineMargin(input: RefineInput): RefineResult | null {
   }
   if (candidates.length === 0) return null;
   candidates.sort(better);
-  const best = candidates[0]!;
-  return { ...best, candidates: candidates.map(({ points: _p, anchors: _a, anchorVertices: _v, ...c }) => c) };
+  let best = candidates[0]!;
+  // On a quiet scan, the first passing line (in that order) the doubt warning finds no off stretch on, else the one with
+  // the fewest (specs/2026-10-29-margin-doubt-in-refiner-and-gate.md). On a rough scan noise reads as creases.
+  let doubtParts: number | undefined;
+  const { normals } = input;
+  if (normals && !rough) {
+    for (const c of candidates) {
+      if (!c.passes) break;
+      const points: V3[] = [];
+      for (let i = 0; i < c.points.length / 3; i++) points.push(at(c.points, i));
+      const parts = marginDoubt({ positions: input.positions, indices: input.indices, normals, ray: input.ray, up: input.frame.occlusal, points, line: 'finish' }).parts.length;
+      if (doubtParts === undefined || parts < doubtParts) [best, doubtParts] = [c, parts];
+      if (parts === 0) break;
+    }
+  }
+  const rest = candidates.filter((c) => c !== best);
+  return {
+    ...best,
+    candidates: [best, ...rest].map(({ points: _p, anchors: _a, anchorVertices: _v, ...c }) => c),
+    quiet: !rough,
+    ...(doubtParts !== undefined ? { doubtParts } : {}),
+  };
 }

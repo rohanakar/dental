@@ -464,3 +464,14 @@ with Auto-design next.
   at a median 0.02 mm. The synthetic evaluation is unchanged at 16/17.
 - The doubt warning flags 8/8 of the remaining wrong lines; putting it into the gate is the next step.
 - 126 tests. See [2026-10-29-margin-on-real-preps.md](2026-10-29-margin-on-real-preps.md).
+
+**2026-10-29: the margin, round two.**
+- On a quiet scan the doubt warning picks between the refiner's candidate lines: the first passing line on its own
+  edge wins.
+- A `margin.doubt` check in the margin gate stops one-click on a doubtful line. The finish-or-gum choice leaves it
+  out, and Find all margins keeps such a line for review.
+- Posterior exocad margins: 28 → 30 right of 36. Anterior (never tuned on): 12 → 14 of 27. Synthetic evaluation
+  unchanged.
+- The gate now stops 4 of the 6 wrong posterior lines, and 1 of 30 right ones.
+- 126 tests; all 13 offline browser scripts pass. See
+  [2026-10-29-margin-doubt-in-refiner-and-gate.md](2026-10-29-margin-doubt-in-refiner-and-gate.md).

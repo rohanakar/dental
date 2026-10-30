@@ -180,6 +180,10 @@ export interface AutoMarginResult extends MarginTrace {
   wander: number;
   /** Which refiner candidate won (profile count, ring-consistent anchors, smoothing). */
   method: string;
+  /** The scan's profiles were quiet: the doubt warning can be trusted on it (marginRefine.ts). */
+  quiet: boolean;
+  /** On a quiet scan, for a passing line: its off stretches (geometry/marginDoubt.ts), 0 when it is on its edge. */
+  doubtParts?: number;
   ms: number;
 }
 

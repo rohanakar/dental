@@ -147,7 +147,7 @@ export const plainMethod: MarginMethod = async (c) => {
 
 /** The refiner (geometry/marginRefine.ts): ring-consistent anchors, a few profile counts, a smoothed trace. */
 export const refineMethod: MarginMethod = async (c) => {
-  const r = refineMargin({ positions: c.positions, indices: c.indices, ray: c.ray, graph: c.surface.graph, weight: liveWireWeight(c.surface.curvature), frame: c.frame });
+  const r = refineMargin({ positions: c.positions, indices: c.indices, ray: c.ray, graph: c.surface.graph, weight: liveWireWeight(c.surface.curvature), frame: c.frame, normals: c.normals });
   if (!r) return { points: [], lengthMm: 0, anchors: [], steps: 0, note: 'no ridge' };
   const points: V3[] = [];
   for (let i = 0; i < r.points.length; i += 3) points.push([r.points[i]!, r.points[i + 1]!, r.points[i + 2]!]);
