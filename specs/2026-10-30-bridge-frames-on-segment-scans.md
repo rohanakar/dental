@@ -140,6 +140,8 @@ The two design changes, and three more that the 044 bridge needed once its frame
   - **Extended** "seats on the prep" (`crown.test.ts`, 36 only): an intaglio pulled 0.15 mm into the walls measures
     over 0.1 mm of error. Old code: 0 (every sample skipped).
 - `pnpm typecheck` and `pnpm test` pass.
+- **Browser scripts:** all 13 offline ones pass, run two at a time. The first run of `crown-move` timed out once on a
+  legend check while the machine was busy, and passed on a rerun.
 
 ### Follow-ups
 
