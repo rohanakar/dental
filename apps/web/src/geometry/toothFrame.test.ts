@@ -62,7 +62,7 @@ describe('tooth frame', () => {
     expect(Math.abs(dot(frame.mesial, frame.buccal))).toBeLessThan(1e-6);
   });
 
-  it('follows the prep axis on leaning front teeth (the crown on it is printable); upright ones keep the jaw frame', () => {
+  it('follows the prep axis on leaning front teeth (the crown on it is printable), and faces the antagonist from a tilted click; upright ones keep the jaw frame', () => {
     // 600 × 300: below that the small incisor prep's crown can fold at its rounded line angle, leaning or not.
     const along = 600;
     const LEAN = 25;
@@ -86,6 +86,22 @@ describe('tooth frame', () => {
       expect(frame.warnings).toEqual([]);
       return frame;
     });
+
+    // Real front teeth (specs/2026-10-30-front-tooth-frame-side.md): the normals near a click on the tooth's slope tilt
+    // 25–32° labially, and the antagonist's centroid lies only a few mm past the incisal edges but 15–25 mm behind
+    // them. The side toward the antagonist is the jaw's, so the frame does not flip.
+    const tilt = (30 * Math.PI) / 180;
+    const normals = upper.normals.slice();
+    for (let i = 0; i < normals.length; i += 3) {
+      const [y, z] = [normals[i + 1]!, normals[i + 2]!];
+      [normals[i + 1], normals[i + 2]] = [y * Math.cos(tilt) - z * Math.sin(tilt), y * Math.sin(tilt) + z * Math.cos(tilt)];
+    }
+    const top = syntheticPrepSeed({ fdi: 11, along, anteriorLeanDeg: LEAN });
+    const behind = unit([-top[0], -top[1], 0]);
+    const antagonist = Float32Array.from(Array.from({ length: 8 }, (_, k) => [top[0] + 20 * behind[0] + Math.cos(k), top[1] + 20 * behind[1] + Math.sin(k), top[2] - 4]).flat());
+    const tilted = estimateToothFrame({ jaw: { ...upper, normals }, antagonist: { positions: antagonist }, seed: top, fdi: 11, ray: upper.ray, prep: true });
+    expect(tilted.occlusal[2]).toBeLessThan(-0.7);
+    expect(tilted.warnings.some((w) => w.includes('antagonist'))).toBe(false);
 
     // The crown on 21 along the least-undercut axis from its frame: no margin point in undercut, a printable solid.
     const frame = frames[1]!;

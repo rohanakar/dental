@@ -122,7 +122,11 @@ export function estimateToothFrame(input: {
   if (Math.abs(align) >= COS_25) occlusal = align >= 0 ? pca.axes[2] : scale(pca.axes[2], -1);
   if (input.antagonist && input.antagonist.positions.length >= 3) {
     const ca = principalAxes(input.antagonist.positions, 20_000).centroid;
-    if (dot(occlusal, sub(ca, seed)) < 0) {
+    // The side toward the antagonist is the jaw's: its least-variance axis, from its centroid toward the antagonist's.
+    // From a front tooth the antagonist's centroid lies mostly behind it, so a normal tilted with the tooth's slope
+    // would read as pointing away (specs/2026-10-30-front-tooth-frame-side.md).
+    const jawUp = dot(pca.axes[2], sub(ca, pca.centroid)) >= 0 ? pca.axes[2] : scale(pca.axes[2], -1);
+    if (dot(occlusal, jawUp) < 0) {
       occlusal = scale(occlusal, -1);
       warnings.push('Surface normals point away from the antagonist; check that the scans are assigned to the right jaws.');
     }
