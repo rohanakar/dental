@@ -275,7 +275,7 @@ export function AutoDesign({ seed, compact = false, primary = true }: { seed?: V
       {!ownDraft && (
         <>
           <div className="row">
-            <button className={`btn${primary ? ' primary' : ''}`} disabled={!canStart} onClick={() => void runAutoDesign(seed ? { seed } : {})}>
+            <button className={`btn${primary ? ' primary' : ''}`} disabled={!canStart} onClick={() => void runAutoDesign({ ...(seed ? { seed } : {}), keepReviewed: compact })}>
               {running ? 'Designing…' : bridge ? 'Auto-design bridge' : `Auto-design ${unit}`}
             </button>
             {bridge

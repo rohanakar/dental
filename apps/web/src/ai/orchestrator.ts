@@ -118,6 +118,27 @@ const patchRow = (key: string, patch: Partial<StepRun>) =>
 const settleCrown = () =>
   Promise.race([crownTool.settled(), new Promise<null>((resolve) => setTimeout(() => resolve(null), SETTLE_TIMEOUT_MS))]);
 
+/** Steps whose output a run started from a step panel keeps once the user has it (frames, margins, the axis). */
+const KEEPABLE: readonly StepId[] = ['frame', 'margin', 'axis'];
+
+/**
+ * A row whose output the units already have, not stale: a run started from a step panel keeps it
+ * (specs/2026-10-30-auto-design-keeps-review.md), so a margin the user reviewed is not proposed again. A bridge-wide
+ * frame row lays out the pontics; a bridge-wide axis row is the common axis on the abutments. A row with the run's
+ * click (a frame being set now) always runs.
+ */
+function isReviewed(doc: DesignDocument, item: PlanItem, teeth: readonly number[]): boolean {
+  const step = item.proposer.step;
+  if (!KEEPABLE.includes(step) || item.seed) return false;
+  const kind = step === 'frame' ? 'pontic' : 'abutment';
+  const units = item.bridgeWide ? teeth.filter((f) => teeth.length === 1 || unitKind(doc.setup, f) === kind) : [item.unit ?? item.fdi];
+  const field = step === 'frame' ? 'frame' : step === 'margin' ? 'margin' : 'axis';
+  return units.length > 0 && units.every((f) => {
+    const tooth = doc.teeth.find((t) => t.fdi === f);
+    return Boolean(tooth?.[field]) && tooth?.steps[step] !== 'stale';
+  });
+}
+
 /**
  * One-click design: run the classical proposers in order inside one design-store transaction, applying each proposal
  * live and gating on deterministic QA checks. Stops at the first failed gate; the draft stays on screen until
@@ -129,7 +150,7 @@ const settleCrown = () =>
  *
  * Bridge (the active tooth is a unit of one): see runBridgeAutoDesign.
  */
-export async function runAutoDesign(opts: { seed?: V3; from?: StepId } = {}): Promise<void> {
+export async function runAutoDesign(opts: { seed?: V3; from?: StepId; keepReviewed?: boolean } = {}): Promise<void> {
   const design = useDesignStore.getState();
   if (useOrchestrator.getState().running) return;
   if (design.transaction) {
@@ -144,9 +165,10 @@ export async function runAutoDesign(opts: { seed?: V3; from?: StepId } = {}): Pr
     useOrchestrator.setState({ error: 'Click the prep first: auto-design starts from the tooth frame.' });
     return;
   }
-  const plan = PROPOSERS.filter((p) => applies(p, design.doc, tooth.fdi)).map(
+  const all = PROPOSERS.filter((p) => applies(p, design.doc, tooth.fdi)).map(
     (p): PlanItem => ({ key: p.id, proposer: p, fdi: tooth.fdi, bridgeWide: false, ...(opts.seed ? { seed: opts.seed } : {}) }),
   );
+  const plan = opts.keepReviewed ? all.filter((item) => !isReviewed(design.doc, item, [tooth.fdi])) : all;
   const startIndex = firstAtOrAfter(plan, start);
   await execute({ plan, startIndex, label: 'Auto-design', bridge: null });
 }
@@ -161,7 +183,7 @@ export async function runAutoDesign(opts: { seed?: V3; from?: StepId } = {}): Pr
  * margin, implant position or wing outline → the common axis (the implant path) → every unit → screw channels →
  * adaptation → cutback → the connector and union gate. Per-abutment rows run on the abutments they apply to.
  */
-async function runBridgeAutoDesign(opts: { seed?: V3; from?: StepId }): Promise<void> {
+async function runBridgeAutoDesign(opts: { seed?: V3; from?: StepId; keepReviewed?: boolean }): Promise<void> {
   const { doc, activeFdi } = useDesignStore.getState();
   const bridge = bridgeOf(doc, activeFdi)!;
   const abutments = bridge.teeth.filter((t) => unitKind(doc.setup, t) === 'abutment');
@@ -185,8 +207,9 @@ async function runBridgeAutoDesign(opts: { seed?: V3; from?: StepId }): Promise<
       plan.push({ key: p.id, proposer: p, fdi: activeFdi, bridgeWide: true });
     }
   }
-  const startIndex = opts.from ? firstAtOrAfter(plan, opts.from) : 0;
-  await execute({ plan, startIndex, label: `Auto-design bridge ${bridge.teeth[0]}–${bridge.teeth.at(-1)}`, bridge: [...bridge.teeth] });
+  const kept = opts.keepReviewed ? plan.filter((item) => !isReviewed(doc, item, bridge.teeth)) : plan;
+  const startIndex = opts.from ? firstAtOrAfter(kept, opts.from) : 0;
+  await execute({ plan: kept, startIndex, label: `Auto-design bridge ${bridge.teeth[0]}–${bridge.teeth.at(-1)}`, bridge: [...bridge.teeth] });
 }
 
 /**

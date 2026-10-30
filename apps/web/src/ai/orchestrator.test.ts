@@ -210,7 +210,7 @@ describe('auto-design orchestrator', () => {
     expect(useDesignStore.getState().doc).toBe(implants);
   });
 
-  it('starts at the margin when a frame exists, and logs edits on save (crown and bridge)', async () => {
+  it('starts at the margin when a frame exists, keeps what was reviewed when run from a step panel, and logs edits on save (crown and bridge)', async () => {
     useDesignStore.getState().dispatch({ type: 'setFrame', fdi: 36, frame });
     await runAutoDesign();
     expect(useOrchestrator.getState().steps.map((s) => s.status)).toEqual(['skipped', 'passed', 'passed']);
@@ -250,6 +250,24 @@ describe('auto-design orchestrator', () => {
     useEventLog.setState({ queued: [] });
     recordEditsOnSave();
     expect(useEventLog.getState().queued).toEqual([]);
+
+    // From a step panel (keepReviewed; specs/2026-10-30-auto-design-keeps-review.md): the placed pontic and 35's
+    // reviewed margin are kept, 37's missing margin is found.
+    const reviewed = applyCommands(newDocument(), [
+      { type: 'setCaseSetup', setup: bridgeSetup },
+      // The pontic is laid out after its abutments (a later abutment frame marks it stale).
+      ...[35, 37, 36].map((fdi) => ({ type: 'setFrame' as const, fdi, frame })),
+      { type: 'setMargin', fdi: 35, margin },
+    ]);
+    useDesignStore.getState().load(reviewed, 0);
+    useDesignStore.getState().setActiveFdi(35);
+    Object.assign(behaviour, { proposalPasses: true, shift: 0 });
+    await runAutoDesign({ keepReviewed: true });
+    const rows = useOrchestrator.getState().steps.map((s) => [s.step, s.fdi]);
+    expect(rows).not.toContainEqual(['margin', 35]);
+    expect(rows).toContainEqual(['margin', 37]);
+    expect(rows.some(([step]) => step === 'frame')).toBe(false);
+    reject();
 
     // A single inlay with its frame: no proposer covers the (hand-traced) cavity margin, so the run starts at the axis.
     const inlay = applyCommands(newDocument(), [

@@ -59,3 +59,4 @@ and progress log.
 | [2026-10-30-golden-clicks-snap.md](2026-10-30-golden-clicks-snap.md): golden cases' scripted margin clicks snap onto the ridge like the app's | done (2026-10-30): golden 15/15; real margins move 0.001–0.008 mm |
 | [2026-10-30-auto-axis-when-ready.md](2026-10-30-auto-axis-when-ready.md): the insertion axis is proposed as soon as its margins are ready on the axis step (they may be found just after entering it), once per set of inputs | done (2026-10-30) |
 | [2026-10-30-pontics-follow-abutments.md](2026-10-30-pontics-follow-abutments.md): a redone abutment frame re-lays out the automatically placed pontics in the same undo step | done (2026-10-30) |
+| [2026-10-30-auto-design-keeps-review.md](2026-10-30-auto-design-keeps-review.md): auto-design from a step panel keeps the reviewed frames, margins and axis, and still does what is missing | done (2026-10-30) |

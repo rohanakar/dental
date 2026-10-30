@@ -500,3 +500,12 @@ with Auto-design next.
   [2026-10-30-neighbour-contacts.md](2026-10-30-neighbour-contacts.md),
   [2026-10-30-pontic-partial-ridge.md](2026-10-30-pontic-partial-ridge.md) and
   [2026-10-30-prep-finder-sections.md](2026-10-30-prep-finder-sections.md).
+- Follow-ups for a smoother run. The crown's rim leaves out a margin's kinks. The occlusal view faces the working
+  tooth's jaw. Golden clicks snap like the app's. The axis is proposed as soon as its margins are ready. Pontics follow
+  a redone abutment frame. Auto-design from a step panel keeps what was reviewed. 128 tests; the golden cases 15/15;
+  all 13 offline browser scripts pass. See [2026-10-30-crown-rim-guard.md](2026-10-30-crown-rim-guard.md),
+  [2026-10-30-occlusal-view-upper.md](2026-10-30-occlusal-view-upper.md),
+  [2026-10-30-golden-clicks-snap.md](2026-10-30-golden-clicks-snap.md),
+  [2026-10-30-auto-axis-when-ready.md](2026-10-30-auto-axis-when-ready.md),
+  [2026-10-30-pontics-follow-abutments.md](2026-10-30-pontics-follow-abutments.md) and
+  [2026-10-30-auto-design-keeps-review.md](2026-10-30-auto-design-keeps-review.md).
