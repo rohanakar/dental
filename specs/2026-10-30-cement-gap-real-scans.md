@@ -1,7 +1,7 @@
 # The cement gap on real scans
 
-Status: **done, partly** (2026-10-30). The gap is closer to its intent; the ±0.01 mm limit still fails on most real
-crowns. Whether to keep that limit for real scans is a decision (see the end).
+Status: **done** (2026-10-30). Round one improved the intaglio; round two (the same day) closed the corners and fixed
+the check. The ±0.01 mm limit now holds on 16 of 18 real crowns; the other 2 have input margins 0.3–0.4 mm off.
 
 ## Goal
 
@@ -58,7 +58,7 @@ to find out why, and fix what can be fixed.
 - The synthetic golden cases (15/15), the exocad golden cases (as above), and the browser scripts (see
   `2026-10-30-prep-finder-sections.md`, run together).
 
-## The decision left
+## The decision left after round one (since settled: see round two)
 
 The remaining maxima, 0.01–0.02 mm (0.03–0.04 on two crowns), sit at a few samples on tight axial corners. Two ways
 on:
@@ -66,3 +66,42 @@ on:
   of crown time and, with the columns, a bigger shell for every later step.
 - **Read the check differently on real scans.** For example, the 99th percentile within 0.01 mm and the maximum
   within 0.02 mm, about a milling tool's accuracy, keeping 0.01 mm as the maximum on the synthetic cases.
+
+## Round two (2026-10-30): the corners, and what the check counted
+
+### What changed
+- **Profiles between rim points** (`buildIntaglio`'s `between`; 2 for a crown, `INTAGLIO_BETWEEN` in `crown.ts`).
+  - A crown's intaglio has two radial profiles per interval of the template's cervical ring. Only the rim points are
+    rim vertices, so the shell still stitches one-to-one.
+  - The in-between profiles join the inner rows, and each rim point fans over its interval's first inner row.
+  - With `between` 1 the mesh is the one before.
+- **80 points per profile** (`INTAGLIO_PROFILE_POINTS`). 64 left three crowns at 0.0102–0.0121 mm on the sloped
+  areas near the line angle.
+  - Spacing the points by arc length plus turning was tried and dropped: scan noise reads as turning and starves other
+    parts, so worst errors rose to 0.053 mm.
+- **The check skips blocked-out walls** (`measureIntaglioGap`'s `prep`). A wall sample with the prep above it along the
+  insertion axis is under an overhang. The intaglio is blocked out there by design, so its gap grows.
+  - The check skipped undercuts by the wall's tilt alone, and a sideways-facing wall under an overhang passed that
+    test.
+  - On the 44 retainers every large error (up to 0.047 mm, positive) was such a wall, 0.3–0.9 mm under the overhang.
+    The rest were within 0.0064 mm.
+  - The crown's check and the bridge's seating check (`bridgeUnion.ts`) use the same samples.
+- **Tried and dropped:** moving intaglio vertices out to their gap from the closest prep point. The vertices already
+  keep their gap; the shortfall was in the triangles between them.
+
+### Results (local)
+
+| | Start | Round one | Round two |
+|---|---|---|---|
+| Single crowns within 0.01 mm (18) | 0 | 3 | **16** (the 2 over: 049/25 and 049/26, margins 0.3–0.4 mm off) |
+| Bridge retainers' max error (4) | 0.020–0.029 mm | 0.013–0.021 mm | **0.0078–0.0105 mm** |
+| Crown time on real scans (median) | 0.39 s | 0.52 s | 0.70 s (max 1.6 s) |
+| Bridge time (035, 045) | 1.5–1.6 s | 1.9–2.0 s | 2.6–2.7 s |
+
+Bridge seating is unchanged in the union on all 4 retainers. The synthetic golden cases pass 15 of 15, and
+`pnpm test` passes.
+- **Browser scripts:** all 13 offline ones pass on a clean run (an idle machine; an earlier run with heavy jobs beside it timed out on screenshots and clicks, and did not count).
+
+### The decision is no longer needed
+The limit stays ±0.01 mm. The remaining question is speed: crowns take about 0.3 s longer than before this work. If
+that matters, the profile points could adapt to the prep's height instead of a fixed 80.

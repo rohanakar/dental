@@ -194,6 +194,7 @@ export function checkBridgeUnion(input: {
             axis,
             params: u.params,
             intaglio: unionRay,
+            prep: { ray: jaw.ray, faceMask: u.region.faceMask },
           });
       const deltaMeanMm = Math.abs(onUnion.meanErrorMm - design.gapCheck.meanErrorMm);
       const deltaMaxMm = Math.abs(onUnion.maxErrorMm - design.gapCheck.maxErrorMm);

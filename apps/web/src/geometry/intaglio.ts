@@ -157,12 +157,15 @@ export function buildIntaglio(input: {
   axis: V3;
   samples?: number;
   profilePoints?: number;
+  /** Profiles per rim interval (default 1): more round tight corners, where the triangles between profiles cut in. */
+  between?: number;
 }): Intaglio {
   const axis = normalize(input.axis);
   const [u, v] = planeBasis(axis);
   const N = input.rim.length / 3;
   const S = input.samples ?? 200;
   const P = input.profilePoints ?? 32;
+  const between = Math.max(1, Math.round(input.between ?? 1));
   const warnings: string[] = [];
   const rim: V3[] = [];
   for (let k = 0; k < N; k++) rim.push([input.rim[k * 3]!, input.rim[k * 3 + 1]!, input.rim[k * 3 + 2]!]);
@@ -198,12 +201,21 @@ export function buildIntaglio(input: {
   }
   if (reversals > 0) warnings.push(`The margin is not star-shaped seen along the insertion axis (${reversals} reversals); the inner surface may fold.`);
 
-  const positions = new Float32Array((N * P + 1) * 3);
+  // Profiles: `between` per rim interval, the first on the rim point and the others from points along the rim's chord
+  // (only their inner rows become vertices; a fan joins them to the rim). Ids: rim k → k (callers stitch to the rim
+  // by margin order), profile q's row j ≥ 1 → N + q·(P − 1) + j − 1, the centre last.
+  const M = N * between;
+  const inner = (q: number, j: number) => N + (q % M) * (P - 1) + j - 1;
+  const c = N + M * (P - 1);
+  const positions = new Float32Array((c + 1) * 3);
+  rim.forEach((p, k) => positions.set(p, k * 3));
   let misses = 0;
   const poly: V3[] = [];
   const cum: number[] = [];
-  for (let k = 0; k < N; k++) {
-    const p = rim[k]!;
+  for (let q = 0; q < M; q++) {
+    const k = Math.floor(q / between), f = (q % between) / between;
+    const r0 = rim[k]!, r1 = rim[(k + 1) % N]!;
+    const p: V3 = [r0[0] + (r1[0] - r0[0]) * f, r0[1] + (r1[1] - r0[1]) * f, r0[2] + (r1[2] - r0[2]) * f];
     const pa = dot(p, u), pb = dot(p, v);
     poly.length = 0;
     poly.push(p);
@@ -232,7 +244,7 @@ export function buildIntaglio(input: {
       prevT = t;
     }
     poly.push(centre);
-    // Resample by 3D arc length to P points (j = 0 is the rim; the centre is shared).
+    // Resample by 3D arc length to P points (j = 0 is the rim point, not stored; the centre is shared).
     cum.length = 0;
     cum.push(0);
     for (let i = 1; i < poly.length; i++) {
@@ -241,49 +253,46 @@ export function buildIntaglio(input: {
     }
     const total = cum[cum.length - 1]!;
     let seg = 1;
-    for (let j = 0; j < P; j++) {
+    for (let j = 1; j < P; j++) {
       const target = (total * j) / P;
       while (seg < poly.length - 1 && cum[seg]! < target) seg++;
       const a = poly[seg - 1]!, b = poly[seg]!;
       const span = cum[seg]! - cum[seg - 1]!;
-      const f = j === 0 || span <= 0 ? (j === 0 ? 0 : 1) : (target - cum[seg - 1]!) / span;
-      const o = (k * P + j) * 3;
-      positions[o] = a[0] + (b[0] - a[0]) * f;
-      positions[o + 1] = a[1] + (b[1] - a[1]) * f;
-      positions[o + 2] = a[2] + (b[2] - a[2]) * f;
+      const f2 = span <= 0 ? 1 : (target - cum[seg - 1]!) / span;
+      positions.set([a[0] + (b[0] - a[0]) * f2, a[1] + (b[1] - a[1]) * f2, a[2] + (b[2] - a[2]) * f2], inner(q, j) * 3);
     }
   }
-  positions.set(centre, N * P * 3);
-  if (misses > N * S * 0.2) warnings.push('Many envelope rays missed the prep; check the margin and the axis.');
+  positions.set(centre, c * 3);
+  if (misses > M * S * 0.2) warnings.push('Many envelope rays missed the prep; check the margin and the axis.');
 
-  // Vertex (k, j) → id k*P + j; rows 0..N-1 are the rim when ordered by k for j = 0.
-  const id = (k: number, j: number) => (k % N) * P + j;
-  const c = N * P;
-  const indices = new Uint32Array(N * ((P - 1) * 6 + 3));
+  // Faces point toward the prep: a quad (a, b, cc, d) going round and inward is (a, cc, b) and (a, d, cc).
+  const indices = new Uint32Array((M * (P - 2) * 2 + M + M + N) * 3);
   let o = 0;
-  for (let k = 0; k < N; k++) {
-    for (let j = 0; j < P - 1; j++) {
-      const a = id(k, j), b = id(k + 1, j), cc = id(k + 1, j + 1), d = id(k, j + 1);
-      // CCW-from-above order (a, b, cc) would face +axis; reverse it so the intaglio faces the prep.
+  for (let q = 0; q < M; q++) {
+    for (let j = 1; j < P - 1; j++) {
+      const a = inner(q, j), b = inner(q + 1, j), cc = inner(q + 1, j + 1), d = inner(q, j + 1);
       indices.set([a, cc, b, a, d, cc], o);
       o += 6;
     }
-    indices.set([id(k, P - 1), c, id(k + 1, P - 1)], o);
+    indices.set([inner(q, P - 1), c, inner(q + 1, P - 1)], o);
     o += 3;
   }
-  // Re-number so rim vertices are 0..N-1 (callers stitch to them by margin order).
-  const order = new Uint32Array(N * P + 1);
-  const inverse = new Uint32Array(N * P + 1);
-  let next = 0;
-  for (let k = 0; k < N; k++) order[next++] = id(k, 0);
-  for (let k = 0; k < N; k++) for (let j = 1; j < P; j++) order[next++] = id(k, j);
-  order[next++] = c;
-  order.forEach((old, i) => (inverse[old] = i));
-  const renumbered = new Float32Array(positions.length);
-  order.forEach((old, i) => renumbered.set(positions.subarray(old * 3, old * 3 + 3), i * 3));
-  for (let i = 0; i < indices.length; i++) indices[i] = inverse[indices[i]!]!;
-  return { mesh: { positions: renumbered, indices }, rimCount: N, profilePoints: P, centre, misses, warnings };
+  // The rim band: each rim point fans over its interval's first inner row, then closes on the next rim point.
+  for (let k = 0; k < N; k++) {
+    for (let i = 0; i < between; i++) {
+      const q = k * between + i;
+      indices.set([k, inner(q, 1), inner(q + 1, 1)], o);
+      o += 3;
+    }
+    indices.set([k, inner((k + 1) * between, 1), (k + 1) % N], o);
+    o += 3;
+  }
+  return { mesh: { positions, indices }, rimCount: N, profilePoints: P, centre, misses, warnings };
 }
+
+/** The shadow test starts this far off the wall (mm) and looks this far up the axis for the prep above it. */
+const SHADOW_LIFT_MM = 0.01;
+const SHADOW_REACH_MM = 15;
 
 export interface GapCheck {
   /** Axial-wall vertices measured. */
@@ -296,6 +305,9 @@ export interface GapCheck {
  * Verification: on axial walls (away from the margin ramp), the distance from
  * the prep to the intaglio along the prep normal must equal the intended gap.
  * Measured from scan vertices along their (smoothed) normals to `intaglio`.
+ * With `prep`, a wall shadowed along the axis by the prep itself (under an
+ * overhang) is skipped: the intaglio is blocked out there by design, and its
+ * gap grows (specs/2026-10-30-cement-gap-real-scans.md).
  */
 export function measureIntaglioGap(input: {
   positions: Float32Array;
@@ -305,6 +317,8 @@ export function measureIntaglioGap(input: {
   axis: V3;
   params: GapParams;
   intaglio: RayCaster;
+  /** The jaw's ray caster and the prep region's faces, for the shadow test. */
+  prep?: { ray: RayCaster; faceMask: Uint8Array };
   /** Only walls whose normal is at most this far from horizontal (|n·axis| ≤ maxAxial). */
   maxAxial?: number;
 }): GapCheck {
@@ -318,6 +332,11 @@ export function measureIntaglioGap(input: {
     const n: V3 = [normals[i * 3]!, normals[i * 3 + 1]!, normals[i * 3 + 2]!];
     if (Math.abs(dot(n, axis)) > maxAxial || dot(n, axis) < -0.05) continue; // walls only, not undercut faces
     const p: V3 = [positions[i * 3]!, positions[i * 3 + 1]!, positions[i * 3 + 2]!];
+    if (input.prep) {
+      const lift: V3 = [p[0] + SHADOW_LIFT_MM * n[0], p[1] + SHADOW_LIFT_MM * n[1], p[2] + SHADOW_LIFT_MM * n[2]];
+      const over = input.prep.ray.first(lift, axis, SHADOW_REACH_MM);
+      if (over && over.faceIndex >= 0 && input.prep.faceMask[over.faceIndex]) continue;
+    }
     const hit = input.intaglio.first(p, n, 1);
     if (!hit) continue;
     const err = Math.abs(hit.distance - cementGap(distance[i]!, params));
