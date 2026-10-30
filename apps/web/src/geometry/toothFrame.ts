@@ -49,6 +49,9 @@ export function mesialFromBuccal(fdi: number, occlusal: V3, buccal: V3): V3 {
 
 const DEG = Math.PI / 180;
 const COS_25 = Math.cos(25 * DEG);
+/** A neighbour contact lies at least this far from the prep top (mm), and the tooth beyond it rises this much above it. */
+const CONTACT_MIN_MM = 2;
+const CONTACT_RISE_MM = 1;
 
 /** Front teeth (FDI positions 1–3: incisors and canines) lean; their prep's frame follows the prep's own axis. */
 export const isFrontTooth = (fdi: number) => fdi % 10 >= 1 && fdi % 10 <= 3;
@@ -197,7 +200,7 @@ export function estimateToothFrame(input: {
     }
   }
 
-  const contacts = findNeighbourContacts({ origin, occlusal, mesial, buccal, ray });
+  const contacts = findNeighbourContacts({ origin, occlusal, mesial, buccal, ray, ownTooth: true });
   if (!contacts.mesial) warnings.push('No mesial neighbour found within 10 mm.');
   if (!contacts.distal) warnings.push('No distal neighbour found within 10 mm.');
   return {
@@ -215,8 +218,15 @@ export function estimateToothFrame(input: {
  * Neighbour contacts: a fan of rays (heights −2…+2 mm, buccal offsets
  * ±1.5 mm) from the prep top along ±mesial. Per ray, the first front-facing
  * hit at least 0.3 mm away counts if it is no more than 2.5 mm below the
- * prep top (lower means papilla/gingiva, and the ray is discarded). The
- * nearest qualifying hit per side is the contact.
+ * origin (lower means papilla/gingiva, and the ray is discarded). With
+ * `ownTooth` (the origin is on a tooth: a prep's top), the hit must be of a
+ * new solid: the ray has left one (a back-facing hit, the tooth's wall) and
+ * the hit is at least CONTACT_MIN_MM away; anything else is the tooth's own
+ * surface (its cusps, across a groove, or seen from the air above it), and
+ * the ray goes on through. The contact per side is the nearest qualifying hit with a tooth
+ * beyond it: the surface 1–3 mm past it rises at least CONTACT_RISE_MM above
+ * it. A tooth's crown stands above its contact point; a gum mound behind the
+ * last molar does not (specs/2026-10-30-neighbour-contacts.md).
  */
 export function findNeighbourContacts(input: {
   origin: V3;
@@ -225,24 +235,48 @@ export function findNeighbourContacts(input: {
   buccal: V3;
   ray: RayCaster;
   maxDistanceMm?: number;
+  /** The origin is on a tooth (a prep's top), whose own surface the rays may meet first. */
+  ownTooth?: boolean;
 }): { mesial?: NeighbourContact; distal?: NeighbourContact } {
   const { origin, occlusal, mesial, buccal, ray } = input;
   const maxDistance = input.maxDistanceMm ?? 10;
   const search = (dir: V3): NeighbourContact | undefined => {
-    let best: NeighbourContact | undefined;
+    const candidates: NeighbourContact[] = [];
     for (let h = -2; h <= 2 + 1e-9; h += 0.5) {
       for (let t = -1.5; t <= 1.5 + 1e-9; t += 0.75) {
         const start = add(add(origin, scale(occlusal, h)), scale(buccal, t));
+        // Through the prep: a front face before the ray has left a solid, or nearer than CONTACT_MIN_MM, is the prep's
+        // own surface (a cusp across a groove); the ray goes on through it and out of its wall.
+        let left = !input.ownTooth;
         for (const hit of ray.all(start, dir, maxDistance)) {
-          if (hit.distance < 0.3 || dot(hit.normal, dir) >= 0) continue;
-          if (dot(sub(hit.point, origin), occlusal) >= -2.5 && (!best || hit.distance < best.distanceMm)) {
-            best = { point: hit.point, distanceMm: hit.distance };
+          if (dot(hit.normal, dir) >= 0) {
+            left = true;
+            continue;
           }
+          if (!input.ownTooth && hit.distance < 0.3) continue;
+          if (input.ownTooth && (!left || hit.distance < CONTACT_MIN_MM)) {
+            left = false;
+            continue;
+          }
+          if (dot(sub(hit.point, origin), occlusal) >= -2.5) candidates.push({ point: hit.point, distanceMm: hit.distance });
           break;
         }
       }
     }
-    return best;
+    // The nearest with a tooth beyond it: the highest surface 1–3 mm past the contact, ±1.5 mm across.
+    candidates.sort((a, b) => a.distanceMm - b.distanceMm);
+    for (const c of candidates) {
+      let rise = -Infinity;
+      for (let d = 1; d <= 3 + 1e-9 && rise < CONTACT_RISE_MM; d += 0.5) {
+        for (let t = -1.5; t <= 1.5 + 1e-9; t += 0.75) {
+          const p = add(add(c.point, scale(dir, d)), scale(buccal, t));
+          const hit = ray.first(add(p, scale(occlusal, 15)), scale(occlusal, -1), 30);
+          if (hit) rise = Math.max(rise, dot(sub(hit.point, c.point), occlusal));
+        }
+      }
+      if (rise >= CONTACT_RISE_MM) return c;
+    }
+    return undefined;
   };
   return { mesial: search(mesial), distal: search(scale(mesial, -1)) };
 }
