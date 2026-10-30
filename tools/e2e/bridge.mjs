@@ -609,19 +609,17 @@ if (!ONLY || ONLY === 'auto') {
   await h.waitFor(() => !window.__dcad.tools.getState().busy, null, 60000);
   const axisOpen = await page.getByRole('button', { name: /Least undercut/ }).isEnabled();
   expect(axisOpen, 'Insertion axis is no longer blocked by missing margins', String(axisOpen));
-  // 37's frame was redone above, so pontic 36 is stale: Re-place pontics leads until it is placed again.
+  // 37's frame was redone above: pontic 36, laid out automatically, followed it in the same undo step
+  // (specs/2026-10-30-pontics-follow-abutments.md), so it is not stale and Tooth frame has one main action.
   await h.step('Tooth frame');
   await page.waitForTimeout(500);
   const primaries = () => h.state(() => [...document.querySelectorAll('.step-panel .btn.primary')].filter((b) => b.checkVisibility()).map((b) => b.textContent?.trim()));
-  const stalePrimaries = await primaries();
-  await page.getByRole('button', { name: 'Re-place pontics' }).click();
-  await h.waitFor(() => window.__dcad.design.getState().doc.teeth.find((t) => t.fdi === 36)?.steps.frame !== 'stale', null, 60000);
-  await page.waitForTimeout(300);
+  const ponticFrame = await h.state(() => window.__dcad.design.getState().doc.teeth.find((t) => t.fdi === 36)?.steps.frame ?? null);
   const framePrimaries = await primaries();
   expect(
-    JSON.stringify(stalePrimaries) === '["Re-place pontics"]' && framePrimaries.length === 1 && /Auto-design bridge/.test(framePrimaries[0] ?? ''),
-    'one main action on Tooth frame: Re-place pontics while 36 is stale, then Auto-design bridge with every unit framed',
-    JSON.stringify({ stalePrimaries, framePrimaries }),
+    ponticFrame !== 'stale' && framePrimaries.length === 1 && /Auto-design bridge/.test(framePrimaries[0] ?? ''),
+    'pontic 36 followed the redone frame of 37 (not stale); one main action on Tooth frame: Auto-design bridge',
+    JSON.stringify({ ponticFrame, framePrimaries }),
   );
 
   // A tooth added in Case setup after the scans are in, with no prep on the scan: named once as unframed.

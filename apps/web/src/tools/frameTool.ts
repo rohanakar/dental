@@ -1,4 +1,5 @@
 import { bridgeOf, type Command, type DesignDocument, jawOf, type ToothFrame, unitKind } from '@dcad/shared';
+import { applyCommands } from '../design/reducer';
 import { useDesignStore } from '../design/store';
 import type { InteractionHandler } from '../engine/Viewer';
 import { runAutoDesign } from '../ai/orchestrator';
@@ -33,7 +34,20 @@ export async function estimateFrameAt(seed: V3, message: ToolState['message'] = 
       prep: restoration ? PREP_MARGIN.includes(restoration) : true,
     });
     const { warnings, ...frame } = est;
-    useDesignStore.getState().dispatch({ type: 'setFrame', fdi: ctx.fdi, frame: { ...frame, source: 'auto' } });
+    const cmds: Command[] = [{ type: 'setFrame', fdi: ctx.fdi, frame: { ...frame, source: 'auto' } }];
+    // A redone abutment frame moves the pontics laid out from it: those placed automatically follow, in the same undo
+    // step (specs/2026-10-30-pontics-follow-abutments.md); a pontic the user placed on the ridge stays, marked stale.
+    const doc = useDesignStore.getState().doc;
+    const bridge = bridgeOf(doc, ctx.fdi);
+    if (bridge && unitKind(doc.setup, ctx.fdi) === 'abutment') {
+      const following = bridge.teeth.filter((f) => unitKind(doc.setup, f) === 'pontic' && doc.teeth.find((t) => t.fdi === f)?.frame?.source === 'auto');
+      const request = following.length ? bridgeFramesRequest(applyCommands(doc, cmds), ctx.fdi) : null;
+      if (request) {
+        const layout = await analysis.bridgeFrames(request);
+        for (const p of layout.pontics) if (following.includes(p.fdi)) cmds.push({ type: 'setFrame', fdi: p.fdi, frame: { ...p.frame, source: 'auto' } });
+      }
+    }
+    useDesignStore.getState().dispatch(cmds);
     tools.set({ frameWarnings: warnings });
   } catch (e) {
     if (!isStale(e)) tools.set({ message: { kind: 'error', text: `Could not estimate the frame: ${errorText(e)}` } });
