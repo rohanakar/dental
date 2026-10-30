@@ -102,10 +102,12 @@ function endSpread(positions: Float32Array, c: V3, axis: V3, lateral: V3, sign: 
 }
 
 /** Unit direction from the target toward the camera for a standard view. */
-export function viewDirection(frame: ViewFrame, view: StandardView): V3 {
+export function viewDirection(frame: ViewFrame, view: StandardView, jaw?: 'upper' | 'lower'): V3 {
   switch (view) {
     case 'occlusal':
-      return frame.occlusal;
+      // Onto the working jaw's biting surfaces: from below an upper tooth, from above a lower one, whichever jaw the
+      // arch frame faces (with both jaws loaded it faces the lower one).
+      return jaw ? (jaw === 'upper' ? scale(frame.up, -1) : frame.up) : frame.occlusal;
     case 'buccal':
       return frame.buccal;
     case 'lingual':

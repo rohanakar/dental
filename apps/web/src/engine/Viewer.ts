@@ -398,9 +398,9 @@ export class Viewer {
     this.requestRender();
   }
 
-  /** Animate to a standard view, framing the visible scene. */
-  setView(view: StandardView, animate = true): void {
-    const dir = new Vector3(...viewDirection(this.frame, view));
+  /** Animate to a standard view, framing the visible scene; `jaw`: the working tooth's jaw (the occlusal view faces it). */
+  setView(view: StandardView, animate = true, jaw?: 'upper' | 'lower'): void {
+    const dir = new Vector3(...viewDirection(this.frame, view, jaw));
     if (view === 'occlusal') {
       // Looking along the turntable axis is a gimbal singularity; a tiny
       // offset toward buccal keeps the lingual side at the top of the screen.

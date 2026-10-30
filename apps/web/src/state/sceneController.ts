@@ -1,4 +1,4 @@
-import type { ScanRef, ScanRole } from '@dcad/shared';
+import { jawOf, type ScanRef, type ScanRole } from '@dcad/shared';
 import type { BufferGeometry } from 'three';
 import { useDesignStore } from '../design/store';
 import type { StandardView } from '../engine/viewFrame';
@@ -183,8 +183,10 @@ class SceneController {
     this.viewer?.setObjectVertexColors(id, useVertexColors);
   }
 
+  /** A standard view; the occlusal one looks onto the active tooth's jaw (from below an upper tooth). */
   setView(view: StandardView): void {
-    this.viewer?.setView(view);
+    const fdi = useDesignStore.getState().activeFdi;
+    this.viewer?.setView(view, true, fdi ? jawOf(fdi) : undefined);
   }
 
   fit(): void {
