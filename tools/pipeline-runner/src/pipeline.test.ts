@@ -1,11 +1,12 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { minConnectorAreaMm2 } from '@dcad/shared';
 import { afterAll, describe, expect, it } from 'vitest';
 import { runBridgeCase } from './bridgePipeline';
 import { writeSyntheticFrameworkCase } from './frameworkGolden';
-import { writeSyntheticBridgeCase, writeSyntheticCase, writeSyntheticInlayCase, writeSyntheticMarylandCase } from './golden';
+import { SYNTHETIC_BRIDGES, writeSyntheticBridgeCase, writeSyntheticCase, writeSyntheticInlayCase, writeSyntheticMarylandCase } from './golden';
+import { syntheticPrepSeed } from '@dcad/web/geometry';
 import { runCase } from './pipeline';
 import { writeSyntheticImplantCase } from './implantGolden';
 import { runImplantBridgeCase } from './implantPipeline';
@@ -68,6 +69,31 @@ describe('pipeline runner', () => {
       expect(toward).toBeGreaterThan(0.5);
     }
     expect(bridgeStl.byteLength).toBe(84 + 50 * metrics.union!.triangles);
+
+    // A saw cut across the ridge under the pontic (a sectioned model; specs/2026-10-30-pontic-partial-ridge.md): the
+    // base spans the hole and still rests on the ridge at the target gap.
+    if (kind === 'posterior') {
+      const scan = join(dir, kind, SYNTHETIC_BRIDGES.posterior.scan);
+      const bytes = readFileSync(scan);
+      const n = bytes.readUInt32LE(80);
+      const a = syntheticPrepSeed({ fdi: 35, along: 600 }), b = syntheticPrepSeed({ fdi: 37, along: 600 });
+      const c = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const t = [(b[0] - a[0]) / len, (b[1] - a[1]) / len];
+      const kept: Buffer[] = [];
+      for (let i = 0; i < n; i++) {
+        const tri = bytes.subarray(84 + 50 * i, 84 + 50 * (i + 1));
+        const x = (tri.readFloatLE(12) + tri.readFloatLE(24) + tri.readFloatLE(36)) / 3, y = (tri.readFloatLE(16) + tri.readFloatLE(28) + tri.readFloatLE(40)) / 3;
+        if (Math.abs((x - c[0]!) * t[0]! + (y - c[1]!) * t[1]!) > 0.25) kept.push(tri);
+      }
+      const head = Buffer.alloc(84);
+      head.writeUInt32LE(kept.length, 80);
+      writeFileSync(scan, Buffer.concat([head, ...kept]));
+      const cut = (await runBridgeCase(spec, join(dir, kind))).metrics;
+      for (const p of cut.ponticBase) {
+        expect(p.minGapMm).toBeGreaterThanOrEqual(p.targetMm - 0.02);
+        expect(p.minGapMm).toBeLessThanOrEqual(p.targetMm + 0.05);
+      }
+    }
   });
 
   // Maryland 11w–[12]: a single-retainer cantilever on a wing bonded to 11's palatal surface (wings are the point).

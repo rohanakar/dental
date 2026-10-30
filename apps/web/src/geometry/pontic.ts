@@ -21,6 +21,14 @@ import { bvhRayCaster, createBvh, type RayCaster } from './raycast';
  */
 
 /** The base rim is the posed cervical footprint narrowed to this fraction. */
+/**
+ * A rim point over no scanned ridge is drawn toward the centre, down to this share of its distance, and the shares are
+ * averaged over ±PONTIC_REACH_SMOOTH points so the outline stays even.
+ */
+const PONTIC_MIN_REACH = 0.3;
+const PONTIC_REACH_SMOOTH = 3;
+/** More than this share of the outline over no scanned ridge at all: the ridge under the pontic is not in the scan. */
+const PONTIC_MAX_HOLES = 0.25;
 export const PONTIC_RIM_SCALE = 0.7;
 /** Band between the base rim and the shell's cervical ring (the pontic's "margin thickness"). */
 const PONTIC_BAND_MM = 0.1;
@@ -214,19 +222,48 @@ export function designPontic(input: PonticInput): PonticDesign {
   const ridge = bvhRayCaster(createBvh({ positions: ridgePositions, indices: Uint32Array.from(tris) }));
   lap('ridge');
 
-  // Rim on the raised ridge, then the base inside it.
+  // Rim on the raised ridge, then the base inside it (specs/2026-10-30-pontic-partial-ridge.md). Where the scan does
+  // not reach under a rim point (a segment scan's edge), that side of the outline is drawn in toward the centre until
+  // it lands on scanned ridge, averaged round the ring so the outline stays even. A point over a hole all along its
+  // line (a saw cut between a model's dies) takes its place between its neighbours: no base can touch a hole.
   const down = scale(axis, -1);
-  const rim = new Float32Array(T * 3);
-  let misses = 0;
-  narrowed.forEach((q, i) => {
-    const hit = ridge.first(add(q, scale(axis, 20)), down, 60);
-    if (hit) rim.set(hit.point, i * 3);
-    else {
-      misses++;
-      rim.set(q, i * 3);
+  const castAt = (q: V3) => ridge.first(add(q, scale(axis, 20)), down, 60);
+  const inward = (q: V3, f: number): V3 => sub(q, scale(reject(sub(q, centre), axis), 1 - f));
+  const reach = narrowed.map((q) => {
+    for (let f = 1; f >= PONTIC_MIN_REACH - 1e-9; f -= 0.05) {
+      const hit = castAt(inward(q, f));
+      if (hit) return { f, point: hit.point as V3 };
     }
+    return null;
   });
-  if (misses > 0) throw new Error(`Pontic ${input.fdi}: ${misses} rim points are not over the scanned ridge`);
+  const holes = reach.filter((r) => !r).length;
+  if (holes > T * PONTIC_MAX_HOLES) throw new Error(`Pontic ${input.fdi}: ${holes} of ${T} rim points are not over the scanned ridge`);
+  const rimPoints: Array<V3 | null> = narrowed.map((q, i) => {
+    if (!reach[i]) return null;
+    let sum = 0, n = 0;
+    for (let k = -PONTIC_REACH_SMOOTH; k <= PONTIC_REACH_SMOOTH; k++) {
+      const r = reach[(i + k + T) % T];
+      if (r) [sum, n] = [sum + r.f, n + 1];
+    }
+    const hit = castAt(inward(q, sum / n));
+    return hit ? (hit.point as V3) : reach[i]!.point;
+  });
+  const rim = new Float32Array(T * 3);
+  for (let i = 0; i < T; i++) {
+    let p = rimPoints[i];
+    if (!p) {
+      let back = 1, ahead = 1;
+      while (!rimPoints[(i - back + T) % T]) back++;
+      while (!rimPoints[(i + ahead) % T]) ahead++;
+      const a = rimPoints[(i - back + T) % T]!, b = rimPoints[(i + ahead) % T]!;
+      p = add(a, scale(sub(b, a), back / (back + ahead)));
+    }
+    rim.set(p, i * 3);
+  }
+  const drawnIn = reach.filter((r) => r && r.f < 1).length;
+  if (drawnIn + holes > 0) {
+    warnings.push(`The pontic base follows the scanned ridge: ${drawnIn} of ${T} outline points drawn in, ${holes} over holes in the scan.`);
+  }
   const base = buildIntaglio({ offset: ridge, rim, axis });
   warnings.push(...base.warnings);
   lap('base');
