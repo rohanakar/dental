@@ -57,3 +57,4 @@ and progress log.
 | [2026-10-30-crown-rim-guard.md](2026-10-30-crown-rim-guard.md): the crown's rim leaves out a margin's kinks (a drag that doubled back) instead of folding its margin band | done (2026-10-30): a 1 mm spike no longer makes the crown unprintable; fires on no real margin but 049's |
 | [2026-10-30-occlusal-view-upper.md](2026-10-30-occlusal-view-upper.md): the occlusal view faces the working tooth's jaw (an upper tooth from below) | done (2026-10-30) |
 | [2026-10-30-golden-clicks-snap.md](2026-10-30-golden-clicks-snap.md): golden cases' scripted margin clicks snap onto the ridge like the app's | done (2026-10-30): golden 15/15; real margins move 0.001–0.008 mm |
+| [2026-10-30-auto-axis-when-ready.md](2026-10-30-auto-axis-when-ready.md): the insertion axis is proposed as soon as its margins are ready on the axis step (they may be found just after entering it), once per set of inputs | done (2026-10-30) |

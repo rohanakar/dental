@@ -80,6 +80,8 @@ class AxisTool {
   private shown: { axis: InsertionAxis; margin: unknown } | null = null;
   /** The last common-axis search (each abutment's own axis, the divergence), for the margins and frames it ran on. */
   private bridgeSearch: { key: unknown[]; result: BridgeAxisResult } | null = null;
+  /** Inputs an axis was proposed for (enter), so an undone axis is not proposed again for the same ones. */
+  private tried: unknown[][] = [];
   private generation = 0;
 
   attach(viewer: Viewer | null): void {
@@ -87,16 +89,21 @@ class AxisTool {
     this.shown = null;
   }
 
-  /** Entering the axis step: propose an axis if there is none yet. */
+  /**
+   * On the axis step: propose an axis if there is none yet, as soon as its inputs are ready (entering the step, or the
+   * margins found just after: specs/2026-10-30-auto-axis-when-ready.md). Each set of inputs (the jaw, every abutment's
+   * margin and frame) is tried once, so an undone axis is not put back until a margin or frame changes.
+   */
   enter(): void {
     const bridge = bridgeAxisContext();
-    if (bridge) {
-      const tooth = bridge.ctx.tooth;
-      if (!tooth.axis && bridge.abutments.every(isReady)) void this.search();
-      return;
-    }
-    const tooth = toothContext()?.tooth;
-    if (tooth?.margin && tooth.frame && !tooth.axis) void this.search();
+    const ctx = bridge?.ctx ?? toothContext();
+    if (!ctx || ctx.tooth.axis) return;
+    const inputs: Abutment[] = bridge ? bridge.abutments : [{ fdi: ctx.fdi, margin: ctx.tooth.margin, frame: ctx.tooth.frame }];
+    if (!inputs.every(isReady)) return;
+    const key = [ctx.jaw.sha256, ...inputsKey(inputs)];
+    if (this.tried.some((k) => sameArray(k, key))) return;
+    this.tried.push(key);
+    void this.search();
   }
 
   /**

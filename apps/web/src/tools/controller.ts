@@ -189,7 +189,11 @@ class DesignTools {
     // each framed crown-prep tooth's margin (specs/2026-10-26-bridge-out-of-the-box.md).
     autoFrames();
     autoMargins();
-    if (step === 'axis') axisTool.sync();
+    if (step === 'axis') {
+      // An axis as soon as its margins are ready (they may be found just after entering the step), then its map.
+      if (!useDesignStore.getState().transaction && !useToolStore.getState().busy) axisTool.enter();
+      axisTool.sync();
+    }
     crownTool.sync(step);
     implantTool.sync(step, crownTool.current());
     gizmoTool.sync(step === 'proposal');
