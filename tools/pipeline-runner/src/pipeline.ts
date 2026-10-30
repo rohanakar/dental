@@ -192,6 +192,8 @@ export async function runCase(spec: GoldenCase, baseDir: string, options: RunOpt
       weight: liveWireWeight(analysis.curvature),
       ray,
       anchors: autoAnchors ? autoAnchors.anchors : spec.marginAnchors,
+      // Scripted clicks snap onto the finish line's ridge, as the app's clicks do (specs/2026-10-27-margin-click-snap.md).
+      ...(autoAnchors ? {} : { ridge: { curvature: analysis.curvature, line: 'finish' as const } }),
     }),
   );
 

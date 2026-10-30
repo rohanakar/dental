@@ -313,6 +313,9 @@ export async function runBridgeCase(spec: GoldenCase, baseDir: string, options: 
           weight: liveWireWeight(analysis.curvature),
           ray,
           anchors: auto ? auto.anchors : marginAnchors,
+          // Scripted clicks on a prep snap onto the finish line's ridge, as the app's clicks do
+          // (specs/2026-10-27-margin-click-snap.md); a wing outline and a cavity margin are not a finish line.
+          ...(!auto && !isWing(u.fdi) && !cavityOf(u.fdi) ? { ridge: { curvature: analysis.curvature, line: 'finish' as const } } : {}),
         });
         const seedVertex = isWing(u.fdi) || cavityOf(u.fdi)
           ? snapToVertex(positions, indices, ray, u.seed!)
