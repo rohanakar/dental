@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { designCrown, type CrownDesign, type CrownInput } from './crown';
 import { templateForTooth } from './crownTemplate';
 import { distanceToLoop, signedIntaglioDistance, thicknessProfile } from './thickness';
-import { planeBasis } from './intaglio';
+import { distanceFromMargin, measureIntaglioGap, planeBasis } from './intaglio';
 import { marginFromAnchors, liveWireWeight } from './livewire';
 import type { IndexedMesh } from './mesh';
 import type { V3 } from './pca';
@@ -169,6 +169,28 @@ describe.each([
       }
     }
     expect(rays).toBeGreaterThan(400);
+
+    // An intaglio pulled 0.15 mm into the prep's walls is a collision: the gap check measures it instead of skipping it.
+    if (mirror) return;
+    const pulled = inner.positions.slice();
+    for (let i = 0; i < n; i++) {
+      const p = pt(inner, i);
+      const du = p[0] * u[0] + p[1] * u[1] + p[2] * u[2] - cu, dv = p[0] * v[0] + p[1] * v[1] + p[2] * v[2] - cv;
+      const r = Math.hypot(du, dv);
+      const k = r > 0.15 ? -0.15 / r : 0;
+      for (let c = 0; c < 3; c++) pulled[i * 3 + c] = p[c]! + k * (du * u[c]! + dv * v[c]!);
+    }
+    const { jaw, region, params } = input;
+    const pulledGap = measureIntaglioGap({
+      positions: jaw.positions,
+      normals: jaw.smoothNormals,
+      vertexMask: region.vertexMask,
+      distance: distanceFromMargin(jaw.positions, jaw.graph, region.vertexMask, region.loopVertices),
+      axis,
+      params,
+      intaglio: bvhRayCaster(createBvh({ positions: pulled, indices: inner.indices.slice() })),
+    });
+    expect(pulledGap.maxErrorMm).toBeGreaterThan(0.1);
   });
 
   it('meets the thickness profile on the outer shell, also when shrunk into the prep', () => {

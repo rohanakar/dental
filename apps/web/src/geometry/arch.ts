@@ -51,6 +51,18 @@ export interface ArchCurveInput {
    * whose inside cannot be told from its shape.
    */
   buccalHint?: V3;
+  /**
+   * Where two framed teeth in one quadrant say buccal is (archFitDirections). A fitted curve that is not a full arch
+   * (no midline) and disagrees is turned around (orientArchCurve): on a scan of a few teeth its bend can follow the gum
+   * or the ramus rather than the arch.
+   */
+  order?: ArchOrder;
+}
+
+/** The arch direction from the teeth themselves: the buccal direction at a point (archFitDirections). */
+export interface ArchOrder {
+  at: V3;
+  buccal: V3;
 }
 
 export interface ArchCurve {
@@ -308,19 +320,30 @@ function fitParabola(px: Float64Array, py: Float64Array, ex: [number, number]): 
 const GUESSED_BUCCAL_WARNING = 'The scan is nearly straight: the arch curve is a line and buccal was guessed; pass a buccal hint.';
 
 /**
- * The same curve with its outward normal toward `buccalHint`. Only a straight
- * fit ('line') can be flipped: its inside cannot be told from its shape, so
- * fitArchCurve takes it from the hint. A curved fit knows its inside and is
- * returned as is. A flipped line runs the other way (s → length − s), so
- * mesialAt follows. This lets callers cache the fit without a hint and orient
- * it per call: a cached fit oriented by a stale hint would put buccal on the
- * lingual side and every frame derived from it 180° off.
+ * The same curve with its outward normal toward `buccalHint`. A straight fit
+ * ('line') follows the hint: its inside cannot be told from its shape, so
+ * fitArchCurve takes it from the hint. A curved fit follows its own bend,
+ * unless it is not a full arch (no midline) and the teeth's `order` says
+ * otherwise: a full arch's bend is reliable, a few teeth's is not
+ * (specs/2026-10-30-bridge-frames-on-segment-scans.md). A turned curve runs
+ * the other way (s → length − s), so mesialAt follows. This lets callers
+ * cache the fit without a hint and orient it per call: a cached fit oriented
+ * by a stale hint would put buccal on the lingual side and every frame
+ * derived from it 180° off.
  */
-export function orientArchCurve(curve: ArchCurve, buccalHint: V3 | undefined): ArchCurve {
-  if (curve.kind !== 'line' || !buccalHint || !(Math.hypot(...buccalHint) > 0)) return curve;
-  const warnings = curve.warnings.filter((w) => w !== GUESSED_BUCCAL_WARNING);
+export function orientArchCurve(curve: ArchCurve, buccalHint: V3 | undefined, order?: ArchOrder): ArchCurve {
   const L = curve.lengthMm;
-  if (dot(curve.normalAt(L / 2), buccalHint) >= 0) return { ...curve, warnings };
+  let keep: boolean;
+  if (curve.kind === 'line') {
+    if (!buccalHint || !(Math.hypot(...buccalHint) > 0)) return curve;
+    keep = dot(curve.normalAt(L / 2), buccalHint) >= 0;
+  } else {
+    if (curve.midlineS !== null || !order) return curve;
+    keep = dot(curve.normalAt(curve.project(order.at)), order.buccal) >= 0;
+    if (keep) return curve;
+  }
+  const warnings = curve.warnings.filter((w) => w !== GUESSED_BUCCAL_WARNING);
+  if (keep) return { ...curve, warnings };
   const flip = (v: V3): V3 => [-v[0], -v[1], -v[2]];
   const normalAt = (s: number): V3 => flip(curve.normalAt(L - s));
   return {
@@ -329,15 +352,20 @@ export function orientArchCurve(curve: ArchCurve, buccalHint: V3 | undefined): A
     tangentAt: (s) => flip(curve.tangentAt(L - s)),
     normalAt,
     project: (p) => L - curve.project(p),
-    // A line has no midline.
+    // Neither has a midline.
     towardMidline: () => null,
     mesialAt: (s, fdi) => mesialFromBuccal(fdi, curve.occlusal, normalAt(s)),
     warnings,
   };
 }
 
-/** Fit the arch curve of a jaw scan. Throws if the scan has too few points. */
+/** Fit the arch curve of a jaw scan, turned to the teeth's `order` when given. Throws if the scan has too few points. */
 export function fitArchCurve(input: ArchCurveInput): ArchCurve {
+  const curve = fitCurve(input);
+  return input.order ? orientArchCurve(curve, undefined, input.order) : curve;
+}
+
+function fitCurve(input: ArchCurveInput): ArchCurve {
   const P = input.positions;
   const occlusal = normalize(input.occlusal);
   const nv = P.length / 3;

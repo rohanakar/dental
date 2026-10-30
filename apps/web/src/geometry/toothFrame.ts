@@ -1,4 +1,4 @@
-import { principalAxes, symmetricEigen3, type V3 } from './pca';
+import { jawPlaneNormal, principalAxes, symmetricEigen3, type V3 } from './pca';
 import { findPrepStump, stumpWallAxis } from './prepAxis';
 import type { RayCaster } from './raycast';
 
@@ -76,10 +76,11 @@ function rotate(v: V3, k: V3, a: number): V3 {
 
 /**
  * Tooth-local frame from a click on the prep.
- * - occlusal: whole-jaw PCA least-variance axis if within 25° of the mean
- *   vertex normal near the seed (normals of an open scan point out of the
- *   teeth, toward the antagonist), else that local mean normal; flipped
- *   toward the antagonist centroid when one is given.
+ * - occlusal: the jaw's occlusal-plane normal (jawPlaneNormal; a scan of a
+ *   few teeth has none) if within 25° of the mean vertex normal near the seed
+ *   (normals of an open scan point out of the teeth, toward the antagonist),
+ *   else that local mean normal; flipped toward the antagonist centroid when
+ *   one is given.
  * - origin: the prep top under the seed (ray cast down along −occlusal).
  * - mesial-distal line: major axis of crown points (within 12 mm, no lower
  *   than 1.5 mm below the prep top) projected on the occlusal plane.
@@ -120,15 +121,19 @@ export function estimateToothFrame(input: {
   }
   local = normalize(local);
   const pca = principalAxes(P, 50_000);
+  // A scan of a few teeth has no clear occlusal plane: the local normal stays.
+  const plane = jawPlaneNormal(pca);
   let occlusal: V3 = norm(local) > 0 ? local : pca.axes[2];
-  const align = dot(pca.axes[2], local);
-  if (Math.abs(align) >= COS_25) occlusal = align >= 0 ? pca.axes[2] : scale(pca.axes[2], -1);
+  const align = plane ? dot(plane, local) : 0;
+  if (plane && Math.abs(align) >= COS_25) occlusal = align >= 0 ? plane : scale(plane, -1);
   if (input.antagonist && input.antagonist.positions.length >= 3) {
     const ca = principalAxes(input.antagonist.positions, 20_000).centroid;
     // The side toward the antagonist is the jaw's: its least-variance axis, from its centroid toward the antagonist's.
     // From a front tooth the antagonist's centroid lies mostly behind it, so a normal tilted with the tooth's slope
-    // would read as pointing away (specs/2026-10-30-front-tooth-frame-side.md).
-    const jawUp = dot(pca.axes[2], sub(ca, pca.centroid)) >= 0 ? pca.axes[2] : scale(pca.axes[2], -1);
+    // would read as pointing away (specs/2026-10-30-front-tooth-frame-side.md). Without a plane, the line between the
+    // centroids.
+    const toward = sub(ca, pca.centroid);
+    const jawUp = plane ? (dot(plane, toward) >= 0 ? plane : scale(plane, -1)) : normalize(toward);
     if (dot(occlusal, jawUp) < 0) {
       occlusal = scale(occlusal, -1);
       warnings.push('Surface normals point away from the antagonist; check that the scans are assigned to the right jaws.');

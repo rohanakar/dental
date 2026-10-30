@@ -50,8 +50,13 @@ export function searchInsertionAxis(input: {
   center: V3;
   coneDeg?: number;
   samples?: number;
+  /**
+   * Directions that must pass (searchVisibleAxis: every margin point visible), checked lazily in cost order: the
+   * least-cost direction that passes wins, or the least-cost one when none does.
+   */
+  accept?: (d: V3) => boolean;
 }): AxisSearchResult {
-  const { positions: P, indices, faceMask } = input;
+  const { positions: P, indices, faceMask, accept } = input;
   const center = normalize(input.center);
   const cone = (input.coneDeg ?? 25) * DEG;
   // Area-weighted face normals (|cross| / 2 = area).
@@ -81,19 +86,19 @@ export function searchInsertionAxis(input: {
   const cost = (d: V3) => undercut(d) + lambda * angleTo(d);
 
   const [u, v] = basis(center);
-  let best: V3 = center;
-  let bestCost = cost(center);
   const samples = input.samples ?? 400;
   const cosCone = Math.cos(cone);
+  const candidates: Array<{ d: V3; c: number }> = [{ d: center, c: cost(center) }];
   for (let i = 1; i < samples; i++) {
     const cosT = 1 - ((1 - cosCone) * i) / (samples - 1);
     const d = onCap(center, u, v, Math.acos(cosT), i * GOLDEN_ANGLE);
-    const c = cost(d);
-    if (c < bestCost) {
-      bestCost = c;
-      best = d;
-    }
+    candidates.push({ d, c: cost(d) });
   }
+  // Stable: among equal costs the earlier sample (the centre first) wins.
+  candidates.sort((a, b) => a.c - b.c);
+  const passed = accept ? candidates.find((x) => accept(x.d)) : undefined;
+  const constrained = passed !== undefined;
+  let { d: best, c: bestCost } = passed ?? candidates[0]!;
   // Local refinement: ±1.5° grid at 0.25° around the best sample, kept inside the cone.
   const [bu, bv] = basis(best);
   const coarse = best;
@@ -104,7 +109,7 @@ export function searchInsertionAxis(input: {
       const d = onCap(coarse, bu, bv, t, Math.atan2(j, i));
       if (angleTo(d) > cone) continue;
       const c = cost(d);
-      if (c < bestCost) {
+      if (c < bestCost && (!constrained || accept!(d))) {
         bestCost = c;
         best = d;
       }
@@ -158,27 +163,77 @@ export function undercutDepths(input: {
 /**
  * Margin points in an undercut: a ray from each point (packed xyz) along
  * +axis that hits a prep face means the prep overhangs the margin there.
+ * An overhang of at most `toleranceMm` (default
+ * MARGIN_UNDERCUT_TOLERANCE_MM) does not count: the ray is cast again from
+ * the point moved that far outward (perpendicular to the axis, away from the
+ * margin's centre) and must still hit.
  */
-export function marginUndercut(input: { points: Float32Array; axis: V3; ray: RayCaster; faceMask: Uint8Array }): {
+export function marginUndercut(input: { points: Float32Array; axis: V3; ray: RayCaster; faceMask: Uint8Array; toleranceMm?: number }): {
   flags: Uint8Array;
   count: number;
 } {
   const d = normalize(input.axis);
-  const n = input.points.length / 3;
+  const p = input.points;
+  const n = p.length / 3;
   const flags = new Uint8Array(n);
+  const tol = input.toleranceMm ?? MARGIN_UNDERCUT_TOLERANCE_MM;
   let count = 0;
   const eps = 0.02;
-  for (let i = 0; i < n; i++) {
-    const p = input.points;
-    const o: V3 = [p[i * 3]! + eps * d[0], p[i * 3 + 1]! + eps * d[1], p[i * 3 + 2]! + eps * d[2]];
-    for (const hit of input.ray.all(o, d, 15)) {
-      if (hit.distance < 0.02 || !input.faceMask[hit.faceIndex]) continue;
-      flags[i] = 1;
-      count++;
-      break;
+  const hidden = (x: number, y: number, z: number) => {
+    for (const hit of input.ray.all([x + eps * d[0], y + eps * d[1], z + eps * d[2]], d, 15)) {
+      if (hit.distance >= 0.02 && input.faceMask[hit.faceIndex]) return true;
     }
+    return false;
+  };
+  let cx = 0, cy = 0, cz = 0;
+  for (let i = 0; i < n; i++) {
+    cx += p[i * 3]! / n;
+    cy += p[i * 3 + 1]! / n;
+    cz += p[i * 3 + 2]! / n;
+  }
+  for (let i = 0; i < n; i++) {
+    const x = p[i * 3]!, y = p[i * 3 + 1]!, z = p[i * 3 + 2]!;
+    if (!hidden(x, y, z)) continue;
+    if (tol > 0) {
+      const r: V3 = [x - cx, y - cy, z - cz];
+      const along = dot(r, d);
+      const out: V3 = [r[0] - along * d[0], r[1] - along * d[1], r[2] - along * d[2]];
+      const l = Math.hypot(out[0], out[1], out[2]);
+      if (l > 0 && !hidden(x + (tol * out[0]) / l, y + (tol * out[1]) / l, z + (tol * out[2]) / l)) continue;
+    }
+    flags[i] = 1;
+    count++;
   }
   return { flags, count };
+}
+
+/**
+ * A margin hidden by no more than this (mm) counts as visible: about a scanner's accuracy, below a crown's cement gap
+ * (0.03–0.05 mm), and real scans are rough on that scale. On the exocad bridges every margin point the plain ray test
+ * flagged was hidden by at most 0.1 mm, most by 0.02 mm or less (specs/2026-10-30-bridge-frames-on-segment-scans.md).
+ */
+export const MARGIN_UNDERCUT_TOLERANCE_MM = 0.05;
+
+/**
+ * The least-undercut insertion axis that keeps the margin visible: searchInsertionAxis, and when its direction hides
+ * margin points (marginUndercut), the least-undercut direction in the cone that hides none, if there is one. Seating
+ * along an axis that hides the margin leaves the crown short of it; blocked-out walls only cost cement.
+ */
+export function searchVisibleAxis(input: {
+  positions: Float32Array;
+  indices: Uint32Array;
+  faceMask: Uint8Array;
+  center: V3;
+  ray: RayCaster;
+  /** Every margin that must stay visible, with its prep region (one per abutment). */
+  margins: Array<{ points: Float32Array; faceMask: Uint8Array }>;
+  coneDeg?: number;
+  samples?: number;
+}): AxisSearchResult {
+  const { ray, margins, ...search } = input;
+  const visible = (d: V3) => margins.every((m) => marginUndercut({ points: m.points, axis: d, ray, faceMask: m.faceMask }).count === 0);
+  const found = searchInsertionAxis(search);
+  return visible(found.direction) ? found : searchInsertionAxis({ ...search, accept: visible });
 }
 
 /** Abutments whose individual best axes diverge by more than this get a warning (long or curved spans). */
@@ -250,7 +305,7 @@ export function searchCommonAxis(input: {
   }
   const center = normalize(mean);
   const cone = { coneDeg: input.coneDeg, samples: input.samples };
-  const common = searchInsertionAxis({ positions, indices, faceMask: union, center, ...cone });
+  const common = searchVisibleAxis({ positions, indices, faceMask: union, center, ray, margins: abutments.map((a) => ({ points: a.margin, faceMask: a.faceMask })), ...cone });
   const results = abutments.map((a): CommonAxisAbutmentResult => {
     const own = abutments.length === 1 ? common : searchInsertionAxis({ positions, indices, faceMask: a.faceMask, center: a.occlusal, ...cone });
     // A zero cone evaluates the undercut cost at exactly the common direction.

@@ -14,7 +14,7 @@ import {
   prepRegion,
   prepSeedVertex,
   processScan,
-  searchInsertionAxis,
+  searchVisibleAxis,
   smoothVertexNormals,
   undercutDepths,
   writeBinaryStl,
@@ -204,7 +204,7 @@ export async function runCase(spec: GoldenCase, baseDir: string, options: RunOpt
   });
 
   const axis = await time('axisSearch', () =>
-    searchInsertionAxis({ positions, indices, faceMask: region.faceMask, center: frame.occlusal }),
+    searchVisibleAxis({ positions, indices, faceMask: region.faceMask, center: frame.occlusal, ray, margins: [{ points: trace.points, faceMask: region.faceMask }] }),
   );
   const depths = await time('undercutMap', () =>
     undercutDepths({ positions, indices, vertexMask: region.vertexMask, faceMask: region.faceMask, axis: axis.direction, ray }),

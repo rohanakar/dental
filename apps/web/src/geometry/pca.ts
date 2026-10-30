@@ -42,6 +42,17 @@ export function principalAxes(positions: Float32Array, maxSamples = 200_000): Pr
   };
 }
 
+/**
+ * The scan's occlusal-plane normal (unsigned): its least-variance axis, or null when the scan has no clear plane. A
+ * full arch spreads 2.1–6 times as far across the arch as in depth (standard deviations), and the axis is then within
+ * 2–15° of a lab's insertion axis. A segment or quadrant of a few teeth spreads 1.3–1.6 times, and the axis is 27–47°
+ * off (specs/2026-10-30-bridge-frames-on-segment-scans.md).
+ */
+export function jawPlaneNormal(pca: PrincipalAxes): V3 | null {
+  return pca.variances[1] >= JAW_PLANE_SPREAD ** 2 * pca.variances[2] ? pca.axes[2] : null;
+}
+const JAW_PLANE_SPREAD = 1.8;
+
 /** Jacobi eigen-decomposition of a symmetric 3×3 matrix. Eigenvectors are columns. */
 export function symmetricEigen3(m: number[][]): { values: number[]; vectors: number[][] } {
   const a = m.map((row) => row.slice());

@@ -3,7 +3,7 @@ import * as Comlink from 'comlink';
 // Vite emits manifold.wasm as a separate asset; the boolean engine (manifold-3d) itself is a lazy chunk.
 import manifoldWasmUrl from 'manifold-3d/manifold.wasm?url';
 import { fitArchCurve, orientArchCurve, type ArchCurve } from '../geometry/arch';
-import { searchCommonAxis, searchInsertionAxis, marginUndercut, undercutDepths } from '../geometry/axis';
+import { searchCommonAxis, searchInsertionAxis, searchVisibleAxis, marginUndercut, undercutDepths } from '../geometry/axis';
 import { archAlignedFrame, archFitDirections, BridgeCache, designBridge, layoutPontics, type BridgeUnitInput } from '../geometry/bridge';
 import {
   dijkstraTree,
@@ -135,13 +135,13 @@ const bridgeCache = new BridgeCache(64);
 /**
  * The jaw's arch curve: fitted once per scan and occlusal direction (the mean of its abutments' occlusal, or the
  * jaw's occlusal-plane normal with a front-tooth abutment: archFitDirections) without a buccal hint, then oriented per
- * call by the abutments' buccal directions. The hint is not part of the cached fit, so a flipped frame never gets a
- * stale orientation.
+ * call by the abutments (their order along the arch, else their buccal directions). The hint is not part of the cached
+ * fit, so a flipped frame never gets a stale orientation.
  */
-function archCurveOf(scan: RetainedScan, frames: Array<{ occlusal: V3; buccal: V3; fdi: number }>): ArchCurve {
-  const { occlusal, buccalHint } = archFitDirections(frames, scan.positions);
+function archCurveOf(scan: RetainedScan, frames: Array<{ origin: V3; occlusal: V3; buccal: V3; fdi: number }>): ArchCurve {
+  const { occlusal, buccalHint, order } = archFitDirections(frames, scan.positions);
   const fit = registry.cached(scan, `arch:${occlusal.map((x) => x.toFixed(2)).join(',')}`, () => fitArchCurve({ positions: scan.positions, occlusal }));
-  return orientArchCurve(fit, buccalHint);
+  return orientArchCurve(fit, buccalHint, order);
 }
 
 /** Copies of a cached typed array (cached results stay intact; the copies are transferred). */
@@ -408,7 +408,7 @@ const api = {
       // A zero cone evaluates the cost at exactly this direction.
       undercutAreaMm2 = searchInsertionAxis({ ...base, center: direction, coneDeg: 0, samples: 1 }).centerUndercutAreaMm2;
     } else {
-      const found = searchInsertionAxis({ ...base, center: request.occlusal });
+      const found = searchVisibleAxis({ ...base, center: request.occlusal, ray, margins: [{ points: request.margin, faceMask: region.faceMask }] });
       direction = found.direction;
       undercutAreaMm2 = found.undercutAreaMm2;
     }

@@ -76,6 +76,12 @@ describe('prep region and insertion axis', () => {
     expect(axis.undercutAreaMm2).toBeGreaterThan(0); // no direction removes a bulge on all sides
     const margin = marginUndercut({ points, axis: [0, 0, 1], ray: prepared.ray, faceMask: region.faceMask });
     expect(margin.count).toBe(points.length / 3);
+    // A wall over the margin by 0.03 mm (a scan's roughness) hides it only to the plain ray test.
+    const rough = stump([[0, 4], [1, 4], [2, 3.9], [2.6, 3.2], [2.9, 1.5], [3.03, 0.8], [3.0, 0.5], [3.5, 0], [5, 0], [8, 0]], 6);
+    const roughMargin = (toleranceMm?: number) =>
+      marginUndercut({ points: rough.points, axis: [0, 0, 1], ray: rough.prepared.ray, faceMask: rough.region.faceMask, ...(toleranceMm === undefined ? {} : { toleranceMm }) }).count;
+    expect(roughMargin(0)).toBe(rough.points.length / 3);
+    expect(roughMargin()).toBe(0);
     const depths = undercutDepths({ ...prepared, vertexMask: region.vertexMask, faceMask: region.faceMask, axis: [0, 0, 1] });
     expect(Math.max(...[...depths].filter((d) => !Number.isNaN(d)))).toBeGreaterThan(2);
   });

@@ -3,7 +3,7 @@ import { Matrix4, Quaternion, Vector3 } from 'three';
 import { ADAPT_OPEN_TOLERANCE_MM, adaptContacts, adaptOcclusion, findConflict, type AdaptConflict, type AdaptInput, type AdaptReport } from './adapt';
 import { clearanceMap, thicknessMap, unmillableMap, type CrownMapName } from './crownMaps';
 import { templateForTooth, type CrownTemplate } from './crownTemplate';
-import { buildIntaglio, distanceFromMargin, measureIntaglioGap, offsetPrep, planeBasis, type GapCheck, type Intaglio } from './intaglio';
+import { buildIntaglio, clearRim, distanceFromMargin, measureIntaglioGap, offsetPrep, planeBasis, type GapCheck, type Intaglio } from './intaglio';
 import type { IndexedMesh } from './mesh';
 import { validateClosedMesh, type MeshValidation } from './meshValidate';
 import { countSelfIntersections } from './selfIntersect';
@@ -787,6 +787,8 @@ export function designCrown(input: CrownInput): CrownDesign {
   const T = placed.ring.length;
   const rim = new Float32Array(T * 3);
   for (let i = 0; i < T; i++) rim.set(sampleLoop(marginOrdered, marginFractions, placed.fractions[i]!), i * 3);
+  // Where the prep overhangs the margin by a scan's roughness, the rim moves off the wall it would cut into.
+  clearRim(rim, axis, { ray: jaw.ray, faceMask: region.faceMask });
   lap('pairing');
 
   // Intaglio on the gap-offset prep.
@@ -825,6 +827,7 @@ export function designCrown(input: CrownInput): CrownDesign {
         params,
         intaglio: inner.ray,
         prep: { ray: jaw.ray, faceMask: region.faceMask },
+        loop: region.loopVertices,
       }),
     warnings,
     timings,

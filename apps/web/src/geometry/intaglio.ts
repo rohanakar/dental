@@ -1,4 +1,5 @@
 import type { DesignParams } from '@dcad/shared';
+import { MARGIN_UNDERCUT_TOLERANCE_MM } from './axis';
 import { MinHeap } from './livewire';
 import type { IndexedMesh } from './mesh';
 import type { V3 } from './pca';
@@ -290,9 +291,65 @@ export function buildIntaglio(input: {
   return { mesh: { positions, indices }, rimCount: N, profilePoints: P, centre, misses, warnings };
 }
 
+/** Even-odd test of (x, y) against a closed polygon. */
+function insidePolygon(poly: ReadonlyArray<readonly [number, number]>, x: number, y: number): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i]!, [xj, yj] = poly[j]!;
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * The rim moved off the walls it would cut: where the prep hides a rim point along the axis (it overhangs the margin
+ * by at most `maxMm`, MARGIN_UNDERCUT_TOLERANCE_MM; a deeper overhang fails the margin check), the point moves
+ * outward, perpendicular to the axis and away from the rim's centre, by the least amount that clears it. The crown's
+ * rim then slides past the wall instead of into it. In place; returns how many points moved and the largest move.
+ */
+export function clearRim(rim: Float32Array, axis: V3, prep: { ray: RayCaster; faceMask: Uint8Array }, maxMm = MARGIN_UNDERCUT_TOLERANCE_MM): { moved: number; maxMoveMm: number } {
+  const d = normalize(axis);
+  const n = rim.length / 3;
+  let cx = 0, cy = 0, cz = 0;
+  for (let i = 0; i < n; i++) {
+    cx += rim[i * 3]! / n;
+    cy += rim[i * 3 + 1]! / n;
+    cz += rim[i * 3 + 2]! / n;
+  }
+  const hidden = (q: V3) => {
+    for (const hit of prep.ray.all([q[0] + 0.02 * d[0], q[1] + 0.02 * d[1], q[2] + 0.02 * d[2]], d, 15)) {
+      if (hit.distance >= 0.02 && prep.faceMask[hit.faceIndex]) return true;
+    }
+    return false;
+  };
+  let moved = 0, maxMoveMm = 0;
+  for (let i = 0; i < n; i++) {
+    const p: V3 = [rim[i * 3]!, rim[i * 3 + 1]!, rim[i * 3 + 2]!];
+    if (!hidden(p)) continue;
+    const r: V3 = [p[0] - cx, p[1] - cy, p[2] - cz];
+    const out = normalize([r[0] - dot(r, d) * d[0], r[1] - dot(r, d) * d[1], r[2] - dot(r, d) * d[2]]);
+    for (let s = 1; s <= RIM_CLEAR_STEPS; s++) {
+      const m = (maxMm * s) / RIM_CLEAR_STEPS;
+      const q: V3 = [p[0] + m * out[0], p[1] + m * out[1], p[2] + m * out[2]];
+      if (hidden(q)) continue;
+      rim.set(q, i * 3);
+      moved++;
+      maxMoveMm = Math.max(maxMoveMm, m);
+      break;
+    }
+  }
+  return { moved, maxMoveMm };
+}
+const RIM_CLEAR_STEPS = 10;
+
 /** The shadow test starts this far off the wall (mm) and looks this far up the axis for the prep above it. */
 const SHADOW_LIFT_MM = 0.01;
 const SHADOW_REACH_MM = 15;
+/**
+ * The gap ray starts this far inside the prep wall (mm), so an intaglio that dips into the prep is measured (a
+ * negative gap) instead of missed. Prep walls are millimetres thick.
+ */
+const GAP_BEHIND_MM = 0.2;
 
 export interface GapCheck {
   /** Axial-wall vertices measured. */
@@ -304,7 +361,14 @@ export interface GapCheck {
 /**
  * Verification: on axial walls (away from the margin ramp), the distance from
  * the prep to the intaglio along the prep normal must equal the intended gap.
- * Measured from scan vertices along their (smoothed) normals to `intaglio`.
+ * Measured from scan vertices along their (smoothed) normals to `intaglio`,
+ * signed: an intaglio inside the prep (up to GAP_BEHIND_MM) is a negative gap,
+ * so the crown would sit on the wall there.
+ * With `loop` (the margin loop's vertices), a wall whose gap-offset point lies
+ * outside the margin seen along the axis can't get more gap than the rim
+ * leaves as it slides past (a wall parallel to the axis, or leaning over the
+ * margin by less than MARGIN_UNDERCUT_TOLERANCE_MM): there only a collision
+ * (a negative gap) counts (specs/2026-10-30-bridge-frames-on-segment-scans.md).
  * With `prep`, a wall shadowed along the axis by the prep itself (under an
  * overhang) is skipped: the intaglio is blocked out there by design, and its
  * gap grows (specs/2026-10-30-cement-gap-real-scans.md).
@@ -321,11 +385,20 @@ export function measureIntaglioGap(input: {
   prep?: { ray: RayCaster; faceMask: Uint8Array };
   /** Only walls whose normal is at most this far from horizontal (|n·axis| ≤ maxAxial). */
   maxAxial?: number;
+  /** The margin loop's vertices (in order): seen along the axis, the intaglio's footprint. */
+  loop?: ArrayLike<number>;
 }): GapCheck {
   const { positions, normals, vertexMask, distance, params } = input;
   const axis = normalize(input.axis);
   const maxAxial = input.maxAxial ?? 0.5;
   const start = params.distanceToMarginMm + GAP_RAMP_MM + 0.3;
+  const [pu, pv] = planeBasis(axis);
+  const footprint = input.loop
+    ? Array.from(input.loop, (v): [number, number] => {
+        const q: V3 = [positions[v * 3]!, positions[v * 3 + 1]!, positions[v * 3 + 2]!];
+        return [dot(q, pu), dot(q, pv)];
+      })
+    : null;
   let samples = 0, sum = 0, max = 0;
   for (let i = 0; i < vertexMask.length; i++) {
     if (!vertexMask[i] || !(distance[i]! > start)) continue;
@@ -337,9 +410,12 @@ export function measureIntaglioGap(input: {
       const over = input.prep.ray.first(lift, axis, SHADOW_REACH_MM);
       if (over && over.faceIndex >= 0 && input.prep.faceMask[over.faceIndex]) continue;
     }
-    const hit = input.intaglio.first(p, n, 1);
+    const hit = input.intaglio.first([p[0] - GAP_BEHIND_MM * n[0], p[1] - GAP_BEHIND_MM * n[1], p[2] - GAP_BEHIND_MM * n[2]], n, 1 + GAP_BEHIND_MM);
     if (!hit) continue;
-    const err = Math.abs(hit.distance - cementGap(distance[i]!, params));
+    const gap = hit.distance - GAP_BEHIND_MM;
+    const want = cementGap(distance[i]!, params);
+    const off: V3 = [p[0] + want * n[0], p[1] + want * n[1], p[2] + want * n[2]];
+    const err = footprint && !insidePolygon(footprint, dot(off, pu), dot(off, pv)) ? Math.max(0, -gap) : Math.abs(gap - want);
     samples++;
     sum += err;
     max = Math.max(max, err);

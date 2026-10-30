@@ -509,3 +509,8 @@ with Auto-design next.
   [2026-10-30-auto-axis-when-ready.md](2026-10-30-auto-axis-when-ready.md),
   [2026-10-30-pontics-follow-abutments.md](2026-10-30-pontics-follow-abutments.md) and
   [2026-10-30-auto-design-keeps-review.md](2026-10-30-auto-design-keeps-review.md).
+- Bridges on a scan of a few teeth (exocad 044, local). The occlusal plane is used only when the scan has one. The
+  arch direction comes from the abutments' order. Margin undercuts below a scan's roughness (0.05 mm) don't count,
+  and the axis keeps the margins visible. The cement-gap check is signed, and the rim clears a wall it would cut.
+  044's frames, axis, retainer fit and seating now pass. A connector to its 3.3 mm pontic still fails. 129 tests;
+  golden 15/15. See [2026-10-30-bridge-frames-on-segment-scans.md](2026-10-30-bridge-frames-on-segment-scans.md).

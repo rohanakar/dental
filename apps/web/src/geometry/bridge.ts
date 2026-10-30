@@ -13,7 +13,7 @@ import {
   type ProximalSide,
   type UnitKind,
 } from '@dcad/shared';
-import { fitArchCurve, type ArchCurve } from './arch';
+import { fitArchCurve, type ArchCurve, type ArchOrder } from './arch';
 import { checkBridgeUnion, type BridgeChecks } from './bridgeUnion';
 import { designConnector, type ConnectorGeometry, type ConnectorUnit } from './connectors';
 import { designCrown, proposeCrownPoseFor, type CrownDesign, type CrownFrame, type CrownInput } from './crown';
@@ -22,7 +22,7 @@ import { templateForTooth, type CrownTemplate } from './crownTemplate';
 import { applyFrameworks, assemblyMesh, bridgeOverpress, type UnitFramework, type UnitOverpress } from './framework';
 import type { IndexedMesh } from './mesh';
 import { meshBooleanReady, unionMeshes } from './meshBoolean';
-import { principalAxes, type V3 } from './pca';
+import { jawPlaneNormal, principalAxes, type V3 } from './pca';
 import { designPontic, proposePonticPose, type PonticBaseGap } from './pontic';
 import { bvhRayCaster, createBvh, type RayCaster } from './raycast';
 import type { IntaglioSurface } from './thickness';
@@ -51,6 +51,7 @@ const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const add = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const scale = (a: V3, s: number): V3 => [a[0] * s, a[1] * s, a[2] * s];
+const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const normalize = (a: V3): V3 => {
   const l = Math.hypot(a[0], a[1], a[2]) || 1;
   return [a[0] / l, a[1] / l, a[2] / l];
@@ -67,12 +68,19 @@ const pointAt = (a: Float32Array, i: number): V3 => [a[i * 3]!, a[i * 3 + 1]!, a
  *
  * A front-tooth frame (`fdi` at positions 1–3) leans with its prep
  * (estimateToothFrame), so with one among the frames and the jaw's
- * `positions` given, the occlusal is the jaw's occlusal-plane normal instead:
- * the whole-jaw PCA least-variance axis (the one the jaw-level frame starts
- * from), oriented along the mean, when it is within 35° of it. Without a
- * front tooth the mean stays, so posterior bridges are unchanged.
+ * `positions` given, the occlusal is the jaw's occlusal-plane normal instead
+ * (jawPlaneNormal, the one the jaw-level frame starts from; a scan of a few
+ * teeth has none), oriented along the mean, when it is within 35° of it.
+ * Without a front tooth the mean stays, so posterior bridges are unchanged.
+ *
+ * Two framed teeth in one quadrant give the arch direction (`order`; see
+ * archOrder), and then the buccal hint is theirs: on a scan of a few teeth
+ * each frame's own buccal is a guess.
  */
-export function archFitDirections(frames: ReadonlyArray<{ occlusal: V3; buccal: V3; fdi?: number }>, positions?: Float32Array): { occlusal: V3; buccalHint?: V3 } {
+export function archFitDirections(
+  frames: ReadonlyArray<{ origin?: V3; occlusal: V3; buccal: V3; fdi?: number }>,
+  positions?: Float32Array,
+): { occlusal: V3; buccalHint?: V3; order?: ArchOrder } {
   if (frames.length === 0) throw new Error('A bridge needs an abutment frame to fit the arch curve');
   let occlusal: V3 = [0, 0, 0];
   let buccal: V3 = [0, 0, 0];
@@ -82,11 +90,40 @@ export function archFitDirections(frames: ReadonlyArray<{ occlusal: V3; buccal: 
   }
   occlusal = normalize(occlusal);
   if (positions && frames.some((f) => f.fdi !== undefined && isFrontTooth(f.fdi))) {
-    const plane = principalAxes(positions, 50_000).axes[2];
-    const along = dot(plane, occlusal);
-    if (Math.abs(along) >= Math.cos((35 * Math.PI) / 180)) occlusal = along >= 0 ? plane : scale(plane, -1);
+    const plane = jawPlaneNormal(principalAxes(positions, 50_000));
+    const along = plane ? dot(plane, occlusal) : 0;
+    if (plane && Math.abs(along) >= Math.cos((35 * Math.PI) / 180)) occlusal = along >= 0 ? plane : scale(plane, -1);
   }
-  return { occlusal, ...(Math.hypot(...buccal) > 1e-6 ? { buccalHint: normalize(buccal) } : {}) };
+  const order = archOrder(frames, occlusal);
+  const buccalHint = order?.buccal ?? (Math.hypot(...buccal) > 1e-6 ? normalize(buccal) : undefined);
+  return { occlusal, ...(buccalHint ? { buccalHint } : {}), ...(order ? { order } : {}) };
+}
+
+/**
+ * The arch direction that two framed teeth in one quadrant give: the one with
+ * the lower position number is the mesial one (34 lies mesial of 36 in any
+ * pose of the scan). As the buccal direction (FDI handedness) at their
+ * midpoint, for turning an arch curve whose bend can't tell its inside
+ * (orientArchCurve). Undefined without two frames in one quadrant at least
+ * 1 mm apart. With several quadrants, the one with the widest span.
+ */
+function archOrder(frames: ReadonlyArray<{ origin?: V3; fdi?: number }>, occlusal: V3): ArchOrder | undefined {
+  let best: { a: V3; b: V3; fdi: number; span: number } | undefined;
+  for (const q of [1, 2, 3, 4]) {
+    const mine = frames.flatMap((f) => (f.origin && f.fdi !== undefined && Math.floor(f.fdi / 10) === q ? [{ origin: f.origin, fdi: f.fdi }] : []));
+    if (mine.length < 2) continue;
+    mine.sort((x, y) => (x.fdi % 10) - (y.fdi % 10));
+    const mesialMost = mine[0]!, distalMost = mine[mine.length - 1]!;
+    if (mesialMost.fdi === distalMost.fdi) continue;
+    const span = Math.hypot(...reject(sub(mesialMost.origin, distalMost.origin), occlusal));
+    if (span >= 1 && (!best || span > best.span)) best = { a: mesialMost.origin, b: distalMost.origin, fdi: mesialMost.fdi, span };
+  }
+  if (!best) return undefined;
+  const mesial = normalize(reject(sub(best.a, best.b), occlusal));
+  // The inverse of mesialFromBuccal: quadrants 1 and 3 have mesial = buccal × occlusal, 2 and 4 occlusal × buccal.
+  const q = Math.floor(best.fdi / 10);
+  const buccal = normalize(q === 1 || q === 3 ? cross(occlusal, mesial) : cross(mesial, occlusal));
+  return { at: scale(add(best.a, best.b), 0.5), buccal };
 }
 
 // ---- Pontic layout ---------------------------------------------------------------

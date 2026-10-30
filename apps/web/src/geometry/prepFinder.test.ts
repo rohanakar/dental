@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { fitArchCurve } from './arch';
-import { layoutPontics } from './bridge';
+import { archFitDirections, layoutPontics } from './bridge';
 import { initMeshBoolean } from './meshBoolean';
 import type { V3 } from './pca';
 import { findPreps, prepFor, scanBodyFor, type PrepFinding } from './prepFinder';
@@ -58,5 +58,22 @@ describe('prep finder', () => {
     expect(check(35, 37)).toBeUndefined();
     expect(check(37, 35)).toMatch(/wrong order/);
     expect(check(31, 37)).toMatch(/apart/);
+  });
+
+  it("follows the abutments' order on a segment scan whose curve bends the wrong way", () => {
+    // A 24 mm segment of lower-left teeth whose top bends toward the cheek at both ends, as a real scan does with the
+    // ramus behind the molar: the fitted curve's inside is buccal. The frames' own buccal is guessed wrong too. 35 lies
+    // mesial of 37 (+y), so buccal is −x (FDI handedness).
+    const bend = (y: number) => -0.0174 * y * y;
+    const points: number[] = [];
+    for (let y = -12; y <= 12; y += 0.25) for (let w = -4; w <= 4; w += 0.5) for (const z of [0, 2, 4, 6, 8]) points.push(bend(y) + w, y, z);
+    const frame = (fdi: number, y: number) => ({ fdi, origin: [bend(y), y, 8] as V3, occlusal: [0, 0, 1] as V3, buccal: [1, 0, 0] as V3 });
+    const frames = [frame(35, 6), frame(37, -6)];
+    const curve = fitArchCurve({ positions: Float32Array.from(points), ...archFitDirections(frames) });
+    expect(curve.kind).toBe('curve');
+    expect(curve.midlineS).toBeNull();
+    const s = curve.project(frames[1]!.origin);
+    expect(curve.normalAt(s)[0]).toBeLessThan(-0.9);
+    expect(curve.mesialAt(s, 37)[1]).toBeGreaterThan(0.9);
   });
 });
