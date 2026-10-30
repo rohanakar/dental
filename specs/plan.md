@@ -475,3 +475,14 @@ with Auto-design next.
 - The gate now stops 4 of the 6 wrong posterior lines, and 1 of 30 right ones.
 - 126 tests; all 13 offline browser scripts pass. See
   [2026-10-29-margin-doubt-in-refiner-and-gate.md](2026-10-29-margin-doubt-in-refiner-and-gate.md).
+
+**2026-10-30: the prep finder, front-tooth frames and the cement gap on real scans.**
+- The prep finder reads its ledge from the scan's cross-sections. Posterior lab preps found: 9 → 17 of 26. Anterior:
+  0 → 9 of 20. False preps on 28 natural jaws: 15 → 0.
+- Front-tooth frames flipped when the click was on the tooth's slope. The antagonist side test now uses the jaw's
+  axis. Anterior margins right: 14 → 19 of 27.
+- The intaglio samples steep walls adaptively, with 64 points per profile. Real crowns' worst gap error: median
+  0.021 → 0.013 mm (3 of 18 within 0.01 mm). The corners round the tooth are left as a decision.
+- 126 tests. See [2026-10-30-prep-finder-sections.md](2026-10-30-prep-finder-sections.md),
+  [2026-10-30-front-tooth-frame-side.md](2026-10-30-front-tooth-frame-side.md) and
+  [2026-10-30-cement-gap-real-scans.md](2026-10-30-cement-gap-real-scans.md).

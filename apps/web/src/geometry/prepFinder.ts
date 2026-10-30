@@ -1,7 +1,9 @@
 import { fitArchCurve } from './arch';
+import { buildTriangleGrid, type TriangleGrid } from './crossSection';
 import { principalAxes, type V3 } from './pca';
 import { findPrepStump, stumpWallAxis } from './prepAxis';
 import type { RayCaster } from './raycast';
+import { quietTurns, resample, sectionProfile } from './sectionProfile';
 
 /**
  * Crown preps on a jaw scan, from its surface alone: where a first-time user has to click on a real scan
@@ -10,11 +12,13 @@ import type { RayCaster } from './raycast';
  * 1. Occlusal: the jaw's least-variance axis, toward the antagonist (else where the normals face: out of the teeth).
  * 2. The arch curve (fitArchCurve) and its crest: the highest surface point across the band, every 0.25 mm along it.
  * 3. Candidates: the crest's peaks, highest first, at least 3 mm apart.
- * 4. The finish line all round: on at least 75% of 24 radial height profiles from the candidate's top, a wall (at
- *    least 1 mm of drop) eases into a ledge (the chamfer or shoulder) that drops again (the root below the margin).
- *    A natural tooth's profiles run into its neighbours, or down its crown onto the gum, where the ease never ends
- *    in a drop; a scan body has no ledge; a cavity keeps the tooth's natural cusps and walls. Measured: every
- *    non-prep at 0.29 or below, every prep at 0.75 or above.
+ * 4. The finish line all round: on at least 65% of 24 radial profiles from the candidate's top, cut from the scan
+ *    (sectionProfile.ts; specs/2026-10-30-prep-finder-sections.md), a wall (at least 1 mm of drop steeper than 50°)
+ *    turns concave into the chamfer or shoulder, and within 1.5 mm turns convex at its lip and drops again (the root
+ *    below the margin). Cut sections, not height profiles: real preps' walls are near-vertical or undercut. A
+ *    natural tooth's profiles run into its neighbours, or down its crown onto the gum, without a lip that drops; a
+ *    cavity keeps the tooth's natural cusps and walls. Measured on real scans: 18 of 26 posterior preps at 0.65 or
+ *    above (from their tops), and every one of 769 peaks on 28 natural jaws at 0.58 or below.
  * 5. Profiles are cast along the occlusal direction. A front tooth that leans hides its lingual ledge, so a candidate
  *    with 40–75% is profiled again along its stump's own axis (stumpWallAxis).
  * 6. The ring's centre: the centroid of the ledge points, cast onto the top.
@@ -44,6 +48,8 @@ export interface PrepFinderInput {
   ray: RayCaster;
   /** The antagonist's centroid, when it is loaded: the occlusal direction faces it (step 1). */
   antagonistCentroid?: V3;
+  /** Triangles bucketed for the profiles' sections (built here when omitted). */
+  grid?: TriangleGrid;
 }
 
 export interface PrepSite {
@@ -75,7 +81,11 @@ const PEAK_SPACING_MM = 3;
 const PROFILES = 24;
 const PROFILE_STEP_MM = 0.05;
 const PROFILE_RADIUS_MM = 8;
-const MIN_RING = 0.75;
+const MIN_RING = 0.65;
+/** The section ledge (step 4): the wall's steepness and drop, the chamfer's and lip's turns, the lip's reach and drop. */
+const LEDGE = { wallDeg: 50, wallDropMm: 1, innerTurnDeg: 8, lipTurnDeg: 12, lipWithinMm: 1.5, dropAfterMm: 0.4 } as const;
+/** Turns are measured over ±this many profile samples (±0.15 mm), and corners are extremes within it. */
+const TURN_HALF = 3;
 /** A ring this partial is profiled again along the stump's own axis (a leaning front tooth). */
 const RETRY_RING = 0.4;
 /** Slopes are taken over ±this many profile samples (±0.1 mm). */
@@ -123,17 +133,18 @@ export function findPreps(input: PrepFinderInput): PrepFinding {
     peaks.push(i);
   }
   // 4. The finish line around each peak.
+  const cut = { positions: P, indices: Uint32Array.from(input.indices), grid: input.grid ?? buildTriangleGrid(P, Uint32Array.from(input.indices)) };
   const sites: PrepSite[] = [];
   for (const i of peaks) {
     const s = i * S_STEP_MM;
     const frame = { mesial: curve.tangentAt(s), buccal: curve.normalAt(s) };
-    let ring = finishLine(ray, crestPoint[i]!, o, frame.mesial);
+    let ring = sectionFinishLine(cut, crestPoint[i]!, o, frame.mesial);
     if (ring.fraction >= RETRY_RING && ring.fraction < MIN_RING) {
       // A leaning front tooth: its lingual ledge is hidden from the occlusal direction.
       const stump = findPrepStump({ positions: P, indices: input.indices, frame: { origin: crestPoint[i]!, ...frame }, occlusal: o });
       const own = stump && stumpWallAxis(stump, o);
       if (own && dot(own, o) > Math.cos((40 * Math.PI) / 180)) {
-        const along = finishLine(ray, stump.top, own, frame.mesial);
+        const along = sectionFinishLine(cut, stump.top, own, frame.mesial);
         if (along.fraction > ring.fraction) ring = along;
       }
     }
@@ -259,7 +270,73 @@ function jawOcclusal(P: Float32Array, N: Float32Array, antagonist?: V3): V3 {
   return sum >= 0 ? axis : scale(axis, -1);
 }
 
-/** The finish line around a top: radial height profiles along −axis, and the ledge points they found. */
+/**
+ * The finish line around a top (step 4): radial profiles cut from the scan in half-planes through `axis`, and the
+ * ledge points they found (sectionLedge).
+ */
+function sectionFinishLine(
+  cut: { positions: Float32Array; indices: Uint32Array; grid: TriangleGrid },
+  top: V3,
+  axis: V3,
+  mesial: V3,
+): { fraction: number; ledges: V3[]; axis: V3 } {
+  const u = normalize(add(mesial, scale(axis, -dot(mesial, axis))));
+  const v = cross(axis, u);
+  const ledges: V3[] = [];
+  for (let k = 0; k < PROFILES; k++) {
+    const th = (2 * Math.PI * k) / PROFILES;
+    const dir = add(scale(u, Math.cos(th)), scale(v, Math.sin(th)));
+    // Past the first 1.5 mm of drop, a rise of 0.5 mm is the neighbouring tooth.
+    const section = sectionProfile(cut.positions, cut.indices, cut.grid, top, axis, dir, PROFILE_RADIUS_MM, 1.5, 0.5);
+    const raw = resample(section, PROFILE_STEP_MM);
+    const { s, h, turns } = quietTurns(raw.s, raw.h, TURN_HALF, PROFILE_STEP_MM);
+    const i = sectionLedge(s, h, turns);
+    if (i >= 0) ledges.push(add(top, add(scale(dir, raw.s[i]!), scale(axis, raw.h[i]!))));
+  }
+  return { fraction: ledges.length / PROFILES, ledges, axis };
+}
+
+/**
+ * The ledge of one section profile (s outward, h ≤ 0 below the top, turns in degrees, clockwise = convex), or −1:
+ * after a wall (LEDGE.wallDropMm of drop, steeper than LEDGE.wallDeg), the first concave turn of at least
+ * LEDGE.innerTurnDeg (the chamfer's or shoulder's inner angle), then within LEDGE.lipWithinMm a convex turn of at
+ * least LEDGE.lipTurnDeg (its lip, the margin) with LEDGE.dropAfterMm more drop beyond it (the root below).
+ */
+function sectionLedge(s: number[], h: number[], turns: number[]): number {
+  const n = s.length;
+  const k = 2;
+  const steep = Math.sin((LEDGE.wallDeg * Math.PI) / 180);
+  const extreme = (j: number, sign: number) => {
+    for (let m = Math.max(0, j - TURN_HALF); m <= Math.min(n - 1, j + TURN_HALF); m++) if (Number.isFinite(turns[m]) && sign * turns[m]! > sign * turns[j]!) return false;
+    return true;
+  };
+  let run = 0, wall = -1;
+  for (let i = k; i + k < n; i++) {
+    const descent = (h[i - k]! - h[i + k]!) / (2 * k * PROFILE_STEP_MM);
+    run = descent >= steep ? run + h[i - 1]! - h[i]! : 0;
+    if (run >= LEDGE.wallDropMm && h[i]! <= -1) {
+      wall = i;
+      break;
+    }
+  }
+  if (wall < 0) return -1;
+  let inner = -1;
+  for (let j = wall; j + k < n && inner < 0; j++) if (Number.isFinite(turns[j]) && turns[j]! <= -LEDGE.innerTurnDeg && extreme(j, -1)) inner = j;
+  if (inner < 0) return -1;
+  const reach = inner + Math.round(LEDGE.lipWithinMm / PROFILE_STEP_MM);
+  for (let j = inner + 1; j <= reach && j + k < n; j++) {
+    if (!(Number.isFinite(turns[j]) && turns[j]! >= LEDGE.lipTurnDeg && extreme(j, 1))) continue;
+    let lowest = h[j]!;
+    for (let m = j; m < n; m++) lowest = Math.min(lowest, h[m]!);
+    if (h[j]! - lowest >= LEDGE.dropAfterMm) return j;
+  }
+  return -1;
+}
+
+/**
+ * The finish line around a top from radial height profiles along −axis, and the ledge points they found: kept for a
+ * scan body's no-ledge check (step 7), where it was measured.
+ */
 function finishLine(ray: RayCaster, top: V3, axis: V3, mesial: V3): { fraction: number; ledges: V3[]; axis: V3 } {
   const u = normalize(add(mesial, scale(axis, -dot(mesial, axis))));
   const v = cross(axis, u);

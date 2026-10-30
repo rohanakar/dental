@@ -229,6 +229,7 @@ const api = {
         normals: jaw.normals,
         indices: jaw.indices,
         ray: rayOf(jaw),
+        grid: registry.cached(jaw, 'triangleGrid', () => buildTriangleGrid(jaw.positions, jaw.indices)),
         ...(antagonist ? { antagonistCentroid: principalAxes(antagonist.positions, 20_000).centroid } : {}),
       }),
     );
