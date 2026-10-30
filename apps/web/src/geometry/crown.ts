@@ -9,6 +9,7 @@ import { validateClosedMesh, type MeshValidation } from './meshValidate';
 import { countSelfIntersections } from './selfIntersect';
 import { computeVertexNormals } from './normals';
 import { MinHeap } from './livewire';
+import { MARGIN_MAX_TURN_DEG, turnsDeg } from './marginShape';
 import { evaluateRbfFields, solveRbfFields } from './rbf';
 import { buildVertexAdjacency, type SurfaceGraph } from './surface';
 import { distanceToLoop, enforceThickness, THICKNESS_RAMP_MM, type IntaglioSurface } from './thickness';
@@ -144,6 +145,58 @@ export function proposeCrownPose(input: {
 }
 
 /** Normalized cumulative arc length of a closed loop (first point = 0). */
+/** A detour of the margin that comes back within SPIKE_CLOSE_MM of where it left, after at least SPIKE_MIN_MM. */
+const SPIKE_CLOSE_MM = 0.15;
+const SPIKE_MIN_MM = 0.6;
+const SPIKE_MAX_MM = 4;
+
+/**
+ * The margin without kinks (specs/2026-10-30-crown-rim-guard.md): a margin edited by a drag can double back on itself,
+ * and a rim sampled through that spike folds the crown's margin band. Detours that leave the line and come back to it
+ * (within SPIKE_CLOSE_MM, after SPIKE_MIN_MM to SPIKE_MAX_MM of arc) are cut out; any turn still sharper than the
+ * margin gate's MARGIN_MAX_TURN_DEG is relaxed toward its neighbours and put back on the scan. Returns the points and
+ * whether anything changed.
+ */
+export function withoutKinks(points: V3[], ray: RayCaster): { points: V3[]; changed: boolean } {
+  let pts = points;
+  let changed = false;
+  const dist = (a: V3, b: V3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  // 1. Cut detours: from each point, the farthest point within SPIKE_MAX_MM of arc that comes back close to it.
+  for (let pass = 0; pass < 4; pass++) {
+    const n = pts.length;
+    let cut: [number, number] | null = null;
+    for (let i = 0; i < n && !cut; i++) {
+      let arc = 0;
+      for (let k = 1; k < n / 2; k++) {
+        const j = (i + k) % n;
+        arc += dist(pts[(i + k - 1) % n]!, pts[j]!);
+        if (arc > SPIKE_MAX_MM) break;
+        if (arc >= SPIKE_MIN_MM && dist(pts[i]!, pts[j]!) <= SPIKE_CLOSE_MM) cut = [i, k];
+      }
+    }
+    if (!cut) break;
+    const [i, k] = cut;
+    pts = pts.filter((_, m) => ((m - i + n) % n === 0 || (m - i + n) % n >= k));
+    changed = true;
+  }
+  // 2. Relax what is still too sharp, a few rounds, each point back onto the scan.
+  for (let round = 0; round < 10; round++) {
+    const turns = turnsDeg(pts);
+    const sharp = turns.map((t) => t > MARGIN_MAX_TURN_DEG);
+    if (!sharp.some(Boolean)) break;
+    const n = pts.length;
+    pts = pts.map((p, i) => {
+      if (!sharp[i] && !sharp[(i + 1) % n] && !sharp[(i - 1 + n) % n]) return p;
+      const a = pts[(i - 1 + n) % n]!, b = pts[(i + 1) % n]!;
+      const m: V3 = [(a[0] + b[0] + 2 * p[0]) / 4, (a[1] + b[1] + 2 * p[1]) / 4, (a[2] + b[2] + 2 * p[2]) / 4];
+      const hit = ray.closestPoint(m, 1);
+      return hit ? ([hit.point[0], hit.point[1], hit.point[2]] as V3) : m;
+    });
+    changed = true;
+  }
+  return { points: pts, changed };
+}
+
 function arcFractions(points: V3[]): number[] {
   const n = points.length;
   const cum = [0];
@@ -724,7 +777,11 @@ export function designCrown(input: CrownInput): CrownDesign {
 
   // Place the template; pair its cervical ring with the margin by arc length, both CCW around the axis from the mesial end.
   const placed = placeShell(template, pose, axis, axes.x);
-  const marginPoints = Array.from({ length: nm }, (_, i) => pointAt(input.margin, i));
+  const traced = Array.from({ length: nm }, (_, i) => pointAt(input.margin, i));
+  // A kink (a drag that doubled back) would fold the margin band: the rim follows the margin without it.
+  const guarded = withoutKinks(traced, jaw.ray);
+  if (guarded.changed) warnings.push('The margin turns back on itself in places; the crown follows it without the kinks. Check the margin.');
+  const marginPoints = guarded.points;
   const marginOrdered = orderLoop(marginPoints, axis, axes.x).map((i) => marginPoints[i]!);
   const marginFractions = arcFractions(marginOrdered);
   const T = placed.ring.length;

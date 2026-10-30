@@ -117,6 +117,23 @@ describe.each([
     });
     expect(design.validation.signedVolumeMm3).toBeGreaterThan(50);
     expect(design.pose.scale[0] < 0).toBe(mirror); // quadrant 4 frames are left-handed → mirrored template
+
+    // A margin a drag doubled back on (specs/2026-10-30-crown-rim-guard.md): a 1 mm spike out and back along the scan.
+    // The crown leaves the spike out and stays printable.
+    if (!mirror) {
+      const pts = Array.from({ length: input.margin.length / 3 }, (_, i): V3 => [input.margin[i * 3]!, input.margin[i * 3 + 1]!, input.margin[i * 3 + 2]!]);
+      const k = Math.floor(pts.length / 3);
+      const c = pts.reduce((a, p) => [a[0] + p[0] / pts.length, a[1] + p[1] / pts.length, a[2] + p[2] / pts.length] as V3, [0, 0, 0] as V3);
+      const out = (t: number): V3 => {
+        const p = pts[k]!, d = [p[0] - c[0], p[1] - c[1], 0], l = Math.hypot(d[0]!, d[1]!);
+        const q: V3 = [p[0] + (d[0]! / l) * t, p[1] + (d[1]! / l) * t, p[2]];
+        return input.jaw.ray.closestPoint(q, 2)!.point as V3;
+      };
+      const spike = [0.2, 0.4, 0.6, 0.8, 1, 0.8, 0.6, 0.4, 0.2].map(out);
+      const spiked = [...pts.slice(0, k + 1), ...spike, ...pts.slice(k)];
+      const kinked = designCrown({ ...input, margin: new Float32Array(spiked.flat()) });
+      expect(kinked.validation.printable).toBe(true);
+    }
   });
 
   it('seats on the prep: ring on the margin, intended cement gap, no undercut in the intaglio', () => {
