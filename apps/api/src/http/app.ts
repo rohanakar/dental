@@ -5,6 +5,7 @@ import { bodyLimit } from 'hono/body-limit';
 import type { Logger } from 'pino';
 import { CaseService } from '../domain/cases';
 import { DomainError } from '../domain/errors';
+import { FeedbackService } from '../domain/feedback';
 import { FileService } from '../domain/files';
 import type { LlmService } from '../domain/llm';
 import { ProposalEventService } from '../domain/proposal-events';
@@ -13,8 +14,10 @@ import type { AuthPort } from '../ports/auth';
 import type { BlobStore } from '../ports/blob-store';
 import type { JobQueue } from '../ports/jobs';
 import type { Repositories } from '../ports/repositories';
+import { MemoryRateLimiter } from '../adapters/rate-limit/memory';
 import { handleError } from './errors';
 import { caseRoutes } from './routes/cases';
+import { feedbackRoutes } from './routes/feedback';
 import { fileRoutes } from './routes/files';
 import { jobRoutes } from './routes/jobs';
 import { llmRoutes } from './routes/llm';
@@ -37,6 +40,7 @@ export interface Services {
   files: FileService;
   versions: VersionService;
   proposalEvents: ProposalEventService;
+  feedback: FeedbackService;
   llm: LlmService;
   jobs: JobQueue;
 }
@@ -52,6 +56,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     files: new FileService(deps.repos.cases, deps.repos.files, deps.blobs, newId, deps.limits.maxUploadBytes),
     versions: new VersionService(deps.repos.versions),
     proposalEvents: new ProposalEventService(deps.repos.cases, deps.repos.proposalEvents, newId),
+    feedback: new FeedbackService(deps.repos.feedback, new MemoryRateLimiter(5, 60 * 60_000), newId),
     llm: deps.llm,
     jobs: deps.jobs,
   };
@@ -88,6 +93,16 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   // Auth provider endpoints (sign-up, sign-in, sessions, organizations).
   app.on(['GET', 'POST'], '/api/auth/*', (c) => deps.auth.handler(c.req.raw));
 
+  const jsonLimit = bodyLimit({
+    maxSize: deps.limits.maxJsonBytes,
+    onError: () => {
+      throw new DomainError('payload_too_large', `JSON body exceeds ${deps.limits.maxJsonBytes} bytes`);
+    },
+  });
+
+  // Feedback is open to visitors without an account.
+  app.route('/api', feedbackRoutes(services, deps.auth, jsonLimit));
+
   // Everything else under /api requires a session with an organization.
   app.use('/api/*', async (c, next) => {
     const resolved = await deps.auth.resolve(c.req.raw.headers);
@@ -96,13 +111,6 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     c.set('auth', resolved);
     c.set('log', c.get('log').child({ userId: resolved.userId, orgId: resolved.orgId }));
     await next();
-  });
-
-  const jsonLimit = bodyLimit({
-    maxSize: deps.limits.maxJsonBytes,
-    onError: () => {
-      throw new DomainError('payload_too_large', `JSON body exceeds ${deps.limits.maxJsonBytes} bytes`);
-    },
   });
 
   app.get('/api/me', (c) => c.json(c.get('auth') satisfies Me));

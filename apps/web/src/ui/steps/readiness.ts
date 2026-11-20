@@ -25,6 +25,8 @@ export interface ReadinessInput {
   material: string;
   /** Adaptation targets exist but a later edit switched them off. */
   adaptationStale: boolean;
+  /** While stale: the crown's closest approach as it now stands (negative: inside), measured from its clearance maps. */
+  staleClearanceMm?: { occlusion?: number; proximal?: number };
   /** Neighbours found in the tooth frame; contacts are checked only where there is one. */
   neighbours: { mesial: boolean; distal: boolean };
   /** Steps this unit has (a pontic has no margin or axis); rows it does not need are left out. */
@@ -115,7 +117,11 @@ export function millReadiness(input: ReadinessInput): ReadinessItem[] {
   for (const row of ADAPT_ROWS) {
     if (row.kind !== 'occlusion' && !input.neighbours[row.kind]) continue;
     const report = crown?.adapt?.[row.kind];
-    if (input.adaptationStale) items.push({ id: row.kind, label: row.label, status: 'fail', detail: 'Off since the last change: re-adapt' });
+    if (input.adaptationStale) {
+      const now = row.kind === 'occlusion' ? input.staleClearanceMm?.occlusion : input.staleClearanceMm?.proximal;
+      const measured = now === undefined ? '' : `: now ${mm(now)} ${row.kind === 'occlusion' ? 'to the antagonist' : 'to a neighbour'}${now < 0 ? ', the crown is in it' : ''}`;
+      items.push({ id: row.kind, label: row.label, status: 'fail', detail: `Off since the last change${measured}; re-adapt` });
+    }
     else if (!report) items.push({ id: row.kind, label: row.label, status: 'fail', detail: `Not adapted to ${row.what}` });
     else {
       const check = adaptGate({ adapt: { [row.kind]: report } })[0]!;

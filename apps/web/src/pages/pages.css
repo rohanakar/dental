@@ -1,0 +1,64 @@
+/* Feedback and privacy pages: the landing page's look, a single narrow column. */
+.page {
+  max-width: 720px;
+  padding-block: clamp(40px, 6vw, 72px);
+}
+
+.page h1 {
+  font-size: clamp(2rem, 4vw, 2.75rem);
+  font-weight: 630;
+  letter-spacing: -0.03em;
+  margin: 0 0 12px;
+}
+
+.page h2 {
+  font-size: 1.25rem;
+  font-weight: 620;
+  margin: 32px 0 10px;
+}
+
+.page a:not(.button) {
+  color: var(--accent-ink);
+}
+
+.prose ul {
+  padding-left: 1.2em;
+  color: var(--ink-2);
+}
+
+.prose li {
+  margin-bottom: 8px;
+}
+
+.page-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  margin-top: 24px;
+  max-width: none;
+}
+
+.page-form h2 {
+  margin: 0;
+}
+
+.page-form textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--field-border);
+  border-radius: 8px;
+  font: 400 1rem var(--font);
+  color: var(--ink);
+  resize: vertical;
+}
+
+.form-ok {
+  margin: 0;
+  color: var(--ok);
+  font-weight: 520;
+}
+
+.page-links {
+  margin-top: 32px;
+  color: var(--ink-3);
+}

@@ -7,6 +7,8 @@
  * URLs are relative, so the page works at the domain root and under a sub-path.
  */
 
+import { applyContact } from '../site';
+
 const AUTH = 'api/auth';
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -156,6 +158,24 @@ function settle(el: HTMLElement, done: () => void): void {
   requestAnimationFrame(frame);
 }
 
+/** The video loads only when asked for (preload="none" and no src until the dialog opens), and stops on close. */
+function setupVideo(): void {
+  const dialog = document.querySelector<HTMLDialogElement>('.video-dialog');
+  const video = dialog?.querySelector<HTMLVideoElement>('video');
+  if (!dialog || !video) return;
+  for (const open of document.querySelectorAll('[data-video-open]')) {
+    open.addEventListener('click', () => {
+      if (!video.src) video.src = video.dataset.src ?? '';
+      dialog.showModal();
+      void video.play().catch(() => {});
+    });
+  }
+  dialog.addEventListener('close', () => video.pause());
+  dialog.addEventListener('click', (event) => event.target === dialog && dialog.close());
+}
+
+applyContact();
+setupVideo();
 const form = document.querySelector<HTMLFormElement>('#signup');
 if (form) setupSignup(form);
 const panel = document.querySelector<HTMLElement>('.checks');

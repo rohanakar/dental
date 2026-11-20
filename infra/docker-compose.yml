@@ -11,6 +11,8 @@ services:
       dockerfile: infra/proxy.Dockerfile
       args:
         VITE_BASE_PATH: ${VITE_BASE_PATH:-/}
+        VITE_CONTACT_EMAIL: ${VITE_CONTACT_EMAIL:-}
+        VITE_CONTACT_NAME: ${VITE_CONTACT_NAME:-}
     environment:
       BASE_PATH: ${BASE_PATH:-}
     networks:

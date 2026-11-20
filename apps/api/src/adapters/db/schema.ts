@@ -96,6 +96,22 @@ export const proposalEvents = pgTable(
   (t) => [index('proposal_events_org_case_idx').on(t.orgId, t.caseId), index('proposal_events_step_idx').on(t.step, t.proposerId)],
 );
 
+export const feedback = pgTable(
+  'feedback',
+  {
+    id: text('id').primaryKey(),
+    /** Null when sent without an account. */
+    orgId: text('org_id').references(() => organization.id, { onDelete: 'set null' }),
+    userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
+    email: text('email'),
+    message: text('message').notNull(),
+    page: text('page'),
+    userAgent: text('user_agent'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('feedback_created_idx').on(t.createdAt)],
+);
+
 export const llmUsage = pgTable(
   'llm_usage',
   {

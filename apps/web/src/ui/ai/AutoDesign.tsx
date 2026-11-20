@@ -12,6 +12,7 @@ import { isWing } from '../../tools/wing';
 import { isCavity } from '../../tools/inlay';
 import { returnTo } from '../history';
 import { CheckIcon, FailIcon } from '../icons';
+import type { ReadinessItem } from '../steps/readiness';
 import { ReadinessList, useCrownReadiness } from '../steps/ReadinessList';
 import './AutoDesign.css';
 
@@ -133,9 +134,8 @@ function nextAction(failed: StepRun | undefined, bridge: boolean): string {
 }
 
 /** The draft's ready-to-mill rows (Finalize's, measured on the draft): what a technician judges it by. */
-function DraftReadiness() {
-  const readiness = useCrownReadiness();
-  return readiness ? <ReadinessList items={readiness.items} compact /> : null;
+function DraftReadiness({ items }: { items: ReadinessItem[] }) {
+  return <ReadinessList items={items} compact />;
 }
 
 /**
@@ -149,6 +149,9 @@ function Review({ className = '' }: { className?: string }) {
   const isBridge = Boolean(bridge);
   // A single unit with a crown: the rows Finalize gates on (a bridge's are per unit, in Finalize).
   const crowned = useDesignStore((s) => !isBridge && Boolean(selectActiveTooth(s)?.crown));
+  const readiness = useCrownReadiness();
+  // The verdict waits for the rows under it: "all passed" over rows that still read "Measuring…" is not a verdict.
+  const measuring = crowned && Boolean(readiness?.items.some((i) => i.status === 'unknown'));
   // Each check once: a check measured again by a later step shows on that step only.
   const ran = latestChecks(steps.filter((s) => s.status === 'passed' || s.status === 'failed'));
   const failed = steps.find((s) => s.status === 'failed');
@@ -156,7 +159,7 @@ function Review({ className = '' }: { className?: string }) {
   const checks = ran.reduce((n, r) => n + r.qa.length, 0);
   const passedAny = ran.some((r) => r.status === 'passed');
   const keep = (
-    <button key="accept" className={`btn${complete ? ' primary' : ''}`} onClick={() => acceptDraft(complete, failed, isBridge)}>
+    <button key="accept" className={`btn${complete ? ' primary' : ''}`} disabled={complete && measuring} onClick={() => acceptDraft(complete, failed, isBridge)}>
       {complete ? 'Accept' : 'Keep the draft'}
     </button>
   );
@@ -167,7 +170,7 @@ function Review({ className = '' }: { className?: string }) {
   );
   return (
     <div className={`auto-banner ${className}`} role="status">
-      <strong>{complete ? `Draft ready: all ${checks} checks passed` : `Draft stopped at ${rowLabel(failed, isBridge)}`}</strong>
+      <strong>{complete ? (measuring ? 'Draft ready: measuring the last checks…' : `Draft ready: all ${checks} checks passed`) : `Draft stopped at ${rowLabel(failed, isBridge)}`}</strong>
       {!complete && <span className="small">{nextAction(failed, isBridge)}</span>}
       {failing.length > 0 && (
         <ul className="auto-checks">
@@ -182,7 +185,7 @@ function Review({ className = '' }: { className?: string }) {
           ))}
         </ul>
       )}
-      {crowned && <DraftReadiness />}
+      {crowned && readiness && <DraftReadiness items={readiness.items} />}
       <div className="row">{complete ? [keep, discard] : passedAny || failed?.step !== 'frame' ? [discard, keep] : [discard]}</div>
       {ran.length > 0 && (
         <details className="auto-details">

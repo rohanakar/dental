@@ -505,13 +505,16 @@ export async function film(episode, { number, total, next }) {
   const started = Date.now();
   try {
     await page.goto(d.url(episode.start ?? 'app/'));
-    await d.card({ kind: 'title', eyebrow: `Episode ${number} of ${total}`, title: episode.title, body: episode.summary, bullets: episode.learn ?? [] });
-    await sleep(700); // the card's fade-in, so the first frame (the poster) is the card
+    // A promo episode (the landing page's video) has no title or end card and no "next episode" line.
+    if (!episode.promo) {
+      await d.card({ kind: 'title', eyebrow: `Episode ${number} of ${total}`, title: episode.title, body: episode.summary, bullets: episode.learn ?? [] });
+      await sleep(700); // the card's fade-in, so the first frame (the poster) is the card
+    }
     await recorder.start();
     const setup = episode.setup?.(d);
     await d.say(episode.intro ?? episode.summary);
     await setup;
-    await d.hideCard();
+    if (!episode.promo) await d.hideCard();
     await sleep(500);
     await episode.run(d);
     await d.hush();
@@ -522,7 +525,10 @@ export async function film(episode, { number, total, next }) {
     await d.card({ kind: 'error', eyebrow: `Episode ${number} stopped`, title: 'Something went wrong', body: String(e?.message ?? e).split('\n')[0].slice(0, 220) });
     await sleep(2500);
   }
-  if (!error) {
+  if (!error && episode.promo) {
+    await d.say(episode.outro ?? '');
+    await sleep(600);
+  } else if (!error) {
     const passed = d.checks.filter((c) => c.ok).length;
     const failed = d.checks.length - passed;
     await d.card({

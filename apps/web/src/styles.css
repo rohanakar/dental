@@ -186,6 +186,10 @@ textarea {
     color 0.15s;
 }
 
+.btn {
+  text-decoration: none;
+}
+
 .btn svg {
   width: 16px;
   height: 16px;

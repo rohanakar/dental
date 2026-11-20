@@ -1,5 +1,6 @@
 import { Material, type CaseSetup } from '@dcad/shared';
 import { useState } from 'react';
+import { DATA_RULE } from '../../site';
 import { createCase, useSessionStore } from '../../state/session';
 
 /** Every tooth: positions 1-8 in every quadrant. */
@@ -64,6 +65,7 @@ export function NewCaseForm() {
           ))}
         </select>
       </div>
+      <p className="label-hint">{DATA_RULE}</p>
       <button className="btn primary" type="submit" disabled={opening}>
         {opening ? 'Opening…' : 'New case'}
       </button>

@@ -523,3 +523,9 @@ with Auto-design next.
 - A walkthrough video series filmed from the real app by script (`pnpm --filter @dcad/e2e videos`). It has 13
   narrated episodes (33 min), from quick start to implants and the algorithm page, and each checks what it shows:
   209/209 checks. A gallery is in `out/videos/`. See [2026-10-30-walkthrough-videos.md](2026-10-30-walkthrough-videos.md).
+- Outreach readiness. About, privacy and feedback pages; one data rule; one sign-up label; email-first feedback with a
+  saved form (`POST /api/feedback`, table `feedback`); a 64 s overview video on the landing page. From a lab owner's
+  review: the draft verdict waits for its rows, failed occlusion rows give a number, Buccal and Lingual look at the
+  working tooth, and a Hide opposing toggle. Open: a crown stands ~3 mm above its neighbours on the synthetic case and
+  no check sees it; contact and zirconia defaults need labs. One test added (feedback). See
+  [2026-11-20-outreach-readiness.md](2026-11-20-outreach-readiness.md).

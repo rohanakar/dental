@@ -5,6 +5,16 @@ import { Sha256 } from './geometry';
 
 /** REST DTOs shared by apps/api and apps/web. */
 
+/** Beta feedback from the feedback page. Open to visitors without an account, so it is small and rate-limited. */
+export const FeedbackRequest = z.object({
+  message: z.string().trim().min(1).max(2000),
+  /** So we can reply; optional. */
+  email: z.string().trim().max(200).email().optional().or(z.literal('').transform(() => undefined)),
+  /** Where it was sent from: "landing", "editor", "demo". */
+  page: z.string().trim().max(40).optional(),
+});
+export type FeedbackRequest = z.infer<typeof FeedbackRequest>;
+
 export const CaseStatus = z.enum(['draft', 'in-design', 'done']);
 export type CaseStatus = z.infer<typeof CaseStatus>;
 

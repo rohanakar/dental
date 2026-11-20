@@ -17,6 +17,9 @@ COPY packages/shared packages/shared
 COPY apps/web apps/web
 ARG VITE_BASE_PATH=/
 ENV VITE_BASE_PATH=${VITE_BASE_PATH}
+ARG VITE_CONTACT_EMAIL=
+ARG VITE_CONTACT_NAME=
+ENV VITE_CONTACT_EMAIL=${VITE_CONTACT_EMAIL} VITE_CONTACT_NAME=${VITE_CONTACT_NAME}
 RUN pnpm --filter @dcad/web exec vite build
 
 FROM caddy:2

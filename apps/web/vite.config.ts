@@ -54,6 +54,8 @@ export default defineConfig(({ mode }) => {
         input: {
           landing: fileURLToPath(new URL('./index.html', import.meta.url)),
           app: fileURLToPath(new URL('./app/index.html', import.meta.url)),
+          feedback: fileURLToPath(new URL('./feedback/index.html', import.meta.url)),
+          privacy: fileURLToPath(new URL('./privacy/index.html', import.meta.url)),
         },
       },
     },

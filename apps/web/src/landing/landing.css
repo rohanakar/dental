@@ -879,10 +879,6 @@ code {
   margin-left: auto;
 }
 
-.label-short {
-  display: none;
-}
-
 .wordmark-quiet {
   height: 28px;
   font-size: 0.875rem;
@@ -1028,14 +1024,6 @@ code {
 }
 
 @media (max-width: 420px) {
-  .label-long {
-    display: none;
-  }
-
-  .label-short {
-    display: inline;
-  }
-
   .wordmark {
     font-size: 0.9375rem;
   }
@@ -1051,4 +1039,63 @@ code {
   *::after {
     transition-duration: 0ms !important;
   }
+}
+
+/* About, the video button and its dialog. */
+.about-body {
+  max-width: 68ch;
+  color: var(--ink-2);
+  font-size: 1.0625rem;
+}
+
+.about-body p {
+  margin: 0 0 16px;
+}
+
+.about-body a:not(.button),
+.scope a {
+  color: var(--accent-ink);
+}
+
+.about-rule {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+
+.hero-video {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin: 12px 0 0;
+  color: var(--ink-3);
+  font-size: 0.9375rem;
+}
+
+.video-dialog {
+  width: min(960px, calc(100% - 2 * var(--gutter)));
+  padding: 12px;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.video-dialog::backdrop {
+  background: rgb(15 27 45 / 0.6);
+}
+
+.video-dialog form {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.video-dialog video {
+  display: block;
+  width: 100%;
+  border-radius: 8px;
+  background: #000;
 }

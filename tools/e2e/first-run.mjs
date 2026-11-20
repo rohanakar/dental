@@ -101,6 +101,8 @@ const run = await state(() => {
 });
 expect(run.complete && !run.error, 'Auto-design crown on the reviewed frame gives a complete draft', JSON.stringify(run));
 const banner = page.getByRole('region', { name: 'Auto-design' }).locator('.auto-banner');
+// The verdict waits for the rows under it to be measured.
+await page.waitForFunction(() => /all \d+ checks passed|stopped/.test(document.querySelector('.auto-banner strong')?.textContent ?? ''), null, { timeout: 60000 });
 const verdict = await banner.locator('strong').textContent();
 const folded = await banner.locator('details.auto-details').evaluate((d) => !d.open);
 const visibleChecks = await banner.locator('.auto-checks li').evaluateAll((els) => els.filter((e) => e.checkVisibility()).length);

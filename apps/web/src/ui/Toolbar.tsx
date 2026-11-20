@@ -3,9 +3,11 @@ import type { StandardView } from '../engine/viewFrame';
 import { sceneController } from '../state/sceneController';
 import { useSceneStore } from '../state/sceneStore';
 import { CameraIcon, MoonIcon, RedoIcon, SunIcon, UndoIcon } from './icons';
+import { useSessionStore } from '../state/session';
 import { toggleHelp, useHelp } from './HelpSheet';
 import { redo, undo } from './history';
 import { setTheme, useTheme } from './theme';
+import { feedbackLinkHref } from '../site';
 import { ProjectControls } from './session/ProjectControls';
 import { SessionControls } from './session/SessionControls';
 
@@ -21,6 +23,7 @@ export function Toolbar() {
   const hasReady = useSceneStore((s) => s.objects.some((o) => o.phase === 'ready'));
   const projection = useSceneStore((s) => s.projection);
   const help = useHelp((s) => s.open);
+  const offline = useSessionStore((s) => s.offline);
   // Undo/redo wait while a draft (auto-design or assistant) is open for review.
   const draftOpen = useDesignStore((s) => Boolean(s.transaction));
   const canUndo = useDesignStore((s) => s.past.length > 0) && !draftOpen;
@@ -55,6 +58,7 @@ export function Toolbar() {
           Fit
         </button>
       </div>
+      <OpposingToggle />
       <button
         className="btn"
         aria-pressed={projection === 'orthographic'}
@@ -71,10 +75,27 @@ export function Toolbar() {
       <button id="help-button" className="btn quiet" aria-keyshortcuts="?" title="Shortcuts and terms (?)" aria-expanded={help} onClick={() => toggleHelp()}>
         Help
       </button>
+      <a className="btn quiet" href={feedbackLinkHref(offline ? 'demo' : 'editor')} target="_blank" rel="noopener" title="Email us, or send a short note (opens in a new tab)">
+        Feedback
+      </a>
       <span className="sep" />
       <ProjectControls />
       <SessionControls />
     </header>
+  );
+}
+
+/** Hides the jaw opposing the working tooth, which otherwise hides the tooth from above or below. */
+function OpposingToggle() {
+  const fdi = useDesignStore((s) => s.activeFdi);
+  // Re-read on a tooth, jaw or visibility change or a visibility change (both change the scene's objects).
+  const role = useSceneStore((s) => (s.objects.length >= 0 && fdi ? sceneController.opposingRole() : null));
+  const visible = useSceneStore((s) => s.objects.find((o) => o.id === role)?.visible ?? false);
+  if (!role) return null;
+  return (
+    <button className="btn" aria-pressed={!visible} title={visible ? 'Hide the opposing jaw' : 'Show the opposing jaw'} onClick={() => sceneController.setOpposingVisible(!visible)}>
+      Hide opposing
+    </button>
   );
 }
 

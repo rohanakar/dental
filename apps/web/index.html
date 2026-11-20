@@ -23,13 +23,12 @@
           <a href="#workflow">Workflow</a>
           <a href="#checks">Checks</a>
           <a href="#ai">AI assist</a>
+          <a href="#about">About</a>
         </nav>
         <div class="nav-actions" data-session="signed-out">
           <a class="nav-signin nav-demo" href="app/?demo">Try the demo</a>
           <a class="nav-signin" href="app/">Sign in</a>
-          <a class="button button-primary button-small" href="#signup" data-focus-signup
-            ><span class="label-long">Create lab account</span><span class="label-short">Create account</span></a
-          >
+          <a class="button button-primary button-small" href="#signup" data-focus-signup>Create account</a>
         </div>
         <div class="nav-actions" data-session="signed-in" hidden>
           <a class="button button-primary button-small" href="app/">Open your cases</a>
@@ -66,11 +65,15 @@
               <button class="button button-primary" type="submit">Create lab account</button>
             </div>
             <p class="form-error" role="alert" hidden></p>
-            <p id="signup-note" class="form-note">Your account comes with a lab workspace; cases stay inside it.</p>
+            <p id="signup-note" class="form-note">Your account comes with a lab workspace; cases stay inside it. <strong>Beta: use anonymised scans only</strong>; rename the files, an STL holds no patient details itself.</p>
           </form>
           <p class="hero-demo" data-session="signed-out">
             <a class="button button-secondary" href="app/?demo">Try the demo</a>
             <span>No account needed: synthetic scans, one click to a crown.</span>
+          </p>
+          <p class="hero-video">
+            <button class="button button-secondary" type="button" data-video-open>Watch the 65-second video</button>
+            <span>Scan to finished crown to STL export.</span>
           </p>
 
           <div class="signed-in" data-session="signed-in" hidden>
@@ -307,7 +310,7 @@
                 <li>Inlays and onlays, Maryland wings, implant crowns on Ti-bases, and reduced frameworks for layering.</li>
                 <li>Intraoral scans in STL or PLY: upper and lower jaw in occlusion, plus an optional pre-op scan.</li>
                 <li>A binary STL plus a construction-info JSON for CAM, and a <code>.dcad.zip</code> project file.</li>
-                <li>Cases and design versions stored for your lab. Nothing to install.</li>
+                <li>Cases and design versions stored on our server for your lab. Nothing to install.</li>
                 <li>Prescription intake: paste the Rx and confirm the case it fills in.</li>
               </ul>
             </div>
@@ -315,9 +318,27 @@
               <h3>Not yet</h3>
               <ul class="list-no">
                 <li>No veneers, virtual articulator or automatic bite alignment.</li>
-                <li>Not a medical device. Use synthetic or de-identified data only, never real patient data.</li>
+                <li>Not a medical device. Beta: upload anonymised scans only (rename the files; an STL holds no patient details itself). See the <a href="privacy/">privacy page</a>.</li>
               </ul>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="about" class="section" aria-labelledby="about-title">
+        <div class="wrap about">
+          <div class="section-intro">
+            <h2 id="about-title">About this beta.</h2>
+          </div>
+          <div class="about-body">
+            <p>
+              Dental CAD is a browser-based tool for designing a single posterior crown, built so AI can propose each step
+              of the workflow and measured checks can gate every proposal. It is a beta: it covers the cases listed above,
+              and it is not yet a replacement for your desktop CAD.
+            </p>
+            <p data-needs-name>Built by <span data-contact-name></span>. Feedback from working labs decides what is built next.</p>
+            <p data-needs-email>Questions, feedback or a case that went wrong: write to <a data-contact-email data-subject="Dental CAD"></a>, or <a href="feedback/">use the short feedback form</a>.</p>
+            <p class="about-rule"><strong>Data:</strong> Beta: cases are stored on our server for your lab, so upload anonymised scans only. Rename the files: an STL holds no patient details itself. <a href="privacy/">Read the privacy page.</a></p>
           </div>
         </div>
       </section>
@@ -339,9 +360,18 @@
         <nav aria-label="Footer">
           <a href="app/">Sign in</a>
           <a href="app/?demo">Demo case</a>
+          <a href="#about">About</a>
+          <a href="feedback/">Feedback</a>
+          <a href="privacy/">Privacy</a>
+          <a data-contact-email data-needs-email data-subject="Dental CAD" href="#about"></a>
         </nav>
-        <p>Not a medical device. Synthetic or de-identified data only. All images show the synthetic case 36.</p>
+        <p>Not a medical device. Beta: anonymised scans only. All images show the synthetic case 36.</p>
       </div>
     </footer>
+
+    <dialog class="video-dialog" aria-label="Dental CAD in 65 seconds">
+      <form method="dialog"><button class="button button-secondary button-small" aria-label="Close video">Close</button></form>
+      <video controls playsinline preload="none" poster="video/overview-poster.jpg" data-src="video/overview.mp4"></video>
+    </dialog>
   </body>
 </html>

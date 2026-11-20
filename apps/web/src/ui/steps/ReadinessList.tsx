@@ -2,6 +2,7 @@ import { unitKind } from '@dcad/shared';
 import { useEffect, useState } from 'react';
 import { adaptationStale } from '../../design/adaptation';
 import { useDesignStore, selectActiveTooth } from '../../design/store';
+import { crownTool } from '../../tools/crownTool';
 import { axisTool } from '../../tools/axisTool';
 import { useImplantStore } from '../../tools/implantTool';
 import { useToolStore, type AxisReport } from '../../tools/toolStore';
@@ -77,6 +78,7 @@ export function useCrownReadiness(): { items: ReadinessItem[]; computed: boolean
   const implantView = useImplantStore((s) => s.result);
   const [axis, setAxis] = useState<AxisReport | null>(null);
   const [measuring, setMeasuring] = useState(true);
+  const [stale, setStale] = useState<{ occlusion?: number; proximal?: number }>({});
 
   // The axis map is cleared when its step is left, so measure the current axis here.
   const axisInput = tooth?.axis;
@@ -95,6 +97,25 @@ export function useCrownReadiness(): { items: ReadinessItem[]; computed: boolean
     };
   }, [axisInput, marginInput]);
 
+  // A crown moved since it was adapted: measure where it stands now, so a failed row says by how much.
+  const isStale = Boolean(tooth?.crown && adaptationStale(tooth));
+  useEffect(() => {
+    if (!isStale) return setStale({});
+    let live = true;
+    void crownTool.evaluate(['occlusion', 'proximal']).then((r) => {
+      if (!live || !r) return;
+      const lowest = (m?: Float32Array) => {
+        let min = Infinity;
+        if (m) for (const v of m) if (Number.isFinite(v) && v < min) min = v;
+        return Number.isFinite(min) ? min : undefined;
+      };
+      setStale({ occlusion: lowest(r.maps?.occlusion), proximal: lowest(r.maps?.proximal) });
+    }).catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [isStale, tooth]);
+
   if (!tooth?.crown) return null;
   const computing = Boolean(crown?.computing);
   const rows = millReadiness({
@@ -104,6 +125,7 @@ export function useCrownReadiness(): { items: ReadinessItem[]; computed: boolean
     params: tooth.params,
     material: material ? MATERIAL_LABEL[material] : 'Material',
     adaptationStale: adaptationStale(tooth),
+    ...(isStale ? { staleClearanceMm: stale } : {}),
     neighbours: { mesial: Boolean(tooth.frame?.mesialContact), distal: Boolean(tooth.frame?.distalContact) },
     needs: implant ? IMPLANT_NEEDS : readinessNeeds(kind),
     ...(tooth.margin?.line ? { marginLine: tooth.margin.line } : {}),

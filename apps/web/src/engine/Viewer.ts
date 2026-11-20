@@ -159,6 +159,9 @@ const FOV = 35;
  * it never imports React. Renders on demand: a frame is drawn only when the
  * camera moves or something in the scene changed.
  */
+/** Camera distance of the buccal, lingual and proximal views of the working tooth. */
+const TOOTH_VIEW_MM = 60;
+
 export class Viewer {
   readonly renderer: WebGLRenderer;
   readonly scene = new Scene();
@@ -399,8 +402,13 @@ export class Viewer {
   }
 
   /** Animate to a standard view, framing the visible scene; `jaw`: the working tooth's jaw (the occlusal view faces it). */
-  setView(view: StandardView, animate = true, jaw?: 'upper' | 'lower'): void {
+  setView(view: StandardView, animate = true, jaw?: 'upper' | 'lower', tooth?: readonly [number, number, number]): void {
     const dir = new Vector3(...viewDirection(this.frame, view, jaw));
+    // Buccal, lingual and the proximal views look at the working tooth, not the whole arch.
+    if (tooth && view !== 'occlusal') {
+      this.focus(tooth, [dir.x, dir.y, dir.z], TOOTH_VIEW_MM, animate);
+      return;
+    }
     if (view === 'occlusal') {
       // Looking along the turntable axis is a gimbal singularity; a tiny
       // offset toward buccal keeps the lingual side at the top of the screen.

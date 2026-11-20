@@ -7,12 +7,13 @@ import type {
   FileRecord,
   FileRepository,
   LlmUsageRepository,
+  FeedbackRepository,
   ProposalEventRepository,
   Repositories,
   VersionRepository,
 } from '../../ports/repositories';
 import type { Db } from './client';
-import { caseFiles, cases, designVersions, llmUsage, proposalEvents } from './schema';
+import { caseFiles, cases, designVersions, feedback, llmUsage, proposalEvents } from './schema';
 
 type CaseRow = typeof cases.$inferSelect;
 type FileRow = typeof caseFiles.$inferSelect;
@@ -180,6 +181,14 @@ function proposalEventRepository(db: Db): ProposalEventRepository {
   };
 }
 
+function feedbackRepository(db: Db): FeedbackRepository {
+  return {
+    async insert(record) {
+      await db.insert(feedback).values(record);
+    },
+  };
+}
+
 function llmUsageRepository(db: Db): LlmUsageRepository {
   return {
     async insert(record) {
@@ -194,6 +203,7 @@ export function createRepositories(db: Db): Repositories {
     files: fileRepository(db),
     versions: versionRepository(db),
     proposalEvents: proposalEventRepository(db),
+    feedback: feedbackRepository(db),
     llmUsage: llmUsageRepository(db),
     health: {
       async ping() {

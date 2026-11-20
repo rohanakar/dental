@@ -53,6 +53,8 @@ export default {
 
     d.chapter('Review the draft');
     const banner = region.locator('.auto-banner');
+    // The verdict waits for the rows under it to be measured.
+    await page.waitForFunction(() => /all \d+ checks passed|stopped/.test(document.querySelector('.auto-banner strong')?.textContent ?? ''), null, { timeout: 60000 });
     const verdict = (await banner.locator('strong').textContent())?.trim() ?? '';
     await d.check(/^Draft ready: all \d+ checks passed$/.test(verdict), verdict || 'The draft has a verdict line');
     await d.say('The draft is ready, and the verdict line says every check passed.', { wait: false });

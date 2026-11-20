@@ -185,8 +185,24 @@ class SceneController {
 
   /** A standard view; the occlusal one looks onto the active tooth's jaw (from below an upper tooth). */
   setView(view: StandardView): void {
+    const { activeFdi: fdi, doc } = useDesignStore.getState();
+    const origin = fdi ? doc.teeth.find((t) => t.fdi === fdi)?.frame?.origin : undefined;
+    const tooth = origin ? ([origin[0]!, origin[1]!, origin[2]!] as const) : undefined;
+    // From above the working jaw the opposing jaw is in the way: its gum fills the view.
+    if (view === 'occlusal') this.setOpposingVisible(false);
+    this.viewer?.setView(view, true, fdi ? jawOf(fdi) : undefined, tooth);
+  }
+
+  /** The jaw opposing the active tooth's, when it is loaded. */
+  opposingRole(): ScanRole | null {
     const fdi = useDesignStore.getState().activeFdi;
-    this.viewer?.setView(view, true, fdi ? jawOf(fdi) : undefined);
+    const role: ScanRole | null = fdi ? (jawOf(fdi) === 'upper' ? 'lower' : 'upper') : null;
+    return role && useSceneStore.getState().objects.some((o) => o.id === role && o.phase === 'ready') ? role : null;
+  }
+
+  setOpposingVisible(visible: boolean): void {
+    const role = this.opposingRole();
+    if (role) this.setVisible(role, visible);
   }
 
   fit(): void {

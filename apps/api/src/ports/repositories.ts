@@ -74,6 +74,21 @@ export interface ProposalEventRepository {
   insert(input: { id: string; orgId: string; createdBy: string; event: ProposalEvent }): Promise<void>;
 }
 
+export interface FeedbackRecord {
+  id: string;
+  orgId: string | null;
+  userId: string | null;
+  email: string | null;
+  message: string;
+  page: string | null;
+  userAgent: string | null;
+}
+
+/** Feedback is not org-scoped: it may come from a visitor with no account. */
+export interface FeedbackRepository {
+  insert(record: FeedbackRecord): Promise<void>;
+}
+
 export interface LlmUsageRecord {
   orgId: string;
   userId: string;
@@ -97,6 +112,7 @@ export interface Repositories {
   files: FileRepository;
   versions: VersionRepository;
   proposalEvents: ProposalEventRepository;
+  feedback: FeedbackRepository;
   llmUsage: LlmUsageRepository;
   health: HealthProbe;
 }

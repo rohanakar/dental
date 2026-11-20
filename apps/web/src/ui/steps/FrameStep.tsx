@@ -67,12 +67,14 @@ export function FrameStep() {
   const demo = !frame && demoPrep() !== null;
   const target = demo ? 'the prepared tooth inside the blue ring' : `the top of the prepared tooth ${tooth.fdi}`;
   // With a frame (set from its prep on entering the step, or by a click) the step is a review.
+  // A frame the app set itself (from the prep it found, as soon as the scan loaded) says so: the user has not clicked yet.
+  const setBy = frame?.source === 'auto' ? `Frame set automatically on ${tooth.fdi} from the prep found in the scan` : `Frame set on ${tooth.fdi}`;
   const pickHint =
     framePick === 'seed'
       ? frame
         ? bridge
-          ? `Frame set on ${tooth.fdi}. Check the arrows, or click the prep again to redo it.`
-          : `Frame set on ${tooth.fdi}. Check the arrows, then auto-design the crown, or click the prep again to redo the frame.`
+          ? `${setBy}. Check the arrows, or click the prep to redo it.`
+          : `${setBy}. Check the arrows, then auto-design the crown, or click the prep to redo the frame.`
         : autoArmed
           ? bridge
             ? `Click ${target}. After the last abutment, auto-design proposes the bridge for you to review.`
